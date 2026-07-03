@@ -24,17 +24,22 @@ application/      the app's own logic — backend: domains + ports + services;
 infrastructure/   composition roots and platform plumbing (entrypoints, processes)
 ```
 
-A UI change almost always touches `desktop/` twice — once in **markup**
-(`adapters/inbound/react-renderer/...`) and once in **CSS** (the `.css` file
-SITTING NEXT TO that component module, e.g. `left-rail/thread-row.css`).
+A UI change usually starts in `desktop/adapters/inbound/react-renderer/...`.
+The target style location is the same `.tsx` file as the React component, with
+semantic styled-components declared below the component body. Shared semantic
+parts live in named `.parts.tsx` files. True global/platform styles stay under
+`styles/`.
+
 Behavior changes touch the **state layer** (`application/domains/`). Anything
 the agent/provider actually *does* is `backend/`.
 
 ## Worked example: "the button on a thread row in the left thread list"
 
-1. Style → `src/desktop/adapters/inbound/react-renderer/product-shell/left-rail/thread-row.css`
-   (each component's rules live in the `.css` next to its module).
-2. Markup/handlers → `src/desktop/adapters/inbound/react-renderer/product-shell/left-rail/thread-row.ts`.
+1. Markup/handlers/style target →
+   `src/desktop/adapters/inbound/react-renderer/product-shell/left-rail/thread-row.tsx`.
+   Prefer semantic styled-components in the same file, below the component.
+2. Shared/global style exception → `src/desktop/adapters/inbound/react-renderer/styles/`
+   only for tokens, platform rules, or scoped-external exceptions.
 3. What clicking it *does* → `src/desktop/application/domains/product-shell/state/thread-list.ts`.
 4. If the action goes to the backend → the command lands in
    `src/backend/adapters/inbound/contract-message-adapter/contract-message-adapter.ts`
@@ -90,20 +95,31 @@ The workbench tab strip is `app-chrome/app-chrome.ts` (+ its
 `contract-adapter.ts`). Shared leaf utilities stay at the react-renderer root:
 `markdown-rendering.ts`, `code-highlight.ts`, `file-icons.ts`, `theme.ts`.
 
-## Desktop: CSS (`src/desktop/adapters/inbound/react-renderer/`)
+## Desktop: Styles (`src/desktop/adapters/inbound/react-renderer/`)
 
-**Each component's styles live in a `.css` file next to its module**
-(spec: colocated-component-styles) — `workbench/code-editor.css` beside
-`workbench/code-editor.ts`, `left-rail/thread-row.css` beside
-`left-rail/thread-row.ts`, and so on. To find a rule, go to the component.
+Target architecture: component-owned styles live in the same `.tsx` file as
+the owning React component, using semantic styled-components declared after the
+component. See `docs_v2/specs/semantic-styled-components-migration.md`.
 
-Two shared homes remain: `styles/base.css` (tokens, themes, `tok-*` syntax
-palette, scrollbars, shared atoms) and `support/markdown.css` (markdown body
-shared by chat and the workbench preview). `styles/index.css` is the single
-**ordered @import index** over every colocated file — import order preserves
-the cascade, so never reorder it casually, and components never import CSS
-themselves (`node --test` imports component modules and has no CSS loader;
-enforced by `tests/colocated-styles.test.ts`).
+Preferred file shape:
+
+```tsx
+import { styled } from "styled-components";
+
+export function ThreadRow(props: ThreadRowProps): ReactElement {
+  return <ThreadRowFrame $active={props.active}>{props.title}</ThreadRowFrame>;
+}
+
+const ThreadRowFrame = styled.li<{ $active: boolean }>`
+  background: ${({ $active }) => ($active ? "var(--tide-selection)" : "transparent")};
+`;
+```
+
+Component-owned CSS files are not part of the renderer architecture. Global
+styles are limited to `styles/base.css`, `styles/highlight-api.css`, and any
+future documented global entry for tokens, theme variables, platform rules,
+browser pseudo-elements, `::highlight(...)`, webview quirks, or third-party DOM
+that cannot be scoped under a styled host.
 
 ## Desktop: view state (`src/desktop/application/domains/`)
 

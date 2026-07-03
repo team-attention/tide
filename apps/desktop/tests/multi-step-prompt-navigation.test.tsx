@@ -95,9 +95,9 @@ function query<T extends Element>(container: Element, selector: string): T {
 }
 
 function clickOptionByLabel(container: Element, label: string): void {
-  const options = [...container.querySelectorAll(".prompt-card__option")];
+  const options = [...container.querySelectorAll("[data-prompt-option]")];
   const target = options.find(
-    (option) => option.querySelector(".prompt-card__option-label")?.textContent === label,
+    (option) => option.querySelector("[data-prompt-option-label]")?.textContent === label,
   );
   assert.ok(target !== undefined, `expected an option labeled "${label}"`);
   (target as HTMLButtonElement).click();
@@ -143,15 +143,15 @@ test("AUQ single card: 'Other…' shows the custom-reply field instead of the no
   const { container, root } = await mountPrompt(singleAuqPrompt());
   try {
     // Default: a listed option is selected → the note field is offered, no custom-reply box yet.
-    assert.ok(container.querySelector(".prompt-card__note") !== null, "note field shown for a selection");
-    assert.ok(container.querySelector(".prompt-card__other") === null, "no custom-reply box before Other");
+    assert.ok(container.querySelector("[data-prompt-note]") !== null, "note field shown for a selection");
+    assert.ok(container.querySelector("[data-prompt-custom-reply]") === null, "no custom-reply box before Other");
 
     // Pick "Other…": the custom-reply box appears and the note field is hidden — exactly one input,
     // not the two boxes (custom reply + note) stacked on top of each other.
     await act(async () => clickOptionByLabel(container, "Other…"));
-    assert.ok(container.querySelector(".prompt-card__other") !== null, "custom-reply box shown for Other");
+    assert.ok(container.querySelector("[data-prompt-custom-reply]") !== null, "custom-reply box shown for Other");
     assert.ok(
-      container.querySelector(".prompt-card__note") === null,
+      container.querySelector("[data-prompt-note]") === null,
       "note field hidden while Other is active (no second input box)",
     );
   } finally {
@@ -165,18 +165,18 @@ test("wizard: Next/Back navigate, defaults submit one answer per step", async ()
   try {
     // Step 1 of 2: Back disabled, primary action is "Next" (not Submit yet).
     assert.match(container.textContent ?? "", /1 of 2/);
-    assert.equal(query<HTMLButtonElement>(container, ".prompt-card__skip").disabled, true);
-    assert.match(query(container, ".prompt-card__submit").textContent ?? "", /Next/);
-    assert.equal(container.querySelectorAll(".prompt-card__step-dot").length, 2);
+    assert.equal(query<HTMLButtonElement>(container, "[data-prompt-skip]").disabled, true);
+    assert.match(query(container, "[data-prompt-submit]").textContent ?? "", /Next/);
+    assert.equal(container.querySelectorAll("[data-prompt-step-dot]").length, 2);
 
     // Advance to the last step → Back enabled, primary becomes "Submit".
-    await act(async () => query<HTMLButtonElement>(container, ".prompt-card__submit").click());
+    await act(async () => query<HTMLButtonElement>(container, "[data-prompt-submit]").click());
     assert.match(container.textContent ?? "", /2 of 2/);
-    assert.equal(query<HTMLButtonElement>(container, ".prompt-card__skip").disabled, false);
-    assert.match(query(container, ".prompt-card__submit").textContent ?? "", /Submit/);
+    assert.equal(query<HTMLButtonElement>(container, "[data-prompt-skip]").disabled, false);
+    assert.match(query(container, "[data-prompt-submit]").textContent ?? "", /Submit/);
 
     // Submit with each step left at its default option.
-    await act(async () => query<HTMLButtonElement>(container, ".prompt-card__submit").click());
+    await act(async () => query<HTMLButtonElement>(container, "[data-prompt-submit]").click());
     assert.equal(captured.length, 1);
     assert.deepEqual(captured[0], [
       { stepId: "q-0", value: "structured:option:A" },
@@ -192,15 +192,15 @@ test("wizard: going back to revise an earlier step changes only that step's answ
   const { container, root } = await mountWizard((steps) => captured.push(steps));
   try {
     // Forward to step 2, then back to step 1 — the revisit must be possible.
-    await act(async () => query<HTMLButtonElement>(container, ".prompt-card__submit").click());
-    await act(async () => query<HTMLButtonElement>(container, ".prompt-card__skip").click());
+    await act(async () => query<HTMLButtonElement>(container, "[data-prompt-submit]").click());
+    await act(async () => query<HTMLButtonElement>(container, "[data-prompt-skip]").click());
     assert.match(container.textContent ?? "", /1 of 2/);
 
     // Revise step 1 from the default A → B.
     await act(async () => clickOptionByLabel(container, "B"));
     // Forward and submit.
-    await act(async () => query<HTMLButtonElement>(container, ".prompt-card__submit").click());
-    await act(async () => query<HTMLButtonElement>(container, ".prompt-card__submit").click());
+    await act(async () => query<HTMLButtonElement>(container, "[data-prompt-submit]").click());
+    await act(async () => query<HTMLButtonElement>(container, "[data-prompt-submit]").click());
 
     assert.equal(captured.length, 1);
     assert.deepEqual(captured[0], [
@@ -215,7 +215,7 @@ test("wizard: going back to revise an earlier step changes only that step's answ
 test("wizard: a step dot jumps directly to that step", async () => {
   const { container, root } = await mountWizard(() => {});
   try {
-    const dots = [...container.querySelectorAll(".prompt-card__step-dot")] as HTMLButtonElement[];
+    const dots = [...container.querySelectorAll("[data-prompt-step-dot]")] as HTMLButtonElement[];
     await act(async () => dots[1].click());
     assert.match(container.textContent ?? "", /2 of 2/);
     assert.match(container.textContent ?? "", /Describe it\?/);
@@ -288,9 +288,9 @@ async function mountWithSpies(prompt: AgentChatPromptState) {
 }
 
 function optionByLabel(container: Element, label: string): Element {
-  const options = [...container.querySelectorAll(".prompt-card__option")];
+  const options = [...container.querySelectorAll("[data-prompt-option]")];
   const target = options.find(
-    (option) => option.querySelector(".prompt-card__option-label")?.textContent === label,
+    (option) => option.querySelector("[data-prompt-option-label]")?.textContent === label,
   );
   assert.ok(target !== undefined, `expected an option labeled "${label}"`);
   return target;
@@ -319,7 +319,7 @@ test("⌘N on the trailing number activates the 'Other…' field without submitt
   try {
     // 2 choices → "Other…" is option 3.
     await pressMeta("Digit3");
-    assert.ok(container.querySelector(".prompt-card__other") !== null, "custom-reply field opened");
+    assert.ok(container.querySelector("[data-prompt-custom-reply]") !== null, "custom-reply field opened");
     assert.equal(spies.onSelectChoice.calls.length, 0);
     assert.equal(spies.onAnswerText.calls.length, 0);
   } finally {
@@ -374,7 +374,7 @@ test("AUQ note typed before ⌘Enter rides along (no stale-closure drop)", async
   const { container, root, spies } = await mountWithSpies(singleAuqPrompt());
   try {
     // A listed option is selected by default → the note field is offered.
-    const note = container.querySelector(".prompt-card__note");
+    const note = container.querySelector("[data-prompt-note]");
     assert.ok(note !== null, "note field present");
     await typeInto(note, "remember this");
     // ⌘Enter must submit with the freshly typed note, not a stale "".
@@ -408,8 +408,8 @@ test("single prompt (no steps) renders the plain card — no wizard chrome", () 
   );
   assert.ok(markup.includes("Skip"), "single card keeps the Skip affordance");
   assert.ok(markup.includes("Submit"), "single card keeps Submit");
-  assert.ok(!markup.includes("prompt-card__step-dot"), "no step dots on a single prompt");
-  assert.ok(!markup.includes("prompt-card--wizard"), "no wizard modifier on a single prompt");
+  assert.ok(!markup.includes("data-prompt-step-dot"), "no step dots on a single prompt");
+  assert.ok(!markup.includes("data-prompt-wizard"), "no wizard marker on a single prompt");
   assert.ok(!/>Next</.test(markup), "no Next button on a single prompt");
   assert.ok(!/ of \d/.test(markup), "no 'i of N' step counter on a single prompt");
 });

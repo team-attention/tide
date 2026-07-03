@@ -59,14 +59,14 @@ const launch = (dataRoot) => _electron.launch({
   // First launch: persist a non-100% zoom (Chromium stores it per-origin in the shared
   // Electron userData), then quit — so the next launch can prove zoom is NOT restored.
   const pre = await launch(dataRoot);
-  await (await pre.firstWindow()).waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await (await pre.firstWindow()).waitForSelector("[data-product-shell]", { timeout: 20000 });
   await pre.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.webContents.setZoomFactor(1.5));
   await new Promise((r) => setTimeout(r, 400));
   await pre.close();
 
   const app = await launch(dataRoot);
   const page = await app.firstWindow();
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(800);
   // The new behaviour: a relaunch opens at 100% even though 150% was persisted.
   const startupHost = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.webContents.getZoomFactor() ?? null);
@@ -84,10 +84,10 @@ const launch = (dataRoot) => _electron.launch({
   }
   const treeToggle = page.locator("[aria-label='Open FileTree']");
   if (await treeToggle.count()) { await treeToggle.first().click(); await page.waitForTimeout(1500); }
-  const fileRow = page.locator(".file-tree-row", { hasText: htmlName });
+  const fileRow = page.locator("[data-file-kind]", { hasText: htmlName });
   if (await fileRow.count()) { await fileRow.first().click(); await page.waitForTimeout(1800); }
 
-  const webview = page.locator(".workbench-html-webview");
+  const webview = page.locator("[data-html-pane-webview]");
   check("an HTML <webview> preview is open", (await webview.count()) > 0);
 
   // Zoom persists across restarts (Chromium per-origin, stored in Electron userData —
@@ -99,7 +99,7 @@ const launch = (dataRoot) => _electron.launch({
   // Baseline: everything at 100%, indicator hidden.
   const z0 = await readZoom(app);
   check("host + webview start at 100%", z0.host === 1 && z0.webview === 1, JSON.stringify(z0));
-  check("indicator hidden at 100%", (await page.locator(".zoom-indicator").count()) === 0);
+  check("indicator hidden at 100%", (await page.locator("[data-zoom-indicator]").count()) === 0);
   await page.screenshot({ path: "/tmp/pw-zoom-0-100.png" });
 
   // Focus INTO the webview guest — this is the exact scenario the old role-based zoom
@@ -114,7 +114,7 @@ const launch = (dataRoot) => _electron.launch({
   const z1 = await readZoom(app);
   check("zoom-in scales the HOST UI even with the webview focused", z1.host === 1.1, `host=${z1.host}`);
   check("zoom-in scales the WEBVIEW guest together (cascade)", z1.webview === 1.1, `webview=${z1.webview}`);
-  const pill = page.locator(".zoom-indicator");
+  const pill = page.locator("[data-zoom-indicator]");
   check("indicator appears while zoomed", (await pill.count()) > 0);
   check("indicator shows 110%", (await pill.first().innerText().catch(() => "")) === "110%", await pill.first().innerText().catch(() => ""));
   await page.screenshot({ path: "/tmp/pw-zoom-1-110.png" });
@@ -125,7 +125,7 @@ const launch = (dataRoot) => _electron.launch({
   const z2 = await readZoom(app);
   check("clicking the indicator resets host to 100%", z2.host === 1, `host=${z2.host}`);
   check("clicking the indicator resets the webview to 100%", z2.webview === 1, `webview=${z2.webview}`);
-  check("indicator hidden again after reset", (await page.locator(".zoom-indicator").count()) === 0);
+  check("indicator hidden again after reset", (await page.locator("[data-zoom-indicator]").count()) === 0);
   await page.screenshot({ path: "/tmp/pw-zoom-2-reset.png" });
 
   // Zoom out below 100% to confirm the other direction + a fractional %.
@@ -133,7 +133,7 @@ const launch = (dataRoot) => _electron.launch({
   await page.waitForTimeout(400);
   const z3 = await readZoom(app);
   check("zoom-out drops host + webview to 90%", z3.host === 0.9 && z3.webview === 0.9, JSON.stringify(z3));
-  check("indicator shows 90%", (await page.locator(".zoom-indicator").first().innerText().catch(() => "")) === "90%");
+  check("indicator shows 90%", (await page.locator("[data-zoom-indicator]").first().innerText().catch(() => "")) === "90%");
   await page.screenshot({ path: "/tmp/pw-zoom-3-90.png" });
 
   // Leave persisted zoom at 100% so we don't pollute the next run / the real app.

@@ -6,6 +6,17 @@ import { MessageSquareDashed } from "lucide-react";
 import { ToolActivityGroup } from "./tool-log.tsx";
 import { ReasoningTurn } from "./reasoning.tsx";
 import { AgentSessionTurn } from "./agent-turn.tsx";
+import {
+  AgentSessionViewport,
+  SessionEmptyHint,
+  SessionEmptyIcon,
+  SessionEmptyState,
+  SessionEmptyTitle,
+  SessionSkeleton,
+  SessionSkeletonAgent,
+  SessionSkeletonBubble,
+  SessionSkeletonLine,
+} from "./transcript.parts.tsx";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 export function createAgentSession(
@@ -51,10 +62,12 @@ export function createAgentSession(
     blocks.length === 0 && chatState === "ready" && queuedInputs.length === 0;
 
   return (
-    <section
+    <AgentSessionViewport
       ref={sessionRef}
-      className={`agent-session${showsEmptyPlaceholder ? "" : " agent-session--has-turns"}`}
+      $hasTurns={!showsEmptyPlaceholder}
       aria-label="Agent Session"
+      data-agent-session="true"
+      data-has-turns={showsEmptyPlaceholder ? undefined : "true"}
       data-session-state={blocks.length === 0 ? "empty" : "turns"}
       data-chat-state={chatState}
       // Event-delegated clicks: Copy a code block, or open a file chip.
@@ -63,14 +76,14 @@ export function createAgentSession(
         if (target === null) {
           return;
         }
-        const copyButton = target.closest(".md-code__copy");
+        const copyButton = target.closest("[data-copy]");
         if (copyButton) {
           const pre = copyButton.closest(".md-code")?.querySelector("pre");
           void navigator.clipboard?.writeText(pre?.textContent ?? "");
           return;
         }
         // Add a specific code block to the composer as a quoted chip (reply to it).
-        const quoteCode = onQuote ? target.closest(".md-code__quote") : null;
+        const quoteCode = onQuote ? target.closest("[data-quote-code]") : null;
         if (quoteCode) {
           const pre = quoteCode.closest(".md-code")?.querySelector("pre");
           const text = pre?.textContent ?? "";
@@ -80,35 +93,35 @@ export function createAgentSession(
           return;
         }
         // Copy a whole agent answer (hover action). Flash the button to confirm.
-        const copyAnswer = target.closest(".agent-turn-actions__btn--copy");
+        const copyAnswer = target.closest("[data-agent-turn-action='copy']");
         if (copyAnswer) {
           const body = copyAnswer
-            .closest(".agent-session-turn")
-            ?.querySelector(".agent-session-turn__body");
+            .closest("[data-transcript-turn]")
+            ?.querySelector("[data-turn-body]");
           void navigator.clipboard?.writeText(body?.textContent ?? "");
-          copyAnswer.classList.add("agent-turn-actions__btn--done");
-          window.setTimeout(() => copyAnswer.classList.remove("agent-turn-actions__btn--done"), 1400);
+          copyAnswer.setAttribute("data-action-done", "true");
+          window.setTimeout(() => copyAnswer.removeAttribute("data-action-done"), 1400);
           return;
         }
         // Quote an answer into the composer as a content chip.
-        const quoteAnswer = onQuote ? target.closest(".agent-turn-actions__btn--quote") : null;
+        const quoteAnswer = onQuote ? target.closest("[data-agent-turn-action='quote']") : null;
         if (quoteAnswer) {
           const text = quoteAnswer
-            .closest(".agent-session-turn")
-            ?.querySelector(".agent-session-turn__body")?.textContent ?? "";
+            .closest("[data-transcript-turn]")
+            ?.querySelector("[data-turn-body]")?.textContent ?? "";
           if (text.trim().length > 0) {
             onQuote?.(text.trim());
           }
           return;
         }
         // Retry an answer: resend the user prompt that preceded it as a new turn.
-        const retryAnswer = onResend ? target.closest(".agent-turn-actions__btn--retry") : null;
+        const retryAnswer = onResend ? target.closest("[data-agent-turn-action='retry']") : null;
         if (retryAnswer) {
-          let node = retryAnswer.closest(".agent-session-turn")?.previousElementSibling ?? null;
+          let node = retryAnswer.closest("[data-transcript-turn]")?.previousElementSibling ?? null;
           while (node && node.getAttribute("data-block-role") !== "user") {
             node = node.previousElementSibling;
           }
-          const prompt = node?.querySelector(".agent-session-turn__body")?.textContent ?? "";
+          const prompt = node?.querySelector("[data-turn-body]")?.textContent ?? "";
           if (prompt.trim().length > 0) {
             onResend?.(prompt);
           }
@@ -167,7 +180,7 @@ export function createAgentSession(
       chatState !== "waiting_for_input"
         ? queuedInputs.map((queued, index) => createQueuedInputRow(queued, false, index))
         : null}
-    </section>
+    </AgentSessionViewport>
   );
 }
 
@@ -175,18 +188,18 @@ export function createAgentSession(
 // switching into a thread feels responsive instead of flashing blank.
 function createAgentSessionSkeleton(): ReactElement {
   const line = (width: string, key: string) => (
-    <div key={key} className="agent-skeleton__line" style={{ width }} />
+    <SessionSkeletonLine key={key} style={{ width }} />
   );
   return (
-    <div className="agent-session-skeleton" aria-label="Loading thread" aria-busy="true">
-      <div className="agent-skeleton__bubble" />
-      <div className="agent-skeleton__agent">
+    <SessionSkeleton aria-label="Loading thread" aria-busy="true" data-session-skeleton="true">
+      <SessionSkeletonBubble />
+      <SessionSkeletonAgent>
         {line("92%", "l1")}
         {line("78%", "l2")}
         {line("85%", "l3")}
         {line("40%", "l4")}
-      </div>
-    </div>
+      </SessionSkeletonAgent>
+    </SessionSkeleton>
   );
 }
 
@@ -194,13 +207,15 @@ function createAgentSessionSkeleton(): ReactElement {
 // produced nothing, or a session that ended before any output) — better than a void.
 function createAgentSessionEmptyPlaceholder(): ReactElement {
   return (
-    <div className="agent-session-empty" aria-label="No messages">
-      <MessageSquareDashed size={26} strokeWidth={1.5} className="agent-session-empty__icon" />
-      <p className="agent-session-empty__title">No messages here</p>
-      <p className="agent-session-empty__hint">
+    <SessionEmptyState aria-label="No messages">
+      <SessionEmptyIcon>
+        <MessageSquareDashed size={26} strokeWidth={1.5} />
+      </SessionEmptyIcon>
+      <SessionEmptyTitle>No messages here</SessionEmptyTitle>
+      <SessionEmptyHint>
         This thread has no output yet. Send a message below to start.
-      </p>
-    </div>
+      </SessionEmptyHint>
+    </SessionEmptyState>
   );
 }
 

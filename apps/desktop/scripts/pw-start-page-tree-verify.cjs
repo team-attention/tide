@@ -28,7 +28,7 @@ function check(label, ok, detail = "") {
     env: { ...process.env, TIDE_APP_DATA_ROOT: dataRoot },
   });
   const page = await app.firstWindow();
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(1000);
 
   // Register the repo as a project so the start composer can scope to it.
@@ -53,73 +53,73 @@ function check(label, ok, detail = "") {
     await treeToggle.first().click();
     await page.waitForTimeout(1500);
   }
-  const rows = await page.locator(".file-tree-row").count();
+  const rows = await page.locator("[data-file-kind]").count();
   console.log("tree rows after toggle:", rows);
   check("start-page tree lists the project root after the chip switch", rows > 0, `${rows} rows`);
 
   // Expand a folder — children must appear WITHOUT a thread.
-  const folder = page.locator('.file-tree-row[data-file-kind="folder"]').first();
-  const before = await page.locator(".file-tree-row").count();
+  const folder = page.locator('[data-file-kind="folder"]').first();
+  const before = await page.locator("[data-file-kind]").count();
   await folder.click();
   await page.waitForTimeout(600);
-  const after = await page.locator(".file-tree-row").count();
+  const after = await page.locator("[data-file-kind]").count();
   check("folder expands on the start page", after > before, `${before} -> ${after}`);
   await page.screenshot({ path: "/tmp/pw-start-1-expanded.png" });
 
   // Open a file — it must open as a real Workbench EDITOR PANE on the right,
   // NOT the old chat overlay. The overlay class must be gone entirely.
-  const fileRow = page.locator('.file-tree-row[data-file-kind="file"]').first();
+  const fileRow = page.locator('[data-file-kind="file"]').first();
   const fileName = (await fileRow.innerText()).trim();
   await fileRow.click();
   await page.waitForTimeout(1500);
   await page.screenshot({ path: "/tmp/pw-start-2-editor.png" });
 
-  check("the old chat-overlay viewer is gone", (await page.locator(".start-file-viewer").count()) === 0);
+  check("the old chat-overlay viewer is gone", (await page.locator("[data-start-file-viewer]").count()) === 0);
   const workbench = page.locator('[data-column="workbench"]');
   check("the workbench column opens with the file", (await workbench.count()) > 0);
-  const tab = page.locator(".workbench-tab__title", { hasText: fileName });
+  const tab = page.locator("[data-workbench-tab-title]", { hasText: fileName });
   check("a workbench editor tab shows the file name", (await tab.count()) > 0, fileName);
   // Content renders via the code editor OR the markdown preview.
   const editorText =
     ((await workbench.locator(".cm-content").first().innerText().catch(() => "")) || "") ||
-    ((await workbench.locator(".workbench-md-preview").first().innerText().catch(() => "")) || "");
+    ((await workbench.locator("[data-md-preview]").first().innerText().catch(() => "")) || "");
   check("the editor renders file content", editorText.trim().length > 10, `${editorText.trim().length} chars`);
   // Editable affordance: markdown shows an Edit toggle; code shows a contenteditable
   // CodeMirror (NOT cm-readonly). Either proves the pane is editable, not a viewer.
-  const hasEditToggle = (await workbench.locator(".workbench-md-toggle__option", { hasText: "Edit" }).count()) > 0;
+  const hasEditToggle = (await workbench.locator("[data-md-mode-option]", { hasText: "Edit" }).count()) > 0;
   const editableCm = (await workbench.locator(".cm-content[contenteditable='true']").count()) > 0;
   check("the pane is editable (not read-only)", hasEditToggle || editableCm, hasEditToggle ? "markdown Edit toggle" : "editable code editor");
 
   // Code intelligence (autocomplete) works on the start page too: it is
   // thread-independent (workspace.codeIntel, keyed by cwd). Open a real .ts file
   // and type a member access — completions must surface with NO thread.
-  const testsFolder = page.locator('.file-tree-row[data-file-kind="folder"]', { hasText: "tests" }).first();
+  const testsFolder = page.locator('[data-file-kind="folder"]', { hasText: "tests" }).first();
   if (await testsFolder.count()) {
     await testsFolder.click();
     await page.waitForTimeout(800);
   }
-  const tsRow = page.locator('.file-tree-row[data-file-kind="file"]').filter({ hasText: /\.ts$/ }).first();
+  const tsRow = page.locator('[data-file-kind="file"]').filter({ hasText: /\.ts$/ }).first();
   if (await tsRow.count()) {
     const tsName = (await tsRow.innerText()).trim();
     await tsRow.click();
     await page.waitForTimeout(1800);
-    const codeEditor = workbench.locator(".workbench-editor-cm .cm-content");
+    const codeEditor = workbench.locator("[data-code-editor-host] .cm-content");
     check("a .ts file opens in the start-page code editor", (await codeEditor.count()) > 0, tsName);
 
     // Find References on a clean buffer: right-click an identifier → "Find
     // References" → the references panel must populate (full path: editor →
     // workspace.codeIntel → backend findReferences → applied to startPageFile).
-    const ident = page.locator(".workbench-editor-cm .cm-content .tok-variableName, .workbench-editor-cm .cm-content .tok-propertyName").first();
+    const ident = page.locator("[data-code-editor-host] .cm-content .tok-variableName, [data-code-editor-host] .cm-content .tok-propertyName").first();
     if (await ident.count()) {
       await ident.click();
       await ident.click({ button: "right" });
       await page.waitForTimeout(300);
-      const refItem = page.locator(".workbench-editor-menu__item", { hasText: "Find References" }).first();
+      const refItem = page.locator("[data-editor-menu-item]", { hasText: "Find References" }).first();
       if (await refItem.count()) {
         await refItem.click();
         await page.waitForTimeout(3200);
-        const panel = workbench.locator(".workbench-editor-references");
-        const refCount = await panel.locator(".workbench-editor-references__item").count();
+        const panel = workbench.locator("[data-editor-references]");
+        const refCount = await panel.locator("[data-editor-reference-item]").count();
         await page.screenshot({ path: "/tmp/pw-start-3-references.png" });
         check("find-references populates the panel on the start-page editor (no thread)", (await panel.count()) > 0 && refCount > 0, `${refCount} refs`);
       }
@@ -141,7 +141,7 @@ function check(label, ok, detail = "") {
   }
 
   // Closing the editor tab collapses the workbench (no thread to fall back to).
-  const closeTab = workbench.locator(".workbench-tab__close").first();
+  const closeTab = workbench.locator("[data-workbench-tab-close]").first();
   if (await closeTab.count()) {
     await closeTab.click();
     await page.waitForTimeout(400);

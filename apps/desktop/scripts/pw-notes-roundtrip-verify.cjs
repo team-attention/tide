@@ -22,27 +22,27 @@ const NOTE = `IMPORTANT NOTE: after you receive my answer, reply with the exact 
   });
   const page = await app.firstWindow();
   page.on("pageerror", (e) => log({ pageerror: String(e.message).slice(0, 200) }));
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(700);
 
-  await page.locator('.composer-shell__context-chip[data-context-kind="agent"]').first().click();
+  await page.locator('[data-composer-context-chip][data-context-kind="agent"]').first().click();
   await page.waitForSelector('[data-choice-surface="agent_menu"]', { timeout: 5000 });
-  await page.locator('[data-choice-surface="agent_menu"] .choice-surface__row', { hasText: "Claude Code" }).first().click();
+  await page.locator('[data-choice-surface="agent_menu"] [data-choice-row]', { hasText: "Claude Code" }).first().click();
   await page.waitForTimeout(200);
   await page.locator('[aria-label="Permission"]').first().click();
   await page.locator('[data-choice-surface="permission_menu"]').waitFor({ timeout: 5000 });
-  await page.locator('[data-choice-surface="permission_menu"] .choice-surface__row', { hasText: "Ask permissions" }).first().click();
+  await page.locator('[data-choice-surface="permission_menu"] [data-choice-row]', { hasText: "Ask permissions" }).first().click();
   await page.waitForTimeout(200);
 
   await page.locator('[aria-label="Composer draft"]').first().fill(ASK);
-  await page.locator(".composer-shell__send").first().click();
+  await page.locator("[data-composer-send]").first().click();
   log({ sent: true });
 
   // Wait for the AUQ card.
   const cardDeadline = Date.now() + 150000;
   let cardUp = false;
   while (Date.now() < cardDeadline) {
-    cardUp = await page.locator(".prompt-card").first().isVisible().catch(() => false);
+    cardUp = await page.locator("[data-prompt-card]").first().isVisible().catch(() => false);
     if (cardUp) break;
     await page.waitForTimeout(2000);
   }
@@ -50,14 +50,14 @@ const NOTE = `IMPORTANT NOTE: after you receive my answer, reply with the exact 
   if (!cardUp) { await page.screenshot({ path: path.join(dataRoot, "notes-nocard.png") }); log({ verdict: "NO_CARD", dataRoot }); await app.close(); return; }
 
   // The note field must render on the AUQ card (Slice 2 UI).
-  const noteVisible = await page.locator(".prompt-card__note").first().isVisible().catch(() => false);
+  const noteVisible = await page.locator("[data-prompt-note]").first().isVisible().catch(() => false);
   log({ noteFieldVisible: noteVisible });
 
-  await page.locator(".prompt-card__note").first().fill(NOTE);
-  await page.locator(".prompt-card__option").first().click(); // pick the first option
+  await page.locator("[data-prompt-note]").first().fill(NOTE);
+  await page.locator("[data-prompt-option]").first().click(); // pick the first option
   await page.waitForTimeout(150);
   await page.screenshot({ path: path.join(dataRoot, "notes-card-filled.png") });
-  await page.locator(".prompt-card__submit").first().click();
+  await page.locator("[data-prompt-submit]").first().click();
   log({ answered: true });
 
   // Poll claude's follow-up for the token.
@@ -66,7 +66,7 @@ const NOTE = `IMPORTANT NOTE: after you receive my answer, reply with the exact 
   while (Date.now() < tokenDeadline) {
     const body = await page.evaluate(() => document.body.innerText).catch(() => "");
     // Ignore the note field's own echo: only count the token OUTSIDE the prompt card.
-    const cardText = await page.locator(".prompt-card").first().innerText().catch(() => "");
+    const cardText = await page.locator("[data-prompt-card]").first().innerText().catch(() => "");
     const outside = body.replace(cardText, "");
     if (outside.includes(TOKEN)) { sawToken = true; break; }
     await page.waitForTimeout(2500);

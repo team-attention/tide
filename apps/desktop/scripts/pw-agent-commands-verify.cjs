@@ -32,22 +32,22 @@ if (!res.ok) { console.error("seed failed", res.error); process.exit(1); }
 
   const app = await _electron.launch({ args: [path.join(desktop, "out/main/electron-main.js")], env: { ...process.env, TIDE_APP_DATA_ROOT: dataRoot } });
   const page = await app.firstWindow();
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
-  await page.waitForSelector(".thread-row__main", { timeout: 10000 }).catch(() => {});
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
+  await page.waitForSelector("[data-thread-row-main]", { timeout: 10000 }).catch(() => {});
   await page.waitForTimeout(800);
 
   // Scope a Start Composer to the repo-root project.
-  const projectRow = page.locator(".project-row, [class*='project-row']").first();
+  const projectRow = page.locator("[data-project-row]").first();
   if ((await projectRow.count()) > 0) await projectRow.hover().catch(() => {});
   await page.waitForTimeout(400);
   const newInProject = page.locator("[aria-label='New thread in project']").first();
   if ((await newInProject.count()) === 0) { console.log("no New thread in project"); await app.close(); process.exit(2); }
   await newInProject.click({ force: true });
-  await page.waitForSelector(".agent-chat-shell--start textarea", { timeout: 6000 }).catch(() => {});
+  await page.waitForSelector('[data-chat-start="true"] textarea', { timeout: 6000 }).catch(() => {});
   await page.waitForTimeout(600);
 
   const dumpRows = async () => {
-    const rows = page.locator(".chip-popover__row, .choice-surface__row, [role='option']");
+    const rows = page.locator("[data-choice-row], [data-choice-row], [role='option']");
     const n = await rows.count(); const out = [];
     for (let i = 0; i < Math.min(n, 60); i += 1) out.push((await rows.nth(i).innerText()).trim().replace(/\s+/g, " "));
     return out;
@@ -55,14 +55,14 @@ if (!res.ok) { console.error("seed failed", res.error); process.exit(1); }
 
   for (const label of ["opencode", "Codex CLI"]) {
     // Open the agent chip menu and pick the agent.
-    await page.locator(".agent-chat-shell--start [data-context-kind='agent']").first().click().catch(() => {});
+    await page.locator(`[data-chat-start="true"] [data-context-kind='agent']`).first().click().catch(() => {});
     await page.waitForTimeout(500);
-    const row = page.locator(".chip-popover__row, .choice-surface__row").filter({ hasText: label }).first();
+    const row = page.locator("[data-choice-row], [data-choice-row]").filter({ hasText: label }).first();
     if ((await row.count()) === 0) { console.log(`[${label}] agent row not found; menu=`, JSON.stringify(await dumpRows())); await page.keyboard.press("Escape"); continue; }
     await row.click({ force: true });
     // Read AFTER the probe resolves (8s timeout) so a slow handshake isn't misread as empty.
     await page.waitForTimeout(9500);
-    const composer = page.locator(".agent-chat-shell--start textarea").first();
+    const composer = page.locator('[data-chat-start="true"] textarea').first();
     await composer.click(); await composer.fill(""); await composer.type("/", { delay: 60 });
     await page.waitForTimeout(900);
     const rows = await dumpRows();

@@ -156,12 +156,6 @@
   to { opacity: 1; transform: none; }
 }
 
-/* Newly revealed file-tree rows (folder expand / tree load). */
-@keyframes tide-tree-row-in {
-  from { opacity: 0; transform: translateY(-3px); }
-  to { opacity: 1; transform: none; }
-}
-
 html,
 body,
 #root {
@@ -229,39 +223,6 @@ a:focus-visible,
   background-clip: padding-box;
 }
 
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-/* Provider identity badge: a small rounded tile with a 2-letter monogram
-   (Co/Cl/Ag/AI). Monochrome so it sits quietly in the neutral UI. */
-.agent-identity-icon {
-  width: 18px;
-  height: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  border-radius: 6px;
-  background: var(--tide-selection);
-  color: var(--tide-muted);
-  box-shadow: inset 0 0 0 1px var(--tide-line);
-  font-size: 9.5px;
-  font-weight: 650;
-  letter-spacing: 0.01em;
-  line-height: 1;
-  text-transform: none;
-  user-select: none;
-}
-
 /* Syntax-highlight token theme (from @lezer/highlight classHighlighter), used in
    tool-body code and markdown code blocks. Tuned for the light surface. */
 .tok-keyword { color: #a626a4; }
@@ -314,8 +275,8 @@ a:focus-visible,
 
 /* Accessibility: honor the OS "reduce motion" setting globally — neutralize
    entrance animations, looping pulses/shimmers, and transitions for users who
-   opt out. (The .collapsible height + chevron transitions are separately gated
-   behind prefers-reduced-motion: no-preference, so they're already off here.) */
+   opt out. Collapsible height and chevron transitions are separately gated by
+   their owning components, so they're already off here. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

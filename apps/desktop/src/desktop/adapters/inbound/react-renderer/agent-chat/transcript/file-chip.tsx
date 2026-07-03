@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
 import { fileIconFor } from "../../support/file-icons.ts";
+import { FileChip, FileChipDir, FileChipName } from "./transcript.parts.tsx";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 // The file path a read/view tool targets (e.g. {"file_path":"…"} or DirectoryPath).
@@ -25,18 +26,17 @@ export function renderFileChip(path: string): ReactElement {
   const dir = slash === -1 ? "" : path.slice(0, slash);
   const Icon = fileIconFor(name);
   return (
-    <button
+    <FileChip
       type="button"
-      className="agent-session-turn__file-chip"
       data-open-file={path}
       title={`Open ${name} in the Workbench`}
     >
       <Icon size={14} strokeWidth={1.85} aria-hidden />
-      <span className="agent-session-turn__file-chip-name">{name}</span>
+      <FileChipName>{name}</FileChipName>
       {dir.length > 0 ? (
-        <span className="agent-session-turn__file-chip-dir">{dir}</span>
+        <FileChipDir>{dir}</FileChipDir>
       ) : null}
-    </button>
+    </FileChip>
   );
 }
 

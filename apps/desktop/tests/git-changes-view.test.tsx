@@ -64,8 +64,8 @@ test("changes_pane_lists_files_with_status_branch_and_plus_minus_totals", async 
   assert.match(html, /\+15/);
   assert.match(html, /−11/);
   assert.match(html, /app\.ts/);
-  assert.match(html, /changes-panel__status--untracked/);
-  assert.match(html, /changes-panel__status--deleted/);
+  assert.match(html, /data-status="untracked"/);
+  assert.match(html, /data-status="deleted"/);
 });
 
 test("changes_pane_shows_not_a_git_repo_state", async () => {
@@ -125,12 +125,12 @@ test("file_tree_renders_git_status_badges_and_deleted_rows", () => {
 
   // Status is conveyed by COLOR (tinted name + a colored dot), not letter/number badges.
   assert.match(html, /data-git-status="modified"/);
-  assert.match(html, /file-tree-row__git-dot--modified/);
+  assert.match(html, /data-git-status="modified"[\s\S]*?role="img"/);
   assert.match(html, /data-git-status="untracked"/);
-  assert.match(html, /file-tree-row__git-dot--untracked/);
+  assert.match(html, /data-git-status="untracked"[\s\S]*?role="img"/);
   assert.match(html, /src\/deleted\.ts/);
-  assert.match(html, /file-tree-row--git-deleted/);
-  assert.match(html, /file-tree-row__git-dot--deleted/);
+  assert.match(html, /data-synthetic-deleted="true"/);
+  assert.match(html, /data-git-status="deleted"[\s\S]*?role="img"/);
   // No more number/letter badges in the tree.
   assert.doesNotMatch(html, /file-tree-row__git-count/);
   // The descendant count survives only as the folder dot's hover hint.

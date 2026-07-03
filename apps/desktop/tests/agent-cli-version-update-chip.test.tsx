@@ -47,7 +47,7 @@ test("composer toolbar shows an Update <Agent> chip when an advisory is present"
   const markup = renderToStaticMarkup(
     createComposer(viewModelWith({ currentVersion: "2.1.179", latestVersion: "2.1.181", terminalAction: advisoryTerminalAction }), {}),
   );
-  assert.match(markup, /composer-shell__choice-chip--update/);
+  assert.match(markup, /data-choice-kind="update"/);
   assert.match(markup, /Update Claude Code/);
   // The version detail lives in the tooltip, not as card body text.
   assert.match(markup, /v2\.1\.179 → v2\.1\.181/);
@@ -55,7 +55,7 @@ test("composer toolbar shows an Update <Agent> chip when an advisory is present"
 
 test("composer toolbar shows no update chip when there is no advisory", () => {
   const markup = renderToStaticMarkup(createComposer(viewModelWith(undefined), {}));
-  assert.doesNotMatch(markup, /composer-shell__choice-chip--update/);
+  assert.doesNotMatch(markup, /data-choice-kind="update"/);
   assert.doesNotMatch(markup, /Update Claude Code/);
 });
 
@@ -67,7 +67,7 @@ test("the update advisory is a chip, not a choice-surface card", () => {
     ),
   );
   // The chip is present...
-  assert.match(markup, /composer-shell__choice-chip--update/);
+  assert.match(markup, /data-choice-kind="update"/);
   // ...but the old nudge card's "Update available" source label is gone.
   assert.doesNotMatch(markup, /Update available/);
 });
@@ -105,7 +105,7 @@ test("clicking the update chip dispatches the update_available:terminal readines
       );
     });
 
-    const chip = container.querySelector(".composer-shell__choice-chip--update");
+    const chip = container.querySelector('[data-composer-choice-chip][data-choice-kind="update"]');
     assert.ok(chip, "expected an update chip in the toolbar");
     await act(async () => {
       (chip as HTMLButtonElement).dispatchEvent(

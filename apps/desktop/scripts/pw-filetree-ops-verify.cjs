@@ -31,7 +31,7 @@ function check(label, ok, detail = "") {
     env: { ...process.env, TIDE_APP_DATA_ROOT: dataRoot },
   });
   const page = await app.firstWindow();
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(800);
 
   // Register the throwaway project, then reload so the shell re-fetches the registry
@@ -39,7 +39,7 @@ function check(label, ok, detail = "") {
   await page.evaluate(async (cwd) => { await window.tide.registerProject(cwd); }, project);
   await page.waitForTimeout(400);
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(1000);
   // Scope the start composer to the throwaway project.
   await page.locator("button", { hasText: "Scratch" }).first().click();
@@ -50,14 +50,14 @@ function check(label, ok, detail = "") {
   // Open the FileTree.
   const treeToggle = page.locator('[aria-label="Open FileTree"]');
   if (await treeToggle.count()) { await treeToggle.first().click(); await page.waitForTimeout(1200); }
-  check("FileTree lists the project root", (await page.locator(".file-tree-row").count()) > 0);
+  check("FileTree lists the project root", (await page.locator("[data-file-kind]").count()) > 0);
   check("FileTree toolbar shows New File / New Folder", (await page.locator('[aria-label="New File"]').count()) > 0 && (await page.locator('[aria-label="New Folder"]').count()) > 0);
   await page.screenshot({ path: "/tmp/pw-fileops-0-tree.png" });
 
   // --- New File → untitled pane → Save As → file on disk ---
   await page.locator('[aria-label="New File"]').first().click();
   await page.waitForTimeout(600);
-  check("New File opens an untitled editor tab", (await page.locator(".workbench-tab__title", { hasText: /Untitled-1/ }).count()) > 0);
+  check("New File opens an untitled editor tab", (await page.locator("[data-workbench-tab-title]", { hasText: /Untitled-1/ }).count()) > 0);
   await page.locator(".cm-content").first().click();
   await page.keyboard.type("created via new file\n", { delay: 20 });
   await page.keyboard.press(process.platform === "darwin" ? "Meta+s" : "Control+s");
@@ -66,7 +66,7 @@ function check(label, ok, detail = "") {
   check("Cmd+S on an untitled opens the Save As dialog", (await saveAs.count()) > 0);
   await page.screenshot({ path: "/tmp/pw-fileops-1-saveas.png" });
   await page.locator('[aria-label="File path"]').fill("notes/created.md");
-  await page.locator(".worktree-create__confirm", { hasText: "Save" }).first().click();
+  await page.locator("[data-worktree-create-confirm]", { hasText: "Save" }).first().click();
   await page.waitForTimeout(1000);
   check("Save As writes the untitled to disk", fs.existsSync(path.join(project, "notes/created.md")), "notes/created.md");
   check("the saved file's content is the typed buffer", fs.readFileSync(path.join(project, "notes/created.md"), "utf8").includes("created via new file"));
@@ -74,7 +74,7 @@ function check(label, ok, detail = "") {
   // --- New Folder via toolbar inline input ---
   await page.locator('[aria-label="New Folder"]').first().click();
   await page.waitForTimeout(300);
-  const folderInput = page.locator(".file-tree-inline-input");
+  const folderInput = page.locator("[data-file-tree-inline-input]");
   check("New Folder shows an inline name input", (await folderInput.count()) > 0);
   await folderInput.first().fill("widgets");
   await folderInput.first().press("Enter");
@@ -83,16 +83,16 @@ function check(label, ok, detail = "") {
 
   // --- Rename via context menu (right-click a file) ---
   // Expand src so old-name.ts is visible.
-  const srcFolder = page.locator('.file-tree-row[data-file-kind="folder"]', { hasText: "src" }).first();
+  const srcFolder = page.locator('[data-file-kind="folder"]', { hasText: "src" }).first();
   if (await srcFolder.count()) { await srcFolder.click(); await page.waitForTimeout(700); }
-  const oldFile = page.locator(".file-tree-row", { hasText: "old-name.ts" }).first();
+  const oldFile = page.locator("[data-file-kind]", { hasText: "old-name.ts" }).first();
   await oldFile.click({ button: "right" });
   await page.waitForTimeout(300);
-  check("right-click opens the FileTree context menu", (await page.locator(".left-rail-context-menu--file-tree").count()) > 0);
+  check("right-click opens the FileTree context menu", (await page.locator("[data-file-tree-context-menu]").count()) > 0);
   await page.screenshot({ path: "/tmp/pw-fileops-2-menu.png" });
-  await page.locator(".left-rail-context-menu__item", { hasText: "Rename" }).first().click();
+  await page.locator("[data-file-tree-menu-item]", { hasText: "Rename" }).first().click();
   await page.waitForTimeout(300);
-  const renameInput = page.locator(".file-tree-inline-input");
+  const renameInput = page.locator("[data-file-tree-inline-input]");
   check("Rename prefills an inline input", (await renameInput.count()) > 0 && (await renameInput.first().inputValue()) === "old-name.ts");
   await renameInput.first().fill("new-name.ts");
   await renameInput.first().press("Enter");
@@ -100,21 +100,21 @@ function check(label, ok, detail = "") {
   check("Rename moves the file on disk", !fs.existsSync(path.join(project, "src/old-name.ts")) && fs.existsSync(path.join(project, "src/new-name.ts")));
 
   // --- Delete via context menu → confirm → OS Trash ---
-  const doomed = page.locator(".file-tree-row", { hasText: "doomed.txt" }).first();
+  const doomed = page.locator("[data-file-kind]", { hasText: "doomed.txt" }).first();
   await doomed.click({ button: "right" });
   await page.waitForTimeout(300);
-  await page.locator(".left-rail-context-menu__item", { hasText: "Delete" }).first().click();
+  await page.locator("[data-file-tree-menu-item]", { hasText: "Delete" }).first().click();
   await page.waitForTimeout(300);
   const delDialog = page.locator('[aria-label="Delete"]');
   check("Delete opens a confirm dialog", (await delDialog.count()) > 0);
   await page.screenshot({ path: "/tmp/pw-fileops-3-delete.png" });
-  await page.locator(".worktree-delete__confirm", { hasText: "Move to Trash" }).first().click();
+  await page.getByRole("button", { name: "Move to Trash" }).click();
   await page.waitForTimeout(1200);
   check("Delete moves the file to the Trash (gone from the project)", !fs.existsSync(path.join(project, "doomed.txt")));
 
   // --- Drag-and-drop move: drag readme.md onto the src folder ---
-  const readmeRow = page.locator(".file-tree-row", { hasText: "readme.md" }).first();
-  const srcTarget = page.locator('.file-tree-row[data-file-kind="folder"]', { hasText: "src" }).first();
+  const readmeRow = page.locator("[data-file-kind]", { hasText: "readme.md" }).first();
+  const srcTarget = page.locator('[data-file-kind="folder"]', { hasText: "src" }).first();
   await readmeRow.dragTo(srcTarget);
   await page.waitForTimeout(1200);
   check(

@@ -2,6 +2,7 @@ import type { DropZone, ProductShellWorkbenchViewModel, SplitDirection, Workbenc
 import type { GitChangesView, ProductShellHandlers } from "../support/types.ts";
 import { useRef, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
+import { styled } from "styled-components";
 import { X } from "lucide-react";
 import { createWorkbenchPaneContent } from "./pane-content.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
@@ -21,7 +22,7 @@ type SplitDropState = {
 // The leaf occupying the top-right CORNER of the split (a row node's right child, a
 // col node's top child). Its header is the one the fixed top-right window cluster
 // floats over, so it's the pane that must reserve room for the cluster. See chrome.tsx
-// + the corner-pane padding rule in product-shell.css.
+// and ProductShellBody's top-right split-pane padding rule.
 function topRightLeafPaneId(node: WorkbenchSplitNode): string {
   if (node.type === "leaf") {
     return node.paneId;
@@ -116,7 +117,7 @@ export function WorkbenchSplitView(props: {
       if (container === null) {
         return;
       }
-      const panes = Array.from(container.querySelectorAll<HTMLElement>(".workbench-split__pane"));
+      const panes = Array.from(container.querySelectorAll<HTMLElement>("[data-workbench-split-pane]"));
       const hit = panes.find((p) => {
         const r = p.getBoundingClientRect();
         return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
@@ -190,57 +191,55 @@ export function WorkbenchSplitView(props: {
     }
     const isDropTarget = drop !== null && drop.paneId === paneId;
     return (
-      <section
+      <WorkbenchSplitPane
         key={pane.paneId}
-        className={
-          "workbench-split__pane" +
-          (pane.paneId === viewModel.appChrome.activeWorkbenchPane?.paneId ? " is-active" : "") +
-          (drag !== null && drag.paneId === pane.paneId ? " is-dragging" : "") +
-          (isDropTarget ? " is-drop-target" : "")
-        }
+        data-workbench-split-pane="true"
         data-pane-id={pane.paneId}
         data-pane-kind={pane.kind}
         data-corner={pane.paneId === cornerPaneId ? "top-right" : undefined}
+        data-active={pane.paneId === viewModel.appChrome.activeWorkbenchPane?.paneId ? "true" : "false"}
+        data-dragging={drag !== null && drag.paneId === pane.paneId ? "true" : "false"}
+        data-drop-target={isDropTarget ? "true" : "false"}
       >
         {/* The header is the drag handle AND carries the SAME tab chip as Stacked, so
             a pane looks identical whether it's a tab or a split header. Clicking the
             chip focuses the pane; the empty grip area is the drag surface. */}
-        <div className="workbench-split__pane-header" onPointerDown={beginPaneDrag(pane.paneId)}>
-          <div
-            className="workbench-tab workbench-split__pane-tab"
+        <WorkbenchSplitPaneHeader data-workbench-split-pane-header="true" onPointerDown={beginPaneDrag(pane.paneId)}>
+          <WorkbenchSplitPaneTab
             data-active={pane.paneId === viewModel.appChrome.activeWorkbenchPane?.paneId}
             data-kind={pane.kind}
+            data-workbench-tab="true"
           >
-            <button
-              className="workbench-tab__label"
+            <WorkbenchSplitPaneTabLabel
               type="button"
+              data-workbench-tab-label="true"
               // Focus via this button's own click — stop pointerdown so it doesn't reach
               // the header's beginPaneDrag (no drag from the chip, no double-focus with the
               // grip's onUp focus). The empty grip stays the drag surface.
               onPointerDown={(e: { stopPropagation: () => void }) => e.stopPropagation()}
               onClick={() => handlers.onFocusWorkbenchPane(pane.paneId)}
             >
-              <span className="workbench-tab__icon" aria-hidden>
+              <WorkbenchSplitPaneTabIcon aria-hidden>
                 {paneIcon(pane.kind)}
-              </span>
-              <span className="workbench-tab__title">{pane.title ?? pane.kind}</span>
-            </button>
-            <button
-              className="workbench-tab__close"
+              </WorkbenchSplitPaneTabIcon>
+              <WorkbenchSplitPaneTabTitle data-workbench-tab-title="true">{pane.title ?? pane.kind}</WorkbenchSplitPaneTabTitle>
+            </WorkbenchSplitPaneTabLabel>
+            <WorkbenchSplitPaneCloseButton
               type="button"
+              data-workbench-tab-close="true"
               title="Close Pane"
               aria-label="Close Pane"
               onPointerDown={(e: { stopPropagation: () => void }) => e.stopPropagation()}
               onClick={() => handlers.onCloseWorkbenchPane(pane.paneId)}
             >
               <X size={14} strokeWidth={2.2} aria-hidden />
-            </button>
-          </div>
+            </WorkbenchSplitPaneCloseButton>
+          </WorkbenchSplitPaneTab>
           {/* The rest of the strip is the drag surface. (No per-pane maximize — switch
               layout via the top-right ⋯ menu; click a pane to focus it.) */}
-          <span className="workbench-split__pane-grip" aria-hidden />
-        </div>
-        <div className="workbench-split__pane-body">
+          <WorkbenchSplitPaneGrip aria-hidden />
+        </WorkbenchSplitPaneHeader>
+        <WorkbenchSplitPaneBody>
           {createWorkbenchPaneContent(
             pane,
             handlers,
@@ -248,8 +247,8 @@ export function WorkbenchSplitView(props: {
             gitChanges,
             viewModel.activeThreadId,
           )}
-        </div>
-      </section>
+        </WorkbenchSplitPaneBody>
+      </WorkbenchSplitPane>
     );
   };
 
@@ -266,36 +265,230 @@ export function WorkbenchSplitView(props: {
       display: "flex",
     });
     return (
-      <div
-        className={`workbench-split__node workbench-split__node--${node.dir}`}
-        key={`n-${path.join("") || "root"}`}
-      >
-        <div className="workbench-split__slot" style={slotStyle(node.ratio)}>
+      <WorkbenchSplitNodeGroup $dir={node.dir} key={`n-${path.join("") || "root"}`}>
+        <WorkbenchSplitSlot style={slotStyle(node.ratio)}>
           {renderNode(node.a, [...path, "a"])}
-        </div>
-        <div
-          className={`workbench-split__divider workbench-split__divider--${node.dir}`}
+        </WorkbenchSplitSlot>
+        <WorkbenchSplitDivider
+          $dir={node.dir}
           role="separator"
           aria-orientation={node.dir === "row" ? "vertical" : "horizontal"}
           onPointerDown={dividerDrag(node.dir, path)}
         />
-        <div className="workbench-split__slot" style={slotStyle(1 - node.ratio)}>
+        <WorkbenchSplitSlot style={slotStyle(1 - node.ratio)}>
           {renderNode(node.b, [...path, "b"])}
-        </div>
-      </div>
+        </WorkbenchSplitSlot>
+      </WorkbenchSplitNodeGroup>
     );
   };
 
   return (
-    <div className="workbench-split" ref={containerRef}>
+    <WorkbenchSplitBoard ref={containerRef}>
       {renderNode(tree, [])}
-      {drag !== null ? <div className="workbench-split__drag-overlay" /> : null}
+      {drag !== null ? <WorkbenchSplitDragOverlay /> : null}
       {drop !== null ? (
-        <div
-          className={`workbench-split__drop-preview workbench-split__drop-preview--${drop.zone}`}
+        <WorkbenchSplitDropPreview
+          $zone={drop.zone}
           style={{ left: drop.rect.left, top: drop.rect.top, width: drop.rect.width, height: drop.rect.height } as CSSProperties}
         />
       ) : null}
-    </div>
+    </WorkbenchSplitBoard>
   );
 }
+
+const WorkbenchSplitBoard = styled.div`
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: row;
+  background: var(--tide-bg);
+`;
+
+const WorkbenchSplitNodeGroup = styled.div<{ $dir: SplitDirection }>`
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: ${({ $dir }) => ($dir === "row" ? "row" : "column")};
+  overflow: hidden;
+`;
+
+const WorkbenchSplitSlot = styled.div`
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+`;
+
+const WorkbenchSplitPane = styled.section`
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  &[data-dragging="true"] {
+    opacity: 0.5;
+  }
+
+  &[data-active="true"] {
+    box-shadow: inset 0 2px 0 var(--tide-action);
+  }
+
+  &[data-active="true"] > [data-workbench-split-pane-header] {
+    background: var(--tide-bg);
+  }
+
+  &:not([data-active="true"]) > [data-workbench-split-pane-header] {
+    opacity: 0.62;
+  }
+`;
+
+const WorkbenchSplitPaneHeader = styled.div`
+  height: 52px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--tide-line);
+  background: var(--tide-surface);
+  cursor: grab;
+  user-select: none;
+
+  &:active {
+    cursor: grabbing;
+  }
+`;
+
+const WorkbenchSplitPaneTab = styled.div`
+  max-width: none;
+  flex: 0 3 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px 0 9px;
+  color: var(--tide-muted);
+  transition: background 0.12s ease, box-shadow 0.12s ease, color 0.12s ease;
+
+  &[data-active="true"] {
+    color: var(--tide-text);
+  }
+`;
+
+const WorkbenchSplitPaneTabLabel = styled.button`
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 520;
+
+  ${WorkbenchSplitPaneTab}[data-active="true"] & {
+    font-weight: 590;
+  }
+`;
+
+const WorkbenchSplitPaneTabIcon = styled.span`
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--tide-muted);
+
+  ${WorkbenchSplitPaneTab}[data-active="true"] & {
+    color: var(--tide-text);
+  }
+`;
+
+const WorkbenchSplitPaneTabTitle = styled.span`
+  min-width: 0;
+  max-width: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const WorkbenchSplitPaneCloseButton = styled.button`
+  width: 0;
+  height: 22px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, width 0.12s ease, background 0.12s ease, color 0.12s ease;
+
+  ${WorkbenchSplitPaneTab}:hover &,
+  ${WorkbenchSplitPaneTab}[data-active="true"] &,
+  &:focus-visible {
+    width: 22px;
+    opacity: 1;
+  }
+
+  &:hover {
+    background: var(--tide-selection);
+    color: var(--tide-text);
+  }
+`;
+
+const WorkbenchSplitPaneGrip = styled.span`
+  flex: 1 1 auto;
+  align-self: stretch;
+`;
+
+const WorkbenchSplitPaneBody = styled.div`
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+`;
+
+const WorkbenchSplitDivider = styled.div<{ $dir: SplitDirection }>`
+  flex: 0 0 auto;
+  background: var(--tide-line);
+  transition: background 0.12s ease;
+  z-index: 1;
+  ${({ $dir }) => ($dir === "row" ? "width: 6px; cursor: col-resize;" : "height: 6px; cursor: row-resize;")}
+
+  &:hover {
+    background: var(--tide-action);
+  }
+`;
+
+const WorkbenchSplitDragOverlay = styled.div`
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  cursor: grabbing;
+`;
+
+const WorkbenchSplitDropPreview = styled.div<{ $zone: DropZone }>`
+  position: absolute;
+  z-index: 60;
+  pointer-events: none;
+  border: 2px solid var(--tide-action);
+  border-radius: 6px;
+  background: ${({ $zone }) =>
+    $zone === "center"
+      ? "color-mix(in srgb, var(--tide-action) 14%, transparent)"
+      : "color-mix(in srgb, var(--tide-action) 22%, transparent)"};
+  border-style: ${({ $zone }) => ($zone === "center" ? "dashed" : "solid")};
+  transition: left 0.08s ease, top 0.08s ease, width 0.08s ease, height 0.08s ease;
+`;

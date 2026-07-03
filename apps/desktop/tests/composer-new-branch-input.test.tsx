@@ -84,7 +84,7 @@ test("composer_branch_menu_new_worktree_branch_expands_an_inline_name_input", as
       root.render(<TideProductShell initialState={seededBranchMenuState()} />);
     });
 
-    const newBranch = [...container.querySelectorAll(".choice-surface__row")].find(
+    const newBranch = [...container.querySelectorAll("[data-choice-row]")].find(
       (button) => button.textContent?.includes("New worktree branch"),
     ) as HTMLButtonElement | undefined;
     assert.ok(newBranch, "Branch picker should render a New worktree branch row");
@@ -93,11 +93,11 @@ test("composer_branch_menu_new_worktree_branch_expands_an_inline_name_input", as
       newBranch.click();
     });
 
-    const input = container.querySelector(".choice-surface__inline-input") as HTMLInputElement | null;
+    const input = container.querySelector("[data-choice-inline-input]") as HTMLInputElement | null;
     assert.ok(input, "New worktree branch should expand an inline name input in the dropdown");
     assert.equal(input.getAttribute("aria-label"), "New worktree branch name");
     assert.equal(dom.window.document.activeElement, input);
-    assert.equal(container.querySelector(".worktree-create__input"), null);
+    assert.equal(container.querySelector("[data-worktree-dialog-input]"), null);
   } finally {
     await act(async () => {
       root.unmount();
@@ -116,7 +116,7 @@ test("composer_worktree_menu_new_worktree_is_a_plain_deferred_option", async () 
       root.render(<TideProductShell initialState={seededWorktreeMenuState()} />);
     });
 
-    const newWorktree = [...container.querySelectorAll(".choice-surface__row")].find(
+    const newWorktree = [...container.querySelectorAll("[data-choice-row]")].find(
       (button) => button.textContent?.includes("New worktree"),
     ) as HTMLButtonElement | undefined;
     assert.ok(newWorktree, "Worktree picker should render a New worktree row");
@@ -125,7 +125,7 @@ test("composer_worktree_menu_new_worktree_is_a_plain_deferred_option", async () 
       newWorktree.click();
     });
 
-    assert.equal(container.querySelector(".choice-surface__inline-input"), null);
+    assert.equal(container.querySelector("[data-choice-inline-input]"), null);
   } finally {
     await act(async () => {
       root.unmount();

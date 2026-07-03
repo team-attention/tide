@@ -37,10 +37,10 @@ async function dump(page, label) {
     env: { ...process.env, TIDE_APP_DATA_ROOT: dataRoot },
   });
   const page = await app.firstWindow();
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(1000);
 
-  const threadRows = page.locator(".thread-row__main");
+  const threadRows = page.locator("[data-thread-row-main]");
   if ((await threadRows.count()) > 0) {
     await threadRows.first().click();
     await page.waitForTimeout(1200);
@@ -52,34 +52,34 @@ async function dump(page, label) {
   await page.waitForTimeout(1000);
   let resultRows = 0;
   for (let attempt = 0; attempt < 10 && resultRows === 0; attempt += 1) {
-    await page.locator(".quick-open__input").fill("");
+    await page.locator("[data-quick-open-input]").fill("");
     await page.keyboard.type("code-intel-mappers");
     await page.waitForTimeout(1000);
-    resultRows = await page.locator(".quick-open__row").count();
+    resultRows = await page.locator("[data-quick-open-row]").count();
   }
   console.log("quick-open results:", resultRows);
   await page.keyboard.press("Enter");
   await page.waitForTimeout(2000);
   await dump(page, "1-file-open");
 
-  const editor = page.locator(".workbench-editor-cm .cm-content");
+  const editor = page.locator("[data-code-editor-host] .cm-content");
   check("editor pane opened", (await editor.count()) > 0);
 
   // 1. Themed syntax highlighting: classHighlighter emits tok-* spans.
-  const tokenCount = await page.locator(".workbench-editor-cm .cm-content [class*='tok-']").count();
+  const tokenCount = await page.locator("[data-code-editor-host] .cm-content [class*='tok-']").count();
   check("themed tok-* syntax tokens render", tokenCount > 20, `${tokenCount} tokens`);
 
   // 1b. Render isolation (spec: desktop-product-shell-render-isolation): typing in the
   // composer re-renders the shell on every keystroke. With per-slice subscriptions the
   // workbench column bails, so the CodeMirror editor is NOT reconfigured and keeps its
   // tok-* highlighting. Before the redesign this churn dropped highlighting mid-stream.
-  const composer = page.locator(".composer-shell__input").first();
+  const composer = page.locator("[data-composer-input]").first();
   if (await composer.count()) {
     await composer.click();
     await page.keyboard.type("render isolation probe — editor must stay highlighted", { delay: 15 });
     await page.waitForTimeout(300);
     const tokensWhileTyping = await page
-      .locator(".workbench-editor-cm .cm-content [class*='tok-']")
+      .locator("[data-code-editor-host] .cm-content [class*='tok-']")
       .count();
     check(
       "editor keeps tok-* highlighting while the composer re-renders the shell",
@@ -92,7 +92,7 @@ async function dump(page, label) {
   }
 
   // 2. Occurrence highlighting: put the caret on an identifier, expect marks.
-  const identifier = page.locator(".workbench-editor-cm .cm-content .tok-variableName").first();
+  const identifier = page.locator("[data-code-editor-host] .cm-content .tok-variableName").first();
   if (await identifier.count()) {
     await identifier.click();
     await page.waitForTimeout(1500);
@@ -104,7 +104,7 @@ async function dump(page, label) {
   await dump(page, "2-occurrences");
 
   // 3. Hover tooltip through the real backend TS engine.
-  const hoverTarget = page.locator(".workbench-editor-cm .cm-content .tok-variableName").first();
+  const hoverTarget = page.locator("[data-code-editor-host] .cm-content .tok-variableName").first();
   if (await hoverTarget.count()) {
     await hoverTarget.hover();
     await page.waitForTimeout(2000);
@@ -137,13 +137,13 @@ async function dump(page, label) {
   // produce squiggles (cm-lintRange) or EOF lint points (cm-lintPoint).
   await page.keyboard.type("nosuchglobal.x", { delay: 30 });
   await page.waitForTimeout(3000);
-  const lintMarks = await page.locator(".workbench-editor-cm [class*='cm-lint']").count();
+  const lintMarks = await page.locator("[data-code-editor-host] [class*='cm-lint']").count();
   check("diagnostics render on the dirty buffer", lintMarks > 0, `${lintMarks} lint marks`);
 
   // 6. Context menu: right-click shows the grown action set.
   await editor.first().click({ button: "right" });
   await page.waitForTimeout(400);
-  const menuText = (await page.locator(".workbench-editor-menu").innerText().catch(() => "")) ?? "";
+  const menuText = (await page.locator("[data-editor-menu]").innerText().catch(() => "")) ?? "";
   for (const item of ["Cut", "Copy", "Paste", "Go to Definition", "Find References"]) {
     check(`context menu lists ${item}`, menuText.includes(item));
   }

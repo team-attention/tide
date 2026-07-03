@@ -1,7 +1,13 @@
 import type { ProductShellPinnedItemView } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement } from "react";
-import { createSectionHeader } from "./section-header.tsx";
+import {
+  createSectionHeader,
+  LeftRailCollapsible,
+  LeftRailCollapsibleInner,
+  LeftRailSection,
+  LeftRailSectionBody,
+} from "./section-header.tsx";
 import { createProjectGroup } from "./project-section.tsx";
 import { createThreadRow } from "./thread-row.tsx";
 import { createRailDragItem } from "./rail-drag.tsx";
@@ -19,11 +25,12 @@ export function createPinnedSection(
   }
   const collapsed = handlers.isSectionCollapsed("Pinned");
   return (
-    <section className="left-rail-section" aria-label="Pinned">
+    <LeftRailSection aria-label="Pinned">
       {createSectionHeader("Pinned", pinnedItems.length, collapsed, () => handlers.onToggleSection("Pinned"))}
-      {/* Height-animated (.collapsible) so collapsing the section is smooth. */}
-      <div className="collapsible" data-expanded={!collapsed}>
-        <div className="collapsible__inner left-rail-section__body">
+      {/* Height-animated so collapsing the section is smooth while rows stay mounted. */}
+      <LeftRailCollapsible data-left-rail-collapsible data-expanded={!collapsed}>
+        <LeftRailCollapsibleInner>
+          <LeftRailSectionBody>
           {pinnedItems.map((item) =>
             item.kind === "project"
               ? createRailDragItem(
@@ -37,8 +44,9 @@ export function createPinnedSection(
                   createThreadRow(item.thread, handlers),
                 ),
           )}
-        </div>
-      </div>
-    </section>
+          </LeftRailSectionBody>
+        </LeftRailCollapsibleInner>
+      </LeftRailCollapsible>
+    </LeftRailSection>
   );
 }

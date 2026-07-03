@@ -23,7 +23,7 @@ const HTML = `<!doctype html><html><body style="background:#fff"><h1 id="probe" 
     env: { ...process.env, TIDE_APP_DATA_ROOT: dataRoot },
   });
   const page = await app.firstWindow();
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(800);
   await page.evaluate(async (cwd) => { await window.tide.registerProject(cwd); }, repo);
   await page.waitForTimeout(400);
@@ -39,7 +39,7 @@ const HTML = `<!doctype html><html><body style="background:#fff"><h1 id="probe" 
   const treeToggle = page.locator("[aria-label='Open FileTree']");
   if (await treeToggle.count()) { await treeToggle.first().click(); await page.waitForTimeout(1500); }
 
-  const fileRow = page.locator(".file-tree-row", { hasText: htmlName });
+  const fileRow = page.locator("[data-file-kind]", { hasText: htmlName });
   const found = (await fileRow.count()) > 0;
   check("the .html file is listed in the file tree", found, htmlName);
   if (found) {
@@ -49,26 +49,26 @@ const HTML = `<!doctype html><html><body style="background:#fff"><h1 id="probe" 
 
   // Default: rendered <webview> preview + Preview/Code toggle, no source editor.
   await page.screenshot({ path: "/tmp/pw-html-1-preview.png" });
-  const webview = page.locator(".workbench-html-webview");
+  const webview = page.locator("[data-html-pane-webview]");
   check("an HTML webview preview renders by default", (await webview.count()) > 0);
-  check("the Preview/Code toggle is present", (await page.locator(".workbench-html-toggle__option").count()) >= 2);
-  check("no source editor in preview mode", (await page.locator(".workbench-html .cm-editor").count()) === 0);
+  check("the Preview/Code toggle is present", (await page.locator("[data-html-mode-option]").count()) >= 2);
+  check("no source editor in preview mode", (await page.locator("[data-html-mode] .cm-editor").count()) === 0);
   const src = (await webview.first().getAttribute("src").catch(() => "")) || "";
   check("the webview loads the file via file://", src.startsWith("file://") && src.includes("pw-html-preview"), src);
 
   // Toggle to Code → source editor shows the HTML; webview gone.
-  const codeBtn = page.locator(".workbench-html-toggle__option", { hasText: "Code" });
+  const codeBtn = page.locator("[data-html-mode-option]", { hasText: "Code" });
   await codeBtn.first().click().catch(() => {});
   await page.waitForTimeout(600);
   await page.screenshot({ path: "/tmp/pw-html-2-code.png" });
-  const cm = await page.locator(".workbench-html .cm-content").innerText().catch(() => "");
+  const cm = await page.locator("[data-html-mode] .cm-content").innerText().catch(() => "");
   check("Code mode shows the HTML source", /HELLO TIDE PREVIEW/.test(cm), cm.slice(0, 80));
-  check("the webview is gone in Code mode", (await page.locator(".workbench-html-webview").count()) === 0);
+  check("the webview is gone in Code mode", (await page.locator("[data-html-pane-webview]").count()) === 0);
 
   // Toggle back to Preview → webview returns.
-  await page.locator(".workbench-html-toggle__option", { hasText: "Preview" }).first().click().catch(() => {});
+  await page.locator("[data-html-mode-option]", { hasText: "Preview" }).first().click().catch(() => {});
   await page.waitForTimeout(800);
-  check("toggling back to Preview restores the webview", (await page.locator(".workbench-html-webview").count()) > 0);
+  check("toggling back to Preview restores the webview", (await page.locator("[data-html-pane-webview]").count()) > 0);
   await page.screenshot({ path: "/tmp/pw-html-3-preview-again.png" });
 
   fs.rmSync(htmlPath, { force: true });

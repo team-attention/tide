@@ -24,35 +24,35 @@ const PROMPT =
     env: { ...process.env, TIDE_APP_DATA_ROOT: dataRoot },
   });
   const page = await app.firstWindow();
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(800);
 
   // claude on the default Scratch scope (auto-trusts).
-  await page.locator('.composer-shell__context-chip[data-context-kind="agent"]').first().click();
+  await page.locator('[data-composer-context-chip][data-context-kind="agent"]').first().click();
   await page.waitForSelector('[data-choice-surface="agent_menu"]', { timeout: 5000 });
-  await page.locator('[data-choice-surface="agent_menu"] .choice-surface__row', { hasText: "Claude Code" }).first().click();
+  await page.locator('[data-choice-surface="agent_menu"] [data-choice-row]', { hasText: "Claude Code" }).first().click();
   await page.waitForTimeout(400);
   await page.locator('[aria-label="Composer draft"]').first().fill(PROMPT);
-  await page.locator(".composer-shell__send").first().click();
+  await page.locator("[data-composer-send]").first().click();
   console.log("sent; waiting for the AskUserQuestion card…");
 
-  const card = page.locator(".prompt-card");
+  const card = page.locator("[data-prompt-card]");
   let appeared = false;
   try { await card.waitFor({ state: "visible", timeout: 180000 }); appeared = true; } catch {}
   // A permission card for the tool may surface first — allow it through.
   for (let i = 0; i < 4 && appeared; i += 1) {
-    const msg = (await card.locator(".prompt-card__message").innerText().catch(() => "")).trim();
+    const msg = (await card.locator("[data-prompt-message]").innerText().catch(() => "")).trim();
     if (/which fruits/i.test(msg)) break;
-    const opt = card.locator(".prompt-card__option").first();
+    const opt = card.locator("[data-prompt-option]").first();
     if (await opt.count()) await opt.click().catch(() => {});
-    const submit = card.locator(".prompt-card__submit");
+    const submit = card.locator("[data-prompt-submit]");
     if ((await submit.count()) && !(await submit.isDisabled())) await submit.click().catch(() => {});
     await page.waitForTimeout(2500);
   }
   check("the AskUserQuestion prompt card appeared", appeared);
   if (!appeared) {
     await page.screenshot({ path: "/tmp/pw-ms-fail.png" });
-    const txt = await page.locator(".tide-product-shell").innerText().catch(() => "");
+    const txt = await page.locator("[data-product-shell]").innerText().catch(() => "");
     console.log("SHELL TEXT (first 1200):\n", txt.slice(0, 1200));
     await app.close();
     process.exit(1);
@@ -62,11 +62,11 @@ const PROMPT =
   await page.screenshot({ path: "/tmp/pw-ms-1-card.png" });
 
   // Issue 6: multi-select toggles. Options render as data-multi checkboxes.
-  const multiCount = await page.locator('.prompt-card__option[data-multi="true"]').count();
+  const multiCount = await page.locator('[data-prompt-option][data-multi="true"]').count();
   check("options render as multi-select toggles", multiCount > 0, `${multiCount} toggles`);
-  check("the card shows the 'Select all that apply' hint", await page.locator(".prompt-card", { hasText: "Select all that apply" }).count() > 0);
+  check("the card shows the 'Select all that apply' hint", await page.locator("[data-prompt-card]", { hasText: "Select all that apply" }).count() > 0);
 
-  const options = page.locator(".prompt-card__option");
+  const options = page.locator("[data-prompt-option]");
   const n = await options.count();
   // Pick option 1, then option 3 — the FIRST must stay selected (multi, not single).
   await options.nth(0).click();
@@ -93,7 +93,7 @@ const PROMPT =
   // composer-prompt-fixes.test.ts — the composer is a React-CONTROLLED textarea, and
   // Playwright keystrokes don't reliably land in React state, so observing the DOM
   // value across the answer re-render here is not a sound signal. We just log it.
-  const submit = page.locator(".prompt-card__submit");
+  const submit = page.locator("[data-prompt-submit]");
   check("Submit is enabled with options selected", !(await submit.isDisabled()));
   await submit.click();
   await page.waitForTimeout(1500);

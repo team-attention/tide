@@ -238,12 +238,12 @@ function nearRgb(pixel, expected, tolerance = 42) {
   });
 
   const page = await app.firstWindow();
-  await page.waitForSelector(".tide-product-shell", { timeout: 20_000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20_000 });
   await page.waitForFunction(
     () => (document.body.innerText || "").includes("Seeded file tree thread"),
     { timeout: 15_000 },
   );
-  await page.locator(".thread-row__main").first().click();
+  await page.locator("[data-thread-row-main]").first().click();
   await page.waitForTimeout(700);
 
   const openWorkbench = page.locator('[aria-label="Open Workbench"]');
@@ -270,7 +270,7 @@ function nearRgb(pixel, expected, tolerance = 42) {
     process.exit(1);
   }
 
-  const stage = page.locator('.workbench-browser-stage[data-native-runtime="true"] .workbench-browser-native-stage').first();
+  const stage = page.locator('[data-browser-runtime-stage][data-native-runtime="true"] [data-browser-native-stage]').first();
   await stage.waitFor({ timeout: 10_000 });
   const box = await stage.boundingBox();
   check("native BrowserRuntime stage has visible bounds", box && box.width > 200 && box.height > 160);

@@ -15,7 +15,7 @@ async function launch(dataRoot) {
     env: { ...process.env, TIDE_APP_DATA_ROOT: dataRoot },
   });
   const page = await app.firstWindow();
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(1000);
   return { app, page };
 }
@@ -26,10 +26,10 @@ async function launch(dataRoot) {
 
   // --- Session 1: send + get answer (persists blocks) ---
   let { app, page } = await launch(dataRoot);
-  await page.locator(".thread-row__main").first().click();
+  await page.locator("[data-thread-row-main]").first().click();
   await page.waitForTimeout(1000);
   await page.locator('[aria-label="Composer draft"]').first().fill(PROMPT);
-  await page.locator(".composer-shell__send").first().click();
+  await page.locator("[data-composer-send]").first().click();
   const deadline = Date.now() + 120000;
   let answered = false;
   while (Date.now() < deadline) {
@@ -44,7 +44,7 @@ async function launch(dataRoot) {
 
   // --- Session 2: relaunch same data dir, reopen, expect restored blocks ---
   ({ app, page } = await launch(dataRoot));
-  const rows = page.locator(".thread-row__main");
+  const rows = page.locator("[data-thread-row-main]");
   console.log("session2 thread rows:", await rows.count());
   await rows.first().click();
   await page.waitForTimeout(1500);

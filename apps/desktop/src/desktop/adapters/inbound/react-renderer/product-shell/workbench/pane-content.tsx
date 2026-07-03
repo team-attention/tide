@@ -1,6 +1,7 @@
 import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { GitChangesView, ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement } from "react";
+import { styled } from "styled-components";
 import { Search, X } from "lucide-react";
 import { fileIconFor } from "../../support/file-icons.ts";
 import { WorkbenchBrowserPane } from "./browser-pane.tsx";
@@ -11,6 +12,7 @@ import { WorkbenchTerminalPane } from "./terminal-pane.tsx";
 import { WorkbenchLauncherPane } from "./launcher-pane.tsx";
 import { ChangesPanel } from "./changes-panel.tsx";
 import { ErrorBoundary } from "../support/error-boundary.tsx";
+import { WorkbenchPaneKindLabel, WorkbenchPaneSurface } from "./workbench-pane.parts.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 // In-pane editor file picker: the Launcher pad becomes a searchable file list. The
@@ -21,12 +23,12 @@ export function createEditorPickerPane(
   handlers: ProductShellHandlers,
 ): ReactElement {
   return (
-    <div className="workbench-pane-content editor-picker">
-      <div className="editor-picker__toolbar">
-        <label className="editor-picker__search">
+    <EditorPickerPane data-pane-surface-kind="editor-picker" data-editor-picker="true">
+      <EditorPickerToolbar>
+        <EditorPickerSearch>
           <Search size={14} strokeWidth={1.9} aria-hidden />
-          <input
-            className="editor-picker__input"
+          <EditorPickerInput
+            data-editor-picker-input="true"
             type="search"
             aria-label="Filter files to open"
             placeholder="Filter files…"
@@ -37,43 +39,43 @@ export function createEditorPickerPane(
               handlers.onEditorPickerFilter(event.currentTarget.value)
             }
           />
-        </label>
-        <button
-          className="editor-picker__close"
+        </EditorPickerSearch>
+        <EditorPickerCloseButton
+          data-editor-picker-close="true"
           type="button"
           title="Close picker"
           aria-label="Close picker"
           onClick={handlers.onEditorPickerCancel}
         >
           <X size={14} strokeWidth={2.1} aria-hidden />
-        </button>
-      </div>
-      <div className="editor-picker__list" role="listbox" aria-label="Files">
+        </EditorPickerCloseButton>
+      </EditorPickerToolbar>
+      <EditorPickerList role="listbox" aria-label="Files">
         {editorPicker.files.length === 0 ? (
-          <p className="editor-picker__empty">
+          <EditorPickerEmpty>
             {editorPicker.filter.trim().length === 0 ? "No files here." : "No matching files."}
-          </p>
+          </EditorPickerEmpty>
         ) : (
           editorPicker.files.map((file) => {
             const Icon = fileIconFor(file.name);
             return (
-              <button
+              <EditorPickerFileButton
                 key={file.relativePath}
                 type="button"
-                className="editor-picker__row"
+                data-editor-picker-row="true"
                 role="option"
                 title={file.relativePath}
                 onClick={() => handlers.onEditorPickerSelect(file.relativePath)}
               >
                 <Icon size={14} strokeWidth={1.8} aria-hidden />
-                <span className="editor-picker__name">{file.name}</span>
-                <span className="editor-picker__path">{file.relativePath}</span>
-              </button>
+                <EditorPickerFileName data-editor-picker-name="true">{file.name}</EditorPickerFileName>
+                <EditorPickerFilePath>{file.relativePath}</EditorPickerFilePath>
+              </EditorPickerFileButton>
             );
           })
         )}
-      </div>
-    </div>
+      </EditorPickerList>
+    </EditorPickerPane>
   );
 }
 
@@ -148,10 +150,10 @@ function WorkbenchPaneContent(props: {
       );
     default:
       return (
-        <div className="workbench-pane-content workbench-pane-content--generic">
-          <div className="workbench-column__kind">{pane.kind}</div>
+        <WorkbenchPaneSurface data-pane-surface-kind="generic">
+          <WorkbenchPaneKindLabel>{pane.kind}</WorkbenchPaneKindLabel>
           <h2>{pane.title}</h2>
-        </div>
+        </WorkbenchPaneSurface>
       );
   }
 }
@@ -183,3 +185,115 @@ function gitDiffTargetForPane(
     ].join(":"),
   };
 }
+
+const EditorPickerPane = styled(WorkbenchPaneSurface)`
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 8px 8px;
+`;
+
+const EditorPickerToolbar = styled.div`
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`;
+
+const EditorPickerSearch = styled.label`
+  height: 34px;
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--tide-line);
+  border-radius: 9px;
+  background: var(--tide-surface);
+  color: var(--tide-muted);
+`;
+
+const EditorPickerInput = styled.input`
+  min-width: 0;
+  flex: 1 1 auto;
+  border: 0;
+  background: transparent;
+  color: var(--tide-text);
+  font-size: 13px;
+  outline: none;
+`;
+
+const EditorPickerCloseButton = styled.button`
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--tide-line);
+  border-radius: 9px;
+  background: var(--tide-surface);
+  color: var(--tide-muted);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--tide-selection);
+    color: var(--tide-text);
+  }
+`;
+
+const EditorPickerList = styled.div`
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+`;
+
+const EditorPickerEmpty = styled.p`
+  margin: 14px 6px;
+  color: var(--tide-muted);
+  font-size: 13px;
+`;
+
+const EditorPickerFileButton = styled.button`
+  width: 100%;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-text);
+  cursor: pointer;
+  text-align: left;
+
+  &:hover {
+    background: var(--tide-selection);
+  }
+
+  svg {
+    flex: 0 0 auto;
+    color: var(--tide-muted);
+  }
+`;
+
+const EditorPickerFileName = styled.span`
+  flex: 0 0 auto;
+  font-size: 13px;
+  white-space: nowrap;
+`;
+
+const EditorPickerFilePath = styled.span`
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--tide-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;

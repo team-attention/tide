@@ -29,7 +29,7 @@ const check = (name, ok, detail) => {
     env: { ...process.env, TIDE_APP_DATA_ROOT: dataRoot },
   });
   const page = await app.firstWindow();
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(1000);
   // Verify in LIGHT theme — that's where low-contrast issues (focus boxes, the
   // toggle/traffic-light overlap) actually show; dark theme hid them before.
@@ -40,7 +40,7 @@ const check = (name, ok, detail) => {
   await page.waitForTimeout(150);
 
   // Ensure the start surface (New Thread) is showing for the composer test.
-  const newThread = page.locator(".left-rail-nav-row", { hasText: "New thread" }).first();
+  const newThread = page.locator("[data-left-nav-row]", { hasText: "New thread" }).first();
   if (await newThread.count()) {
     await newThread.click();
     await page.waitForTimeout(500);
@@ -65,7 +65,7 @@ const check = (name, ok, detail) => {
   await page.waitForTimeout(350);
 
   // ---- Fix 2: start composer auto-grows + font 16px ----
-  const input = page.locator('.composer-shell[data-composer-mode="start"] .composer-shell__input').first();
+  const input = page.locator('[data-composer-shell][data-composer-mode="start"] [data-composer-input]').first();
   if (await input.count()) {
     const font = await input.evaluate((el) => getComputedStyle(el).fontSize);
     const h0 = (await input.boundingBox()).height;
@@ -85,19 +85,19 @@ const check = (name, ok, detail) => {
     check("start composer present", false, "input not found");
   }
 
-  // ---- Fix 1: section collapse is height-animated (.collapsible), not unmount ----
-  const toggle = page.locator(".left-rail-section__toggle").first();
+  // ---- Fix 1: section collapse is height-animated ([data-left-rail-collapsible]), not unmount ----
+  const toggle = page.locator("[data-left-rail-section-toggle]").first();
   if (await toggle.count()) {
     const section = toggle.locator("xpath=ancestor::section[1]");
-    const body = section.locator(".collapsible").first();
-    check("section body uses .collapsible wrapper", (await body.count()) > 0);
+    const body = section.locator("[data-left-rail-collapsible]").first();
+    check("section body uses [data-left-rail-collapsible] wrapper", (await body.count()) > 0);
     const exp0 = await body.getAttribute("data-expanded");
     const hExpanded = (await body.boundingBox())?.height ?? 0;
     await toggle.click();
     await page.waitForTimeout(350); // let the 0.2s grid-rows transition finish
     const exp1 = await body.getAttribute("data-expanded");
     const hCollapsed = (await body.boundingBox())?.height ?? 0;
-    const rowsStillInDom = await body.locator(".thread-row, .project-group").count();
+    const rowsStillInDom = await body.locator("[data-thread-row], [data-project-group]").count();
     await shot(page, "2-section-collapsed");
     check("data-expanded flips true->false", exp0 === "true" && exp1 === "false", `${exp0} -> ${exp1}`);
     check("collapsed height shrinks toward 0", hCollapsed < hExpanded && hCollapsed <= 4, `${Math.round(hExpanded)}px -> ${Math.round(hCollapsed)}px`);
@@ -113,8 +113,8 @@ const check = (name, ok, detail) => {
   await page.waitForTimeout(150);
   const toggleBtn = page.locator('[aria-label="Close Left Rail"]').first();
   const toggleIcon = toggleBtn.locator("svg").first();
-  const newThreadIcon = page.locator(".left-rail-nav-row", { hasText: "New thread" }).first().locator("svg").first();
-  const trafficW = await page.locator(".traffic-controls").first().evaluate((el) => el.getBoundingClientRect().width).catch(() => -1);
+  const newThreadIcon = page.locator("[data-left-nav-row]", { hasText: "New thread" }).first().locator("svg").first();
+  const trafficW = await page.locator("[data-traffic-controls]").first().evaluate((el) => el.getBoundingClientRect().width).catch(() => -1);
   if ((await toggleIcon.count()) && (await newThreadIcon.count())) {
     const a = await toggleIcon.boundingBox();
     const b = await newThreadIcon.boundingBox();
@@ -137,8 +137,8 @@ const check = (name, ok, detail) => {
     // buttons render directly. (isVisible() can't tell inline from the collapsed
     // menu — the menu's popover buttons are opacity:0, which Playwright still calls
     // visible — so key off the menu trigger's presence.)
-    const newPaneCount = await page.locator('.tide-window-toggles [aria-label="New Pane"]').count();
-    const fsCount = await page.locator('.tide-window-toggles [aria-label="Fullscreen pane"]').count();
+    const newPaneCount = await page.locator('[data-window-toggle-cluster] [aria-label="New Pane"]').count();
+    const fsCount = await page.locator('[data-window-toggle-cluster] [aria-label="Fullscreen pane"]').count();
     const menuPresent = (await page.locator('[aria-label="Workbench controls"]').count()) > 0;
     await shot(page, "9-wb-controls-inline");
     check(
@@ -159,11 +159,11 @@ const check = (name, ok, detail) => {
   }
 
   // ---- Deep-audit captures (animations are temporal; confirm overlays RENDER) ----
-  const settingsRow = page.locator(".left-rail-nav-row", { hasText: "Settings" }).first();
+  const settingsRow = page.locator("[data-left-nav-row]", { hasText: "Settings" }).first();
   if (await settingsRow.count()) {
     await settingsRow.click();
     await page.waitForTimeout(300);
-    const modal = page.locator(".settings-modal").first();
+    const modal = page.locator("[data-settings-modal]").first();
     const modalVisible = (await modal.count()) > 0 && (await modal.boundingBox())?.height > 100;
     const anim = await modal.evaluate((el) => getComputedStyle(el).animationName).catch(() => "none");
     check("settings modal renders with entrance animation", modalVisible && anim === "tide-modal-in", `visible=${modalVisible} anim=${anim}`);
@@ -176,7 +176,7 @@ const check = (name, ok, detail) => {
   if (await modelChip.count()) {
     await modelChip.click();
     await page.waitForTimeout(300);
-    const surface = page.locator(".choice-surface").first();
+    const surface = page.locator("[data-choice-surface]").first();
     const surfVisible = (await surface.count()) > 0 && (await surface.boundingBox())?.height > 30;
     check("composer dropdown (choice-surface) renders", surfVisible);
     await shot(page, "5-model-menu");
@@ -188,29 +188,29 @@ const check = (name, ok, detail) => {
   if (await ftToggle.count()) {
     await ftToggle.click();
     await page.waitForTimeout(900);
-    const folder = page.locator('.file-tree-row[data-file-kind="folder"]').first();
+    const folder = page.locator('[data-file-kind="folder"]').first();
     let grew = false;
     if (await folder.count()) {
-      const before = await page.locator(".file-tree-row").count();
+      const before = await page.locator("[data-file-kind]").count();
       await folder.click();
       await page.waitForTimeout(500);
-      const after = await page.locator(".file-tree-row").count();
+      const after = await page.locator("[data-file-kind]").count();
       grew = after > before;
-      const rowAnim = await page.locator(".file-tree-row").first().evaluate((el) => getComputedStyle(el).animationName).catch(() => "none");
+      const rowAnim = await page.locator("[data-file-kind]").first().evaluate((el) => getComputedStyle(el).animationName).catch(() => "none");
       check("file-tree rows carry entrance animation", rowAnim === "tide-tree-row-in", rowAnim);
     }
     check("file-tree folder expands", grew);
     await shot(page, "6-filetree");
 
     // Opening two DIFFERENT files opens two editor tabs (not replace-in-slot).
-    const fileA = page.locator('.file-tree-row[data-file-kind="file"]', { hasText: "README.md" }).first();
-    const fileB = page.locator('.file-tree-row[data-file-kind="file"]', { hasText: "package.json" }).first();
+    const fileA = page.locator('[data-file-kind="file"]', { hasText: "README.md" }).first();
+    const fileB = page.locator('[data-file-kind="file"]', { hasText: "package.json" }).first();
     if ((await fileA.count()) > 0 && (await fileB.count()) > 0) {
       await fileA.click();
       await page.waitForTimeout(800);
       await fileB.click();
       await page.waitForTimeout(900);
-      const editorTabs = await page.locator('.workbench-tab[data-kind="editor"]').count();
+      const editorTabs = await page.locator('[data-workbench-tab][data-kind="editor"]').count();
       await shot(page, "12-two-editors");
       check("opening two files opens two editor tabs (no replace)", editorTabs === 2, `editorTabs=${editorTabs}`);
 
@@ -218,11 +218,11 @@ const check = (name, ok, detail) => {
       // row (one bar), not a separate floating toolbar.
       await fileA.click(); // back to README.md (markdown)
       await page.waitForTimeout(700);
-      const mdHeader = page.locator(".workbench-md-header");
-      const headerHasBreadcrumb = (await mdHeader.locator(".workbench-editor-breadcrumb").count()) > 0;
-      const headerHasToggle = (await mdHeader.locator(".workbench-md-toggle").count()) > 0;
+      const mdHeader = page.locator("[data-md-header]");
+      const headerHasBreadcrumb = (await mdHeader.locator("[data-editor-breadcrumb]").count()) > 0;
+      const headerHasToggle = (await mdHeader.locator("[data-md-toggle]").count()) > 0;
       const strayToggle = await page
-        .locator(".workbench-md > .workbench-md-toggle")
+        .locator("[data-md-mode] > [data-md-toggle]")
         .count(); // old floating bar (direct child) must be gone
       await shot(page, "13-md-header");
       check(
@@ -252,7 +252,7 @@ const check = (name, ok, detail) => {
   if (await openBrowser.count()) {
     await openBrowser.click();
     await page.waitForTimeout(1800);
-    const browserTab = page.locator('.workbench-tab[data-kind="browser"] .workbench-tab__title').first();
+    const browserTab = page.locator('[data-workbench-tab][data-kind="browser"] [data-workbench-tab-title]').first();
     const browserTitle = ((await browserTab.count()) ? await browserTab.innerText() : "").trim();
     await shot(page, "8-browser-tab");
     check("browser tab has a name even at about:blank", browserTitle.length > 0, `title="${browserTitle}"`);
@@ -262,12 +262,12 @@ const check = (name, ok, detail) => {
     // setWindowOpenHandler does for a "background-tab": send the IPC the preload now
     // bridges. This exercises preload → renderer subscription → onOpenBrowserPane →
     // a fresh (draft) pane.
-    const browserTabsBefore = await page.locator('.workbench-tab[data-kind="browser"]').count();
+    const browserTabsBefore = await page.locator('[data-workbench-tab][data-kind="browser"]').count();
     await app.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()[0]?.webContents.send("tide:open-browser-pane", "https://example.com/new-pane"),
     );
     await page.waitForTimeout(800);
-    const browserTabsAfter = await page.locator('.workbench-tab[data-kind="browser"]').count();
+    const browserTabsAfter = await page.locator('[data-workbench-tab][data-kind="browser"]').count();
     await shot(page, "11-cmd-click-new-pane");
     check(
       "cmd/ctrl+click link opens a NEW browser pane",

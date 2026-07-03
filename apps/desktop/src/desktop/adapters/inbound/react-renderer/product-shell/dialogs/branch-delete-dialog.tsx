@@ -1,5 +1,16 @@
 import type { ReactElement } from "react";
 import { Loader2, Trash2 } from "lucide-react";
+import {
+  WorktreeDialogActions,
+  WorktreeDialogBackdrop,
+  WorktreeDialogCancelButton,
+  WorktreeDialogConfirmButton,
+  WorktreeDialogPanel,
+  WorktreeDialogPreview,
+  WorktreeDialogSpinner,
+  WorktreeDialogTitle,
+  WorktreeDialogWarning,
+} from "./worktree-dialog.parts.tsx";
 // Spec: docs_v2/specs/branch-deletion-from-picker.md.
 
 // The branch being deleted (name + merge fact from branchInfo, plus the cwd whose
@@ -27,56 +38,57 @@ export function BranchDeleteDialog(props: {
   const deleting = props.deleting === true;
   const unmerged = !branchMerged;
   return (
-    <div
-      className="worktree-create-backdrop"
+    <WorktreeDialogBackdrop
       role="dialog"
       aria-label="Delete branch"
+      data-worktree-dialog="delete-branch"
       onMouseDown={(event: { target: EventTarget | null; currentTarget: EventTarget | null }) => {
         if (event.target === event.currentTarget && !deleting) {
           props.onClose();
         }
       }}
     >
-      <div className="worktree-create worktree-delete">
-        <div className="worktree-create__title">
+      <WorktreeDialogPanel>
+        <WorktreeDialogTitle>
           <Trash2 size={15} strokeWidth={1.9} aria-hidden />
           {`Delete branch · ${branch}`}
-        </div>
-        <div className="worktree-create__preview">This permanently deletes the local branch.</div>
+        </WorktreeDialogTitle>
+        <WorktreeDialogPreview data-kind="sentence">This permanently deletes the local branch.</WorktreeDialogPreview>
         {unmerged ? (
-          <div className="worktree-delete__warn">
+          <WorktreeDialogWarning>
             {`Branch "${branch}" has unmerged commits — deleting it discards them.`}
-          </div>
+          </WorktreeDialogWarning>
         ) : null}
         {props.error ? (
-          <div className="worktree-delete__warn">{props.error}</div>
+          <WorktreeDialogWarning>{props.error}</WorktreeDialogWarning>
         ) : null}
-        <div className="worktree-create__actions">
-          <button
+        <WorktreeDialogActions>
+          <WorktreeDialogCancelButton
             type="button"
-            className="worktree-create__cancel"
             disabled={deleting}
             onClick={() => props.onClose()}
           >
             Cancel
-          </button>
-          <button
+          </WorktreeDialogCancelButton>
+          <WorktreeDialogConfirmButton
             type="button"
-            className="worktree-create__confirm worktree-delete__confirm"
+            $variant="danger"
             disabled={deleting}
             onClick={() => props.onConfirm()}
           >
             {deleting ? (
               <>
-                <Loader2 size={14} strokeWidth={2} className="worktree-delete__spinner" aria-hidden />
+                <WorktreeDialogSpinner aria-hidden>
+                  <Loader2 size={14} strokeWidth={2} />
+                </WorktreeDialogSpinner>
                 Deleting…
               </>
             ) : (
               "Delete branch"
             )}
-          </button>
-        </div>
-      </div>
-    </div>
+          </WorktreeDialogConfirmButton>
+        </WorktreeDialogActions>
+      </WorktreeDialogPanel>
+    </WorktreeDialogBackdrop>
   );
 }

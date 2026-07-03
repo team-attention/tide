@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
+import { styled } from "styled-components";
 import { LeftRailColumnView } from "../product-shell-columns.ts";
 import type { MenuAnchorRect, ProductShellHandlers } from "../support/types.ts";
 
@@ -46,15 +47,59 @@ export function RailPeek(props: {
   };
 
   return (
-    <div className="rail-peek" data-open={open ? "true" : undefined} aria-label="Left Rail peek">
-      <div className="rail-peek__hot-zone" aria-hidden onMouseEnter={openNow} />
-      <div className="rail-peek__panel" onMouseEnter={openNow} onMouseLeave={scheduleClose}>
+    <RailPeekFrame data-open={open ? "true" : undefined} aria-label="Left Rail peek">
+      <RailPeekHotZone data-rail-peek-hot-zone aria-hidden onMouseEnter={openNow} />
+      <RailPeekPanel onMouseEnter={openNow} onMouseLeave={scheduleClose}>
         <LeftRailColumnView
           handlers={props.handlers}
           anchor={props.anchor}
           collapsedSections={props.collapsedSections}
         />
-      </div>
-    </div>
+      </RailPeekPanel>
+    </RailPeekFrame>
   );
 }
+
+const RailPeekFrame = styled.div`
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 70;
+  pointer-events: none;
+`;
+
+const RailPeekHotZone = styled.div`
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 8px;
+  pointer-events: auto;
+`;
+
+const RailPeekPanel = styled.div`
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 264px;
+  overflow: hidden;
+  border-right: 1px solid var(--tide-line);
+  background: var(--tide-bg);
+  box-shadow: 6px 0 18px -10px rgba(0, 0, 0, 0.22);
+  pointer-events: none;
+  transform: translateX(-100%);
+  transition: transform 0.16s ease;
+
+  ${RailPeekFrame}[data-open] & {
+    overflow: visible;
+    pointer-events: auto;
+    transform: none;
+  }
+
+  & [data-column="left-rail"] {
+    width: 100%;
+    height: 100%;
+  }
+`;

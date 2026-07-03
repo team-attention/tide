@@ -36,7 +36,7 @@ test("initialThreadList paints real rail rows before backend list resolves", () 
   );
 
   assert.match(html, /Boot Snapshot Thread/);
-  assert.doesNotMatch(html, /rail-skeleton/);
+  assert.doesNotMatch(html, /data-rail-skeleton/);
 });
 
 test("initialThreadList still requests the authoritative backend list", async () => {

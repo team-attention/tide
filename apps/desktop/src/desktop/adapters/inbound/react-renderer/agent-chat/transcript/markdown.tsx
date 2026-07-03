@@ -2,6 +2,7 @@ import MarkdownIt from "markdown-it";
 import { guessLanguage, highlightToHtml } from "../../support/code-highlight.ts";
 import { renderMarkdownCached } from "../../support/markdown-rendering.ts";
 import type { ReactElement } from "react";
+import { TurnBody } from "./transcript.parts.tsx";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 // Agent answers are markdown (headings, lists, code, links, bold). Render them
@@ -108,8 +109,10 @@ export function renderMarkdownToHtml(body: string): string {
 
 export function renderAgentMarkdown(body: string): ReactElement {
   return (
-    <div
-      className="agent-session-turn__body agent-session-turn__body--md"
+    <TurnBody
+      as="div"
+      $markdown
+      data-turn-body="true"
       dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(body) }}
     />
   );

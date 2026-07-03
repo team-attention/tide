@@ -28,7 +28,7 @@ function check(label, ok, detail = "") {
     env: { ...process.env, TIDE_APP_DATA_ROOT: dataRoot },
   });
   const page = await app.firstWindow();
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(800);
 
   await page.evaluate(async (cwd) => { await window.tide.registerProject(cwd); }, repo);
@@ -68,11 +68,11 @@ function check(label, ok, detail = "") {
   const layout = await page.locator('[data-column="workbench"]').first().getAttribute("data-layout");
   check("workbench is in Stacked layout", layout === "stacked", `data-layout=${layout}`);
 
-  const tabCount = await page.locator(".workbench-tabs .workbench-tab").count();
+  const tabCount = await page.locator("[data-workbench-tabs] [data-workbench-tab]").count();
   check("every opened pane keeps a tab (past the old 6-tab cap)", tabCount > 6, `${tabCount} tabs rendered`);
 
   // The strip overflows its width and scrolls horizontally (programmatic).
-  const metrics = await page.locator(".workbench-tabs").first().evaluate((el) => {
+  const metrics = await page.locator("[data-workbench-tabs]").first().evaluate((el) => {
     el.scrollLeft = 99999;
     return { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth, afterSet: el.scrollLeft };
   });
@@ -84,7 +84,7 @@ function check(label, ok, detail = "") {
   check("tab strip is horizontally scrollable", metrics.afterSet > 0, `scrollLeft 0 -> ${metrics.afterSet}`);
 
   // A vertical mouse wheel over the strip scrolls it horizontally (mouse, not trackpad).
-  const strip = page.locator(".workbench-tabs").first();
+  const strip = page.locator("[data-workbench-tabs]").first();
   await strip.evaluate((el) => { el.scrollLeft = 0; });
   const box = await strip.boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);

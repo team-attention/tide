@@ -8,8 +8,10 @@ import { guessLanguage, highlightToHtml } from "../../support/code-highlight.ts"
 import type { ProductShellHandlers } from "../support/types.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
+import { styled } from "styled-components";
 import { CornerDownRight, Crosshair } from "lucide-react";
 import { WorkbenchCodeEditor } from "./code-editor.tsx";
+import { MarkdownBodySurface } from "../../support/markdown-body.parts.tsx";
 import {
   InPaneFindBar,
   useDomTextFind,
@@ -103,7 +105,7 @@ export function WorkbenchMarkdownView(props: {
     return () => document.removeEventListener("mouseup", onUp);
   }, [mode, pickBlock]);
   const clearPickedBlocks = () => {
-    pickedRef.current.forEach((el) => el.classList.remove("workbench-md-pick-selected"));
+    pickedRef.current.forEach((el) => el.removeAttribute("data-md-pick-selected"));
     pickedRef.current.clear();
     setPickedCount(0);
   };
@@ -138,10 +140,10 @@ export function WorkbenchMarkdownView(props: {
     const apply = (block: HTMLElement, add: boolean) => {
       if (add) {
         pickedRef.current.add(block);
-        block.classList.add("workbench-md-pick-selected");
+        block.setAttribute("data-md-pick-selected", "true");
       } else {
         pickedRef.current.delete(block);
-        block.classList.remove("workbench-md-pick-selected");
+        block.removeAttribute("data-md-pick-selected");
       }
       setPickedCount(pickedRef.current.size);
     };
@@ -160,10 +162,10 @@ export function WorkbenchMarkdownView(props: {
     };
     const onOver = (event: MouseEvent) => {
       const block = blockOf(event.target);
-      if (last !== null) last.classList.remove("workbench-md-pick-hover");
+      if (last !== null) last.removeAttribute("data-md-pick-hover");
       last = block;
       if (block !== null && !pickedRef.current.has(block)) {
-        block.classList.add("workbench-md-pick-hover");
+        block.setAttribute("data-md-pick-hover", "true");
       }
       if (pending && !dragging) {
         const dx = event.clientX - pressX;
@@ -190,7 +192,7 @@ export function WorkbenchMarkdownView(props: {
     document.addEventListener("mouseup", onUp);
     root.addEventListener("click", swallow, true);
     return () => {
-      if (last !== null) last.classList.remove("workbench-md-pick-hover");
+      if (last !== null) last.removeAttribute("data-md-pick-hover");
       root.removeEventListener("mousedown", onDown);
       root.removeEventListener("mouseover", onOver);
       document.removeEventListener("mouseup", onUp);
@@ -225,9 +227,9 @@ export function WorkbenchMarkdownView(props: {
   // survives. Deps: only previewHtml (ref/className are stable).
   const previewBody = useMemo(
     () => (
-      <div
+      <MarkdownPreviewBody
         ref={previewRef}
-        className="workbench-md-preview markdown-body"
+        data-md-preview="true"
         aria-label="Markdown preview"
         dangerouslySetInnerHTML={{ __html: previewHtml }}
       />
@@ -283,38 +285,37 @@ export function WorkbenchMarkdownView(props: {
     return () => observer.disconnect();
   }, [previewHtml, mode]);
   const toggle = (target: "preview" | "edit", label: string) => (
-    <button
+    <MarkdownModeButton
       type="button"
-      className="workbench-md-toggle__option"
+      data-md-mode-option="true"
       data-active={mode === target ? "true" : "false"}
       aria-pressed={mode === target}
       onClick={() => setMode(target)}
     >
       {label}
-    </button>
+    </MarkdownModeButton>
   );
   return (
-    <div
+    <MarkdownViewFrame
       ref={rootRef}
-      className="workbench-md"
       data-md-mode={mode}
       data-md-picking={pickBlock ? "true" : "false"}
     >
-      <div className="workbench-md-header">
+      <MarkdownHeader data-md-header="true">
         {props.breadcrumb ?? null}
-        <div className="workbench-md-controls">
-          <div className="workbench-md-toggle" role="group" aria-label="Markdown view mode">
+        <MarkdownControls>
+          <MarkdownModeToggle data-md-toggle="true" role="group" aria-label="Markdown view mode">
             {toggle("preview", "Preview")}
             {props.readOnly ? null : toggle("edit", "Edit")}
-          </div>
+          </MarkdownModeToggle>
           {mode === "preview" && pickBlock && pickedCount > 0 ? (
-            <button
+            <MarkdownPickButton
               type="button"
-              className="workbench-md-toggle__pick workbench-md-toggle__pick--add"
+              data-md-pick-action="add"
               title="Add the selected blocks to chat"
               onClick={() => {
                 const blocks = Array.from(
-                  previewRef.current?.querySelectorAll(".workbench-md-pick-selected") ?? [],
+                  previewRef.current?.querySelectorAll("[data-md-pick-selected]") ?? [],
                 ) as HTMLElement[];
                 const text = blocks
                   .map((el) => (el.innerText || el.textContent || "").trim())
@@ -329,12 +330,11 @@ export function WorkbenchMarkdownView(props: {
             >
               <CornerDownRight size={12} strokeWidth={1.8} aria-hidden />
               {`Add ${pickedCount} to chat`}
-            </button>
+            </MarkdownPickButton>
           ) : null}
           {mode === "preview" ? (
-            <button
+            <MarkdownPickButton
               type="button"
-              className="workbench-md-toggle__pick"
               data-active={pickBlock ? "true" : "false"}
               aria-pressed={pickBlock}
               title={pickBlock ? "Cancel block pick" : "Pick blocks to add to chat"}
@@ -349,10 +349,10 @@ export function WorkbenchMarkdownView(props: {
             >
               <Crosshair size={12} strokeWidth={1.8} aria-hidden />
               {pickBlock ? "Cancel" : "Pick block"}
-            </button>
+            </MarkdownPickButton>
           ) : null}
-        </div>
-      </div>
+        </MarkdownControls>
+      </MarkdownHeader>
       {find.open && previewFindEnabled ? (
         <InPaneFindBar
           query={find.query}
@@ -370,9 +370,8 @@ export function WorkbenchMarkdownView(props: {
         <>
           {previewBody}
           {selToolbar === null ? null : (
-            <button
+            <MarkdownSelectionToolbar
               type="button"
-              className="editor-selection-toolbar"
               style={{
                 left: `${selToolbar.x}px`,
                 top: `${Math.max(selToolbar.y - 36, 8)}px`,
@@ -386,7 +385,7 @@ export function WorkbenchMarkdownView(props: {
             >
               <CornerDownRight size={13} strokeWidth={1.9} aria-hidden />
               Add to chat
-            </button>
+            </MarkdownSelectionToolbar>
           )}
         </>
       ) : (
@@ -402,6 +401,229 @@ export function WorkbenchMarkdownView(props: {
           handlers={props.handlers}
         />
       )}
-    </div>
+    </MarkdownViewFrame>
   );
 }
+
+const MarkdownViewFrame = styled.div`
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+
+  &[data-md-picking="true"] [data-md-preview] {
+    cursor: crosshair;
+    user-select: none;
+  }
+
+  &[data-md-picking="true"] [data-md-preview] * {
+    cursor: crosshair !important;
+  }
+
+  [data-md-pick-hover] {
+    border-radius: 3px;
+    outline: 2px dashed #3b82f6;
+    outline-offset: 2px;
+  }
+
+  [data-md-pick-selected] {
+    border-radius: 3px;
+    background: rgba(37, 99, 235, 0.16) !important;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16);
+    outline: 2px solid #2563eb !important;
+    outline-offset: 2px;
+  }
+`;
+
+const MarkdownPreviewBody = styled(MarkdownBodySurface)`
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 26px clamp(20px, 5vw, 56px) 56px;
+  color: var(--tide-text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 14.5px;
+  line-height: 1.62;
+  text-rendering: optimizeLegibility;
+
+  ::selection,
+  *::selection {
+    background: rgba(57, 112, 240, 0.30);
+  }
+
+  [data-theme="dark"] &::selection,
+  [data-theme="dark"] & *::selection {
+    background: rgba(96, 150, 255, 0.36);
+  }
+
+  h1 {
+    margin-bottom: 18px;
+    padding-bottom: 10px;
+    font-size: 32px;
+    line-height: 40px;
+    letter-spacing: 0;
+  }
+
+  h2 {
+    margin-top: 30px;
+    margin-bottom: 14px;
+    font-size: 22px;
+    line-height: 30px;
+    letter-spacing: 0;
+  }
+
+  h3 {
+    margin-top: 22px;
+    margin-bottom: 10px;
+    font-size: 18px;
+    line-height: 26px;
+    letter-spacing: 0;
+  }
+
+  p,
+  ul,
+  ol {
+    margin-bottom: 14px;
+  }
+
+  a {
+    color: var(--tide-text);
+    text-decoration-color: color-mix(in srgb, var(--tide-text) 55%, transparent);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
+
+  a:hover {
+    color: var(--tide-action);
+    text-decoration-color: currentColor;
+  }
+
+  img {
+    border-radius: 4px;
+    vertical-align: text-bottom;
+  }
+
+  hr {
+    margin-top: 28px;
+    margin-bottom: 30px;
+  }
+
+  > * {
+    max-width: min(100%, 780px);
+    margin-right: auto;
+    margin-left: auto;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 40px;
+  }
+`;
+
+const MarkdownHeader = styled.div`
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--tide-line);
+
+  [data-editor-breadcrumb] {
+    min-height: 28px;
+    flex: 1 1 160px;
+    padding: 0;
+  }
+`;
+
+const MarkdownControls = styled.div`
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+`;
+
+const MarkdownModeToggle = styled.div`
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-surface);
+`;
+
+const MarkdownModeButton = styled.button`
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+  font: 12px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+
+  &[data-active="true"] {
+    background: var(--tide-bg);
+    color: var(--tide-text);
+    box-shadow: 0 1px 2px rgb(52 48 56 / 8%);
+  }
+`;
+
+const MarkdownPickButton = styled.button`
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  border: 1px solid var(--tide-line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+  font: 12px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+
+  &:hover {
+    background: var(--tide-selection);
+    color: var(--tide-text);
+  }
+
+  &[data-active="true"],
+  &[data-md-pick-action="add"] {
+    border-color: var(--tide-action, var(--tide-text));
+    background: var(--tide-action, var(--tide-text));
+    color: var(--tide-on-action);
+  }
+
+  &[data-active="true"] svg,
+  &[data-md-pick-action="add"] svg {
+    color: var(--tide-on-action);
+  }
+`;
+
+const MarkdownSelectionToolbar = styled.button`
+  position: fixed;
+  z-index: 80;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--tide-action);
+  color: var(--tide-on-action, var(--tide-bg));
+  box-shadow: 0 8px 20px rgb(52 48 56 / 18%);
+  cursor: pointer;
+  font: 600 12px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+  opacity: 0.98;
+
+  svg {
+    color: var(--tide-bg);
+    opacity: 0.85;
+  }
+
+  &:hover {
+    opacity: 0.92;
+  }
+`;

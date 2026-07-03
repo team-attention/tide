@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
 import { renderMarkdownToHtml } from "./markdown.tsx";
+import { AttachedImage, AttachedImageList, MediaText, TurnBody } from "./transcript.parts.tsx";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 // A user message that carries attached regions (each formatted as `**↳ label**`
@@ -7,8 +8,13 @@ import { renderMarkdownToHtml } from "./markdown.tsx";
 // blocks read as structured attachments instead of raw asterisks/backticks.
 export function renderUserAttachmentBody(body: string): ReactElement {
   return (
-    <div
-      className="agent-session-turn__body agent-session-turn__body--md agent-session-turn__body--attachments"
+    <TurnBody
+      as="div"
+      $attachments
+      $markdown
+      $userBubble
+      data-turn-body="true"
+      data-turn-attachments="true"
       dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(body) }}
     />
   );
@@ -39,25 +45,25 @@ export function renderUserBody(body: string): ReactElement {
     return isAttachment ? (
       renderUserAttachmentBody(body)
     ) : (
-      <p className="agent-session-turn__body">{body}</p>
+      <TurnBody $userBubble data-turn-body="true">{body}</TurnBody>
     );
   }
   // Image(s) present → a media bubble: the (path-free) text, then thumbnails.
   return (
-    <div className="agent-session-turn__body agent-session-turn__body--media">
-      {text.length > 0 ? <p className="agent-session-turn__media-text">{text}</p> : null}
-      <div className="agent-session-turn__images">
+    <TurnBody as="div" $media $userBubble data-turn-body="true" data-turn-media="true">
+      {text.length > 0 ? <MediaText>{text}</MediaText> : null}
+      <AttachedImageList>
         {images.map((path, index) => (
-          <img
+          <AttachedImage
             key={`att-${index}`}
-            className="agent-session-turn__image"
+            data-attached-image="true"
             src={`file://${encodeURI(path)}`}
             alt="Attached image"
             loading="lazy"
             draggable={false}
           />
         ))}
-      </div>
-    </div>
+      </AttachedImageList>
+    </TurnBody>
   );
 }

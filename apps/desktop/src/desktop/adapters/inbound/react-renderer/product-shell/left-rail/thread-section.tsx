@@ -1,7 +1,13 @@
 import type { ProductShellThreadView } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ReactElement } from "react";
-import { createSectionHeader } from "./section-header.tsx";
+import {
+  createSectionHeader,
+  LeftRailCollapsible,
+  LeftRailCollapsibleInner,
+  LeftRailSection,
+  LeftRailSectionBody,
+} from "./section-header.tsx";
 import { createThreadRow } from "./thread-row.tsx";
 import type { AgentChatThreadScope } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import { worktreeRepoRootForCwd } from "../../../../../../shared/worktree/path.ts";
@@ -18,7 +24,7 @@ export function createThreadSection(
   }
   const collapsed = handlers.isSectionCollapsed(title);
   return (
-    <section className="left-rail-section" aria-label={title}>
+    <LeftRailSection aria-label={title}>
       {createSectionHeader(
         title,
         threads.length,
@@ -28,13 +34,15 @@ export function createThreadSection(
           ? { label: "New chat", onClick: handlers.onNewScratchThread }
           : undefined,
       )}
-      {/* Height-animated (.collapsible) so collapsing the section is smooth. */}
-      <div className="collapsible" data-expanded={!collapsed}>
-        <div className="collapsible__inner left-rail-section__body">
+      {/* Height-animated so collapsing the section is smooth while rows stay mounted. */}
+      <LeftRailCollapsible data-left-rail-collapsible data-expanded={!collapsed}>
+        <LeftRailCollapsibleInner>
+          <LeftRailSectionBody>
           {threads.map((thread) => createThreadRow(thread, handlers))}
-        </div>
-      </div>
-    </section>
+          </LeftRailSectionBody>
+        </LeftRailCollapsibleInner>
+      </LeftRailCollapsible>
+    </LeftRailSection>
   );
 }
 

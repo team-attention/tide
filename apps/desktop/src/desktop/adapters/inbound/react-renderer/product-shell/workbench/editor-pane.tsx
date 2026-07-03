@@ -1,6 +1,7 @@
 import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import { useEffect, useState, type ReactElement } from "react";
+import { css, styled } from "styled-components";
 import { fileIconFor } from "../../support/file-icons.ts";
 import { WorkbenchMarkdownView } from "./markdown-view.tsx";
 import { WorkbenchHtmlView } from "./html-view.tsx";
@@ -22,6 +23,7 @@ import { StreamLanguage } from "@codemirror/language";
 import { shell as shellMode } from "@codemirror/legacy-modes/mode/shell";
 import { toml as tomlMode } from "@codemirror/legacy-modes/mode/toml";
 import { X } from "lucide-react";
+import { WorkbenchPaneSurface } from "./workbench-pane.parts.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 export function WorkbenchEditorPane(props: {
@@ -72,8 +74,8 @@ export function WorkbenchEditorPane(props: {
   // like the Browser Pane's address bar. For code it stays a standalone path bar.
   const breadcrumb = createEditorBreadcrumb(props.pane, props.draft?.dirty === true, props.handlers);
   return (
-    <div
-      className="workbench-pane-content workbench-pane-content--editor"
+    <EditorPaneSurface
+      data-pane-surface-kind="editor"
       data-editor-readonly={readOnly ? "readonly" : "editable"}
     >
       {isMarkdown ? (
@@ -104,7 +106,7 @@ export function WorkbenchEditorPane(props: {
       ) : (
         <>
           {breadcrumb}
-          <div className="workbench-editor-stack">
+          <EditorCodeStack>
             <WorkbenchCodeEditor
               paneId={props.pane.paneId}
               value={value}
@@ -118,10 +120,10 @@ export function WorkbenchEditorPane(props: {
               handlers={props.handlers}
             />
             {createWorkbenchEditorReferences(props.pane, props.handlers)}
-          </div>
+          </EditorCodeStack>
         </>
       )}
-    </div>
+    </EditorPaneSurface>
   );
 }
 
@@ -160,12 +162,11 @@ function createEditorBreadcrumb(
     segment: (typeof segments)[number],
     index: number,
   ): ReactElement => {
-    const className = `workbench-editor-breadcrumb__crumb workbench-editor-breadcrumb__crumb--${segment.kind}`;
     if (segment.path === undefined) {
       return (
-        <span key={`crumb-${index}`} className={className} title={segment.label}>
+        <EditorBreadcrumbText key={`crumb-${index}`} $kind={segment.kind} title={segment.label}>
           {segment.label}
-        </span>
+        </EditorBreadcrumbText>
       );
     }
     const title =
@@ -173,10 +174,10 @@ function createEditorBreadcrumb(
         ? `Reveal ${segment.path} in FileTree`
         : `Open ${segment.path}`;
     return (
-      <button
+      <EditorBreadcrumbButton
         key={`crumb-${index}`}
         type="button"
-        className={className}
+        $kind={segment.kind}
         title={title}
         aria-label={title}
         onClick={() =>
@@ -186,27 +187,27 @@ function createEditorBreadcrumb(
         }
       >
         {segment.label}
-      </button>
+      </EditorBreadcrumbButton>
     );
   };
   return (
-    <div className="workbench-editor-breadcrumb" aria-label="Editor breadcrumb">
+    <EditorBreadcrumb aria-label="Editor breadcrumb" data-editor-breadcrumb="true">
       {segments.flatMap((segment, index) =>
         index < segments.length - 1
           ? [
               createCrumb(segment, index),
-              <span key={`sep-${index}`} className="workbench-editor-breadcrumb__sep">
+              <EditorBreadcrumbSeparator key={`sep-${index}`}>
                 ›
-              </span>,
+              </EditorBreadcrumbSeparator>,
             ]
           : [createCrumb(segment, index)],
       )}
       {dirty ? (
-        <span className="workbench-editor-breadcrumb__dirty" title="Unsaved changes">
+        <EditorBreadcrumbDirty title="Unsaved changes">
           ●
-        </span>
+        </EditorBreadcrumbDirty>
       ) : null}
-    </div>
+    </EditorBreadcrumb>
   );
 }
 
@@ -235,27 +236,26 @@ function createWorkbenchEditorReferences(
   });
   const countLabel = `${referenceItems.length}${references.truncated ? "+" : ""}`;
   return (
-    <div className="workbench-editor-references" aria-label="References">
-      <div className="workbench-editor-references__heading">
-        <span className="workbench-editor-references__title">References</span>
+    <EditorReferencesPanel aria-label="References" data-editor-references="true">
+      <EditorReferencesHeading>
+        <EditorReferencesTitle data-editor-reference-title="true">References</EditorReferencesTitle>
         {references.query ? (
-          <code className="workbench-editor-references__query">{references.query}</code>
+          <EditorReferencesQuery data-editor-reference-query="true">{references.query}</EditorReferencesQuery>
         ) : null}
-        <span className="workbench-editor-references__count">{countLabel}</span>
-        <button
+        <EditorReferencesCount data-editor-reference-count="true">{countLabel}</EditorReferencesCount>
+        <EditorReferencesDismissButton
           type="button"
-          className="workbench-editor-references__dismiss"
           title="Close references"
           aria-label="Close references"
           onClick={() => handlers.onEditorReferencesDismiss(pane.paneId)}
         >
           <X size={14} strokeWidth={2} aria-hidden />
-        </button>
-      </div>
+        </EditorReferencesDismissButton>
+      </EditorReferencesHeading>
       {referenceItems.length === 0 ? (
-        <div className="workbench-editor-references__empty">No references found.</div>
+        <EditorReferencesEmpty>No references found.</EditorReferencesEmpty>
       ) : (
-        <ul className="workbench-editor-references__list">
+        <EditorReferencesList>
           {orderedItems.map((item, index) => {
             const relativePath = item.relativePath ?? "";
             const fileName = fileNameForReference(relativePath) || "Unknown file";
@@ -265,15 +265,13 @@ function createWorkbenchEditorReferences(
             const preview = item.label?.trim() || "No preview";
             const isCurrentFile = relativePath === sourcePath;
             return (
-              <li
+              <EditorReferencesItemWrap
                 key={`${relativePath}:${item.line}:${item.character}:${index}`}
-                className="workbench-editor-references__item-wrap"
               >
-                <button
+                <EditorReferencesItemButton
                   type="button"
-                  className={`workbench-editor-references__item${
-                    isCurrentFile ? " workbench-editor-references__item--current-file" : ""
-                  }`}
+                  data-editor-reference-item="true"
+                  data-current-file={isCurrentFile ? "true" : "false"}
                   title={
                     relativePath.length > 0
                       ? `Open ${relativePath}:${lineColumn}`
@@ -297,22 +295,22 @@ function createWorkbenchEditorReferences(
                     });
                   }}
                 >
-                  <span className="workbench-editor-references__meta">
+                  <EditorReferencesMeta>
                     <Icon size={13} strokeWidth={1.8} aria-hidden />
-                    <span className="workbench-editor-references__file">{fileName}</span>
+                    <EditorReferencesFile data-editor-reference-file="true">{fileName}</EditorReferencesFile>
                     {folder.length > 0 ? (
-                      <span className="workbench-editor-references__path">{folder}</span>
+                      <EditorReferencesPath data-editor-reference-path="true">{folder}</EditorReferencesPath>
                     ) : null}
-                    <span className="workbench-editor-references__location">{lineColumn}</span>
-                  </span>
-                  <code className="workbench-editor-references__label">{preview}</code>
-                </button>
-              </li>
+                    <EditorReferencesLocation>{lineColumn}</EditorReferencesLocation>
+                  </EditorReferencesMeta>
+                  <EditorReferencesPreview>{preview}</EditorReferencesPreview>
+                </EditorReferencesItemButton>
+              </EditorReferencesItemWrap>
             );
           })}
-        </ul>
+        </EditorReferencesList>
       )}
-    </div>
+    </EditorReferencesPanel>
   );
 }
 
@@ -383,3 +381,265 @@ export function editorLanguageExtensions(language: string) {
       return [];
   }
 }
+
+const EditorPaneSurface = styled(WorkbenchPaneSurface)``;
+
+const EditorCodeStack = styled.div`
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+`;
+
+const EditorBreadcrumb = styled.div`
+  min-width: 0;
+  min-height: 34px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  padding: 8px 18px 4px;
+  color: var(--tide-muted);
+  font: 500 13px/16px Inter, ui-sans-serif, system-ui, sans-serif;
+  white-space: nowrap;
+`;
+
+const editorBreadcrumbCrumb = css<{ $kind: "root" | "folder" | "file" }>`
+  min-width: ${({ $kind }) => ($kind === "file" ? "36px" : "0")};
+  max-width: min(30ch, 100%);
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: ${({ $kind }) => ($kind === "file" ? "var(--tide-text)" : "inherit")};
+  font: inherit;
+  font-weight: ${({ $kind }) => ($kind === "file" ? "600" : "inherit")};
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  ${({ $kind }) => ($kind === "file" ? "flex: 1 1 auto;" : "flex: 0 4 auto;")}
+`;
+
+const EditorBreadcrumbText = styled.span<{ $kind: "root" | "folder" | "file" }>`
+  ${editorBreadcrumbCrumb}
+`;
+
+const EditorBreadcrumbButton = styled.button<{ $kind: "root" | "folder" | "file" }>`
+  ${editorBreadcrumbCrumb}
+  cursor: pointer;
+
+  &:hover {
+    background: var(--tide-selection);
+    color: var(--tide-text);
+  }
+
+  &:active {
+    background: color-mix(in srgb, var(--tide-selection) 70%, var(--tide-action) 8%);
+  }
+`;
+
+const EditorBreadcrumbSeparator = styled.span`
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+  opacity: 0.7;
+`;
+
+const EditorBreadcrumbDirty = styled.span`
+  margin-left: 6px;
+  color: var(--tide-action);
+  font-size: 10px;
+`;
+
+const EditorReferencesPanel = styled.div`
+  max-height: min(34%, 260px);
+  flex: 0 0 auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  border-top: 1px solid var(--tide-line);
+  background: var(--tide-bg);
+`;
+
+const EditorReferencesHeading = styled.div`
+  min-height: 34px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 12px;
+  border-bottom: 1px solid var(--tide-line);
+  background: var(--tide-bg);
+`;
+
+const EditorReferencesTitle = styled.span`
+  flex: 0 0 auto;
+  color: var(--tide-text);
+  font-size: 12px;
+  font-weight: 650;
+`;
+
+const EditorReferencesQuery = styled.code`
+  min-width: 0;
+  max-width: 46ch;
+  height: 20px;
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  padding: 0 6px;
+  border: 1px solid var(--tide-line);
+  border-radius: 5px;
+  background: var(--tide-surface);
+  color: var(--tide-muted);
+  font: 11px/1.2 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const EditorReferencesCount = styled.span`
+  min-width: 22px;
+  height: 20px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--tide-selection);
+  color: var(--tide-text);
+  font: 600 11px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+`;
+
+const EditorReferencesDismissButton = styled.button`
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--tide-selection);
+    color: var(--tide-text);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--tide-action);
+    outline-offset: -1px;
+  }
+`;
+
+const EditorReferencesEmpty = styled.div`
+  padding: 14px 12px;
+  color: var(--tide-muted);
+  font-size: 12px;
+`;
+
+const EditorReferencesList = styled.ul`
+  overflow: auto;
+  margin: 0;
+  padding: 4px 6px 6px;
+  list-style: none;
+`;
+
+const EditorReferencesItemWrap = styled.li`
+  margin: 0;
+`;
+
+const EditorReferencesItemButton = styled.button`
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-text);
+  cursor: pointer;
+  text-align: left;
+
+  &:hover {
+    background: var(--tide-selection);
+  }
+
+  &[data-current-file="true"] {
+    background: color-mix(in srgb, var(--tide-selection) 62%, transparent);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--tide-action);
+    outline-offset: -1px;
+  }
+
+  &:active {
+    background: color-mix(in srgb, var(--tide-selection) 76%, var(--tide-action) 8%);
+  }
+`;
+
+const EditorReferencesMeta = styled.span`
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--tide-muted);
+
+  svg {
+    flex: 0 0 auto;
+    color: var(--tide-muted);
+  }
+`;
+
+const EditorReferencesFile = styled.span`
+  min-width: 0;
+  max-width: 24ch;
+  flex: 0 1 auto;
+  overflow: hidden;
+  color: var(--tide-text);
+  font: 600 12px/1.35 Inter, ui-sans-serif, system-ui, sans-serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const EditorReferencesPath = styled.span`
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--tide-muted);
+  font: 11px/1.35 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const EditorReferencesLocation = styled.span`
+  height: 18px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  border: 1px solid var(--tide-line);
+  border-radius: 5px;
+  background: var(--tide-bg);
+  color: var(--tide-muted);
+  font: 11px/1.4 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+`;
+
+const EditorReferencesPreview = styled.code`
+  min-width: 0;
+  overflow: hidden;
+  color: var(--tide-text);
+  font: 12px/1.5 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;

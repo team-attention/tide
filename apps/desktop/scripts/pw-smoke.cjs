@@ -27,12 +27,12 @@ async function dump(page, label) {
     env: { ...process.env, TIDE_APP_DATA_ROOT: dataRoot },
   });
   const page = await app.firstWindow();
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(1200);
   await dump(page, "0-launch");
 
   // The seeded thread should appear in the rail. Open it (hydrate, no send).
-  const threadRows = page.locator(".thread-row__main");
+  const threadRows = page.locator("[data-thread-row-main]");
   const rowCount = await threadRows.count();
   console.log("thread rows in rail:", rowCount);
   if (rowCount > 0) {
@@ -52,7 +52,7 @@ async function dump(page, label) {
   await page.waitForTimeout(1500);
   await dump(page, "2-filetree-open");
 
-  const fileRows = page.locator(".file-tree-row");
+  const fileRows = page.locator("[data-file-kind]");
   const n = await fileRows.count();
   const names = [];
   for (let i = 0; i < Math.min(n, 60); i += 1) {
@@ -63,12 +63,12 @@ async function dump(page, label) {
   console.log("src visible?", names.some((x) => x === "src" || x.endsWith(" src")));
 
   // Expand the first folder; rows should grow (children already loaded).
-  const firstFolder = page.locator('.file-tree-row[data-file-kind="folder"]').first();
+  const firstFolder = page.locator('[data-file-kind="folder"]').first();
   if (await firstFolder.count()) {
-    const before = await page.locator(".file-tree-row").count();
+    const before = await page.locator("[data-file-kind]").count();
     await firstFolder.click();
     await page.waitForTimeout(700);
-    const after = await page.locator(".file-tree-row").count();
+    const after = await page.locator("[data-file-kind]").count();
     console.log(`folder expand: rows ${before} -> ${after} (grew=${after > before})`);
   } else {
     console.log("no folder row to expand");
@@ -86,7 +86,7 @@ async function dump(page, label) {
   }
   await dump(page, "4-workbench-open");
 
-  const launcherActions = page.locator(".workbench-launcher-action");
+  const launcherActions = page.locator("[data-launcher-action]");
   const actionIds = [];
   for (let i = 0; i < (await launcherActions.count()); i += 1) {
     actionIds.push(await launcherActions.nth(i).getAttribute("data-launcher-action"));
@@ -103,7 +103,7 @@ async function dump(page, label) {
   await dump(page, "5-browser-pane");
 
   const browserPane = page.locator('[data-pane-kind="browser"]');
-  const tabs = page.locator(".workbench-tab__label");
+  const tabs = page.locator("[data-workbench-tab-label]");
   const tabTitles = [];
   for (let i = 0; i < (await tabs.count()); i += 1) {
     tabTitles.push((await tabs.nth(i).innerText()).trim());
@@ -112,7 +112,7 @@ async function dump(page, label) {
   console.log("workbench tabs:", JSON.stringify(tabTitles));
 
   // --- Editor: click a file row in the tree, expect an editor pane with content ---
-  const fileRow = page.locator('.file-tree-row[data-file-kind="file"]').first();
+  const fileRow = page.locator('[data-file-kind="file"]').first();
   if (await fileRow.count()) {
     const name = (await fileRow.innerText()).trim();
     await fileRow.click();

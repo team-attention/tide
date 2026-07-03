@@ -1,9 +1,19 @@
 import type { ProductShellThreadView } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
-import { useEffect, useRef, useState, type CSSProperties, type FocusEvent, type ReactElement } from "react";
-import { createIconButton, menuAnchorFromEvent } from "../chrome/chrome.tsx";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FocusEvent,
+  type MouseEvent as ReactMouseEvent,
+  type ReactElement,
+} from "react";
+import { keyframes, styled } from "styled-components";
+import { menuAnchorFromEvent } from "../chrome/chrome.tsx";
 import { worktreeRepoRootForCwd } from "../../../../../../shared/worktree/path.ts";
 import { Archive, MoreHorizontal, Pin, PinOff, Trash2 } from "lucide-react";
+import { VisuallyHidden } from "../../support/visually-hidden.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 interface ThreadRowContextItem {
@@ -119,25 +129,22 @@ function ThreadRow({ thread, handlers }: ThreadRowProps): ReactElement {
       ? hiddenThreadRowContextPopoverStyle()
       : threadRowContextPopoverStyle(contextAnchor, contextItems);
   return (
-    <div
-      className="thread-row-wrap"
+    <ThreadRowWrap
       onMouseEnter={updateContextAnchor}
       onMouseLeave={scheduleContextClose}
       onFocus={updateContextAnchor}
       onBlur={onContextBlur}
     >
-      <div
+      <ThreadRowFrame
         ref={rowRef}
-        className={[
-          "thread-row",
-          thread.active && !thread.hydrating ? "thread-row--active" : "",
-          thread.contextMenuOpen ? "thread-row--menu-open" : "",
-          thread.archiveConfirming ? "thread-row--archive-confirming" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
+        $active={thread.active && !thread.hydrating}
+        $menuOpen={thread.contextMenuOpen}
+        $archiveConfirming={thread.archiveConfirming}
         data-left-row-kind="thread"
         data-thread-row={thread.threadId}
+        data-thread-menu-open={thread.contextMenuOpen ? "true" : undefined}
+        data-thread-archive-confirming={thread.archiveConfirming ? "true" : undefined}
+        data-thread-visual-active={thread.active && !thread.hydrating ? "true" : undefined}
         data-active={thread.active}
         data-hydrating={thread.hydrating ? "true" : undefined}
         data-running={thread.running ? "true" : undefined}
@@ -151,8 +158,8 @@ function ThreadRow({ thread, handlers }: ThreadRowProps): ReactElement {
         }}
       >
         {thread.renaming ? (
-          <input
-            className="thread-row__rename-input"
+          <ThreadRenameInput
+            data-thread-rename-input
             aria-label="Rename thread"
             defaultValue={thread.title}
             autoFocus
@@ -175,8 +182,8 @@ function ThreadRow({ thread, handlers }: ThreadRowProps): ReactElement {
             }
           />
         ) : (
-          <button
-            className="thread-row__main"
+          <ThreadMainButton
+            data-thread-row-main
             type="button"
             aria-pressed={thread.active}
             aria-describedby={contextPopoverId}
@@ -185,24 +192,24 @@ function ThreadRow({ thread, handlers }: ThreadRowProps): ReactElement {
           >
             {createThreadLeadingStatus(thread, showAttention)}
             {showAttention ? (
-              <span className="visually-hidden">
+              <VisuallyHidden>
                 {needsAttention ? "Thread needs attention" : "Thread has unread updates"}
-              </span>
+              </VisuallyHidden>
             ) : thread.running ? (
-              <span className="visually-hidden">Agent is running</span>
+              <VisuallyHidden>Agent is running</VisuallyHidden>
             ) : null}
-            <span className="thread-row__title">{thread.title}</span>
-          </button>
+            <ThreadTitle data-thread-title data-rail-title>{thread.title}</ThreadTitle>
+          </ThreadMainButton>
         )}
         {thread.archiveConfirming ? (
-          <button
-            className="thread-row__confirm"
+          <ThreadConfirmButton
+            data-thread-archive-confirm
             type="button"
             aria-label="Confirm Archive Thread"
             onClick={() => handlers.onThreadArchiveConfirm(thread.threadId)}
           >
             Confirm
-          </button>
+          </ThreadConfirmButton>
         ) : (
           [
             // Option+N badge — present in markup for the first 9 threads in Left Rail
@@ -210,15 +217,15 @@ function ThreadRow({ thread, handlers }: ThreadRowProps): ReactElement {
             // [data-multitask]), where it replaces the time/dots/actions in the right
             // slot. Spec: multitask-navigation L2 / #2.
             thread.pinNumber !== undefined ? (
-              <span key="pin-badge" className="thread-row__pin-badge" aria-hidden>
+              <ThreadPinBadge key="pin-badge" data-thread-pin-badge aria-hidden>
                 {`⌥${thread.pinNumber}`}
-              </span>
+              </ThreadPinBadge>
             ) : null,
-            <span key="time" className="thread-row__time">
+            <ThreadTime key="time" data-thread-time>
               {thread.time}
-            </span>,
-            <span key="actions" className="thread-row__actions">
-              {createIconButton(
+            </ThreadTime>,
+            <ThreadActions key="actions" data-thread-actions>
+              {createThreadActionButton(
                 thread.pinned ? "Unpin" : "Pin",
                 thread.pinned ? (
                   <PinOff size={15} strokeWidth={1.9} />
@@ -226,34 +233,35 @@ function ThreadRow({ thread, handlers }: ThreadRowProps): ReactElement {
                   <Pin size={15} strokeWidth={1.9} />
                 ),
                 () => handlers.onThreadPinToggle(thread.threadId),
-                "thread-row__action",
+                "pin",
               )}
-              {createIconButton(
+              {createThreadActionButton(
                 "Archive",
                 <Archive size={15} strokeWidth={1.9} />,
                 () => handlers.onThreadArchiveIntent(thread.threadId),
-                "thread-row__action",
+                "archive",
               )}
               {worktreeBranch != null
-                ? createIconButton(
+                ? createThreadActionButton(
                     "Delete worktree",
                     <Trash2 size={15} strokeWidth={1.9} />,
                     () => handlers.onThreadDeleteWorktree(thread.threadId),
-                    "thread-row__action thread-row__action--danger",
+                    "delete-worktree",
+                    true,
                   )
                 : null}
-              {createIconButton(
+              {createThreadActionButton(
                 "Thread menu",
                 <MoreHorizontal size={15} strokeWidth={1.9} />,
                 (event) => openThreadMenu(event),
-                "thread-row__action",
+                "menu",
               )}
-            </span>,
+            </ThreadActions>,
           ]
         )}
-        <div
+        <ThreadContextPopover
           id={contextPopoverId}
-          className="thread-row__context-popover"
+          data-thread-context-popover
           role="tooltip"
           tabIndex={-1}
           hidden={!contextOpen}
@@ -263,16 +271,16 @@ function ThreadRow({ thread, handlers }: ThreadRowProps): ReactElement {
           onMouseLeave={scheduleContextClose}
         >
           {contextItems.map((item) => (
-            <span key={item.kind} className="thread-row__context-row">
-              <span className="thread-row__context-kind">{item.label}</span>
-              <span className="thread-row__context-value" title={item.title ?? item.value}>
+            <ThreadContextRow key={item.kind} data-thread-context-row>
+              <ThreadContextKind>{item.label}</ThreadContextKind>
+              <ThreadContextValue title={item.title ?? item.value}>
                 {item.value}
-              </span>
-            </span>
+              </ThreadContextValue>
+            </ThreadContextRow>
           ))}
-        </div>
-      </div>
-    </div>
+        </ThreadContextPopover>
+      </ThreadRowFrame>
+    </ThreadRowWrap>
   );
 }
 
@@ -299,6 +307,28 @@ function threadRowContextPopoverStyle(
     top,
     width,
   };
+}
+
+function createThreadActionButton(
+  label: string,
+  icon: ReactElement,
+  onClick: (event: { currentTarget: HTMLElement }) => void,
+  action: "pin" | "archive" | "delete-worktree" | "menu",
+  danger = false,
+): ReactElement {
+  return (
+    <ThreadActionButton
+      type="button"
+      title={label}
+      aria-label={label}
+      data-thread-action={action}
+      data-danger={danger ? "true" : undefined}
+      $danger={danger}
+      onClick={(event: ReactMouseEvent<HTMLButtonElement>) => onClick(event)}
+    >
+      {icon}
+    </ThreadActionButton>
+  );
 }
 
 function hiddenThreadRowContextPopoverStyle(): CSSProperties {
@@ -420,12 +450,280 @@ function createThreadLeadingStatus(
   if (!isRunning && !showAttention) {
     return null;
   }
-  const className = [
-    "thread-row__leading",
-    isRunning ? "thread-row__leading--running" : "",
-    showAttention ? "thread-row__leading--attention" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-  return <span className={className} aria-hidden />;
+  return (
+    <ThreadLeadingStatus
+      aria-hidden
+      data-thread-leading-status={isRunning ? "running" : "attention"}
+      $running={isRunning}
+      $attention={showAttention}
+    />
+  );
 }
+
+const threadRowStatusSpin = keyframes`
+  to {
+    transform: rotate(360deg);
+  }
+`;
+
+const ThreadRowWrap = styled.div`
+  position: relative;
+`;
+
+const ThreadRowFrame = styled.div<{
+  $active: boolean;
+  $menuOpen: boolean;
+  $archiveConfirming: boolean;
+}>`
+  width: 100%;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: ${({ $active, $menuOpen, $archiveConfirming }) =>
+    $active
+      ? "color-mix(in srgb, var(--tide-selection) 78%, transparent)"
+      : $menuOpen || $archiveConfirming
+        ? "var(--tide-selection)"
+        : "transparent"};
+  color: ${({ $active }) =>
+    $active ? "var(--tide-action)" : "color-mix(in srgb, var(--tide-text) 76%, transparent)"};
+  box-shadow: none;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 16px;
+  text-align: left;
+  transition: background-color 0.18s ease, color 0.12s ease;
+
+  &:hover {
+    background: ${({ $active }) =>
+      $active ? "color-mix(in srgb, var(--tide-selection) 78%, transparent)" : "var(--tide-selection)"};
+  }
+`;
+
+const ThreadMainButton = styled.button`
+  min-width: 0;
+  flex: 1 1 auto;
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+`;
+
+const ThreadLeadingStatus = styled.span<{
+  $running: boolean;
+  $attention: boolean;
+}>`
+  width: ${({ $attention }) => ($attention ? "8px" : "16px")};
+  height: ${({ $attention }) => ($attention ? "8px" : "16px")};
+  margin: ${({ $attention }) => ($attention ? "0 4px" : "0")};
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: ${({ $attention }) =>
+    $attention ? "0" : "2px solid color-mix(in srgb, var(--tide-muted) 38%, transparent)"};
+  border-top-color: ${({ $running }) =>
+    $running
+      ? "var(--tide-success)"
+      : "color-mix(in srgb, var(--tide-muted) 38%, transparent)"};
+  border-radius: 999px;
+  background: ${({ $attention }) => ($attention ? "var(--tide-accent)" : "transparent")};
+  color: var(--tide-muted);
+  animation: ${({ $running }) => ($running ? threadRowStatusSpin : "none")} 0.9s linear infinite;
+`;
+
+const ThreadRenameInput = styled.input`
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 24px;
+  border: 1px solid var(--tide-line-strong);
+  border-radius: 6px;
+  padding: 0 6px;
+  background: var(--tide-bg);
+  color: var(--tide-text);
+  font: inherit;
+
+  &:focus {
+    outline: none;
+    border-color: color-mix(in srgb, var(--tide-action) 38%, var(--tide-line));
+  }
+`;
+
+const ThreadTitle = styled.span`
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  [data-thread-visual-active="true"] & {
+    font-weight: 500;
+  }
+`;
+
+const ThreadPinBadge = styled.span`
+  display: none;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: var(--tide-bg);
+  color: var(--tide-action);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+
+  [data-multitask] & {
+    display: inline-flex;
+  }
+`;
+
+const ThreadTime = styled.span`
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+  font-size: 12px;
+
+  [data-thread-row]:hover &,
+  [data-thread-menu-open="true"] &,
+  [data-multitask] &,
+  [data-multitask] [data-thread-row]:hover & {
+    display: none;
+  }
+`;
+
+const ThreadActions = styled.span`
+  display: none;
+  align-items: center;
+  gap: 2px;
+  color: var(--tide-muted);
+
+  [data-thread-row]:hover &,
+  [data-thread-menu-open="true"] & {
+    display: inline-flex;
+  }
+
+  [data-multitask] &,
+  [data-multitask] [data-thread-row]:hover & {
+    display: none;
+  }
+`;
+
+const ThreadActionButton = styled.button<{ $danger: boolean }>`
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: ${({ $danger }) => ($danger ? "var(--tide-danger)" : "var(--tide-muted)")};
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, opacity 0.12s ease;
+
+  &:hover {
+    background: var(--tide-bg);
+    color: ${({ $danger }) => ($danger ? "var(--tide-danger)" : "var(--tide-action)")};
+  }
+
+  [data-thread-menu-open="true"] & {
+    background: var(--tide-bg);
+    color: var(--tide-action);
+  }
+
+  [data-thread-menu-open="true"] &:hover {
+    color: ${({ $danger }) => ($danger ? "var(--tide-danger)" : "var(--tide-action)")};
+  }
+`;
+
+const ThreadConfirmButton = styled.button`
+  height: 24px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 12px;
+  background: color-mix(in srgb, var(--tide-selection) 84%, var(--tide-action) 8%);
+  color: var(--tide-action);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+`;
+
+const ThreadContextRow = styled.span`
+  min-width: 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  column-gap: 8px;
+`;
+
+const ThreadContextKind = styled.span`
+  color: var(--tide-muted);
+  font-size: 9.5px;
+  font-weight: 650;
+  line-height: 13px;
+  text-transform: uppercase;
+`;
+
+const ThreadContextValue = styled.span`
+  min-width: 0;
+  overflow: hidden;
+  color: var(--tide-text);
+  font-size: 12px;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const ThreadContextPopover = styled.div`
+  position: fixed;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 8px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--tide-bg) 94%, var(--tide-surface));
+  box-shadow:
+    0 18px 44px -22px rgb(52 48 56 / 46%),
+    0 6px 18px -12px rgb(52 48 56 / 28%);
+  color: var(--tide-text);
+  pointer-events: auto;
+  transform: translateY(-2px) scale(0.98);
+  transform-origin: top left;
+  animation: tide-pop-in 0.12s ease forwards;
+  user-select: text;
+
+  &[hidden] {
+    display: none;
+  }
+
+  [data-theme="dark"] & {
+    box-shadow:
+      0 18px 48px -18px rgb(0 0 0 / 76%),
+      0 6px 18px -10px rgb(0 0 0 / 72%);
+  }
+
+  &:hover ${ThreadContextRow} {
+    align-items: start;
+  }
+
+  &:hover ${ThreadContextValue} {
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+  }
+`;

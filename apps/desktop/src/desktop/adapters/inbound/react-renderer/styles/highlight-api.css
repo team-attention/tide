@@ -1,0 +1,11 @@
+/* Browser-owned CSS Highlight API ranges used by in-pane find. */
+
+::highlight(tide-find-match) {
+  background: rgba(224, 176, 64, 0.42);
+  color: inherit;
+}
+
+::highlight(tide-find-active) {
+  background: rgba(64, 119, 255, 0.58);
+  color: inherit;
+}

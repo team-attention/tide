@@ -19,9 +19,9 @@ import {
   useRef,
   useState,
   type ChangeEvent,
-  type CSSProperties,
   type ReactElement,
 } from "react";
+import { styled } from "styled-components";
 
 import {
   CornerDownRight,
@@ -337,46 +337,45 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
 
   const lightbox =
     imagePreview === null ? null : (
-      <div
-        className="image-lightbox-backdrop"
+      <ImageLightboxBackdrop
         role="dialog"
         aria-label="Image preview"
         onClick={() => setImagePreview(null)}
       >
-        <img className="image-lightbox__img" src={imagePreview} alt="Attachment preview" />
-      </div>
+        <ImageLightboxImage src={imagePreview} alt="Attachment preview" />
+      </ImageLightboxBackdrop>
     );
 
   if (isNewThreadStart) {
     return (
-      <main
+      <AgentChatShellFrame
         ref={shellRef}
-        className="agent-chat-shell agent-chat-shell--start"
+        $start
         data-chat-state={viewModel.chatState}
         data-runtime-state={viewModel.runtimeState}
+        data-agent-chat-shell="true"
+        data-chat-start="true"
       >
         {createNewThreadStartSurface(viewModel, handlers)}
         {popover}
         {lightbox}
         {fileInput}
-      </main>
+      </AgentChatShellFrame>
     );
   }
 
-  const shellClassName = [
-    "agent-chat-shell",
-    props.showThreadHeader === false ? "agent-chat-shell--embedded" : "",
-    goalPanelVisible ? "agent-chat-shell--with-goal-panel" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const embedded = props.showThreadHeader === false;
 
   return (
-    <main
+    <AgentChatShellFrame
       ref={shellRef}
-      className={shellClassName}
+      $embedded={embedded}
+      $withGoalPanel={goalPanelVisible}
       data-chat-state={viewModel.chatState}
       data-runtime-state={viewModel.runtimeState}
+      data-agent-chat-shell="true"
+      data-chat-embedded={embedded ? "true" : undefined}
+      data-goal-panel={goalPanelVisible ? "true" : undefined}
     >
       {props.showThreadHeader === false ? null : createThreadHeader(viewModel)}
       {goalPanelVisible && viewModel.thread !== null ? (
@@ -387,33 +386,33 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
           onSetGoal={props.onSetGoal}
         />
       ) : null}
-      <div className="agent-chat-shell__session-region">
+      <AgentSessionRegion>
         {transcriptFind.open ? (
-          <div className="agent-chat-shell__find-region">
+          <AgentSessionFindRegion data-chat-find-region="true">
             <InPaneFindBar
               query={transcriptFind.query}
               matchCount={transcriptMatchCount}
               activeIndex={transcriptFind.activeIndex}
               scopeLabel="Thread"
+              placement="chat"
               placeholder="Search this thread"
               onQueryChange={transcriptFind.setQuery}
               onNext={() => transcriptFind.next(transcriptMatchCount)}
               onPrevious={() => transcriptFind.previous(transcriptMatchCount)}
               onClose={transcriptFind.closeFind}
             />
-          </div>
+          </AgentSessionFindRegion>
         ) : null}
         {sessionView}
-      </div>
+      </AgentSessionRegion>
       {createComposerStack(viewModel, handlers)}
       {transcriptSel === null || props.onQuote === undefined ? null : (
-        <button
+        <SelectionQuoteButton
           type="button"
-          className="editor-selection-toolbar"
           style={{
             left: `${transcriptSel.x}px`,
             top: `${Math.max(transcriptSel.y - 36, 8)}px`,
-          } as CSSProperties}
+          }}
           onMouseDown={(event: { preventDefault: () => void }) => {
             event.preventDefault();
             props.onQuote?.(transcriptSel.text.trim());
@@ -422,14 +421,111 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
         >
           <CornerDownRight size={13} strokeWidth={1.9} aria-hidden />
           Add to chat
-        </button>
+        </SelectionQuoteButton>
       )}
       {popover}
       {lightbox}
       {fileInput}
-    </main>
+    </AgentChatShellFrame>
   );
 }
+
+const AgentChatShellFrame = styled.main<{
+  $embedded?: boolean;
+  $start?: boolean;
+  $withGoalPanel?: boolean;
+}>`
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: ${({ $embedded, $start, $withGoalPanel }) => {
+    if ($start) {
+      return "minmax(0, 1fr)";
+    }
+    if ($embedded && $withGoalPanel) {
+      return "auto minmax(0, 1fr) auto";
+    }
+    if ($embedded) {
+      return "minmax(0, 1fr) auto";
+    }
+    if ($withGoalPanel) {
+      return "auto auto minmax(0, 1fr) auto";
+    }
+    return "auto minmax(0, 1fr) auto";
+  }};
+  gap: ${({ $withGoalPanel }) => ($withGoalPanel ? "12px" : "16px")};
+  padding: ${({ $start }) => ($start ? "26px 0 9vh" : "26px 0 20px")};
+  overflow: hidden;
+  align-items: ${({ $start }) => ($start ? "center" : "stretch")};
+  justify-items: ${({ $start }) => ($start ? "center" : "stretch")};
+`;
+
+const AgentSessionRegion = styled.div`
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+
+  > [data-agent-session] {
+    flex: 1 1 auto;
+  }
+`;
+
+const AgentSessionFindRegion = styled.div`
+  flex: 0 0 auto;
+  min-width: 0;
+  width: min(760px, calc(100% - 32px));
+  margin: 0 auto 8px;
+`;
+
+const ImageLightboxBackdrop = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  background: rgba(0, 0, 0, 0.72);
+  cursor: zoom-out;
+  animation: tide-overlay-in 0.14s ease;
+`;
+
+const ImageLightboxImage = styled.img`
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.5);
+  animation: tide-modal-in 0.18s ease;
+`;
+
+const SelectionQuoteButton = styled.button`
+  position: fixed;
+  z-index: 80;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--tide-line-strong, var(--tide-line));
+  border-radius: 8px;
+  background: var(--tide-text);
+  color: var(--tide-bg);
+  font: 600 12px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+  box-shadow: 0 6px 18px -6px rgba(36, 33, 38, 0.45);
+  cursor: pointer;
+  white-space: nowrap;
+
+  svg {
+    color: var(--tide-bg);
+    opacity: 0.85;
+  }
+
+  &:hover {
+    opacity: 0.92;
+  }
+`;
 
 // Decomposed into ./agent-chat/ (spec: navigable-source-structure). The chat shell
 // component stays here; moved pieces are re-exported for path compatibility.

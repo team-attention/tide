@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
+import { styled } from "styled-components";
 import { CheckCircle2, Circle, CircleDot, Target } from "lucide-react";
 import type {
   AgentChatChecklistStatus,
@@ -64,19 +65,20 @@ export function GoalChecklistPanel(props: {
   };
 
   return (
-    <section
-      className={`goal-checklist-panel${hasChecklist ? " goal-checklist-panel--with-checklist" : " goal-checklist-panel--goal-only"}`}
+    <GoalChecklistPanelFrame
+      $hasChecklist={hasChecklist}
       aria-label="Thread goal and checklist"
+      data-goal-checklist-panel="true"
+      data-checklist-mode={hasChecklist ? "with-checklist" : "goal-only"}
     >
-      <div className="goal-checklist-panel__goal-row">
-        <span className="goal-checklist-panel__goal-label">
-          <Target size={13} strokeWidth={2} className="goal-checklist-panel__goal-icon" aria-hidden />
+      <GoalRow>
+        <GoalLabel>
+          <Target size={13} strokeWidth={2} aria-hidden />
           <span>Goal</span>
-        </span>
+        </GoalLabel>
         {editing ? (
-          <input
+          <GoalInput
             ref={inputRef}
-            className="goal-checklist-panel__goal-input"
             value={draft}
             placeholder="Describe the goal for this thread…"
             aria-label="Thread goal"
@@ -93,9 +95,9 @@ export function GoalChecklistPanel(props: {
             }}
           />
         ) : (
-          <button
+          <GoalTextButton
             type="button"
-            className={`goal-checklist-panel__goal-text${hasGoal ? "" : " goal-checklist-panel__goal-text--empty"}`}
+            $empty={!hasGoal}
             title={hasGoal ? "Edit goal" : "Set a goal"}
             onClick={() => {
               setDraft(currentGoal);
@@ -103,39 +105,39 @@ export function GoalChecklistPanel(props: {
             }}
           >
             {hasGoal ? currentGoal : "Set a goal for this thread"}
-          </button>
+          </GoalTextButton>
         )}
         {goalState !== undefined && hasGoal ? (
-          <span className={`goal-checklist-panel__status goal-checklist-panel__status--${goalState.status}`}>
+          <GoalStatusPill $status={goalState.status}>
             {goalStatusLabel(goalState)}
-          </span>
+          </GoalStatusPill>
         ) : null}
         {hasChecklist ? (
-          <button
+          <ChecklistProgressButton
             type="button"
-            className="goal-checklist-panel__progress"
             aria-expanded={!collapsed}
             title={collapsed ? "Show checklist" : "Hide checklist"}
             onClick={() => setCollapsed((value) => !value)}
           >
             {checklist.doneCount}/{checklist.totalCount}
-          </button>
+          </ChecklistProgressButton>
         ) : null}
-      </div>
+      </GoalRow>
       {hasChecklist && !collapsed ? (
-        <ul className="goal-checklist-panel__list">
+        <ChecklistList>
           {checklist.entries.map((entry, index) => (
-            <li
+            <ChecklistItem
               key={`${index}-${entry.text}`}
-              className={`goal-checklist-panel__item goal-checklist-panel__item--${entry.status}`}
+              $status={entry.status}
+              data-checklist-item-status={entry.status}
             >
               <ChecklistStatusIcon status={entry.status} />
-              <span className="goal-checklist-panel__item-text">{entry.text}</span>
-            </li>
+              <ChecklistItemText>{entry.text}</ChecklistItemText>
+            </ChecklistItem>
           ))}
-        </ul>
+        </ChecklistList>
       ) : null}
-    </section>
+    </GoalChecklistPanelFrame>
   );
 }
 
@@ -161,15 +163,162 @@ function goalStatusLabel(goalState: AgentChatGoalState): string {
 function ChecklistStatusIcon({ status }: { status: AgentChatChecklistStatus }): ReactElement {
   if (status === "done") {
     return (
-      <CheckCircle2 size={14} strokeWidth={2} className="goal-checklist-panel__item-icon" aria-label="Done" />
+      <CheckCircle2 size={14} strokeWidth={2} aria-label="Done" />
     );
   }
   if (status === "in_progress") {
     return (
-      <CircleDot size={14} strokeWidth={2} className="goal-checklist-panel__item-icon" aria-label="In progress" />
+      <CircleDot size={14} strokeWidth={2} aria-label="In progress" />
     );
   }
   return (
-    <Circle size={14} strokeWidth={2} className="goal-checklist-panel__item-icon" aria-label="Pending" />
+    <Circle size={14} strokeWidth={2} aria-label="Pending" />
   );
 }
+
+const GoalChecklistPanelFrame = styled.section<{ $hasChecklist: boolean }>`
+  width: min(760px, calc(100% - 32px));
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+  margin: 0 auto;
+  padding: ${({ $hasChecklist }) => ($hasChecklist ? "8px 10px" : "0 2px")};
+  border: ${({ $hasChecklist }) => ($hasChecklist ? "1px solid var(--tide-border)" : "0")};
+  border-radius: ${({ $hasChecklist }) => ($hasChecklist ? "8px" : "0")};
+  background: ${({ $hasChecklist }) =>
+    $hasChecklist
+      ? "color-mix(in srgb, var(--tide-surface) 97%, var(--tide-text) 3%)"
+      : "transparent"};
+  box-shadow: ${({ $hasChecklist }) =>
+    $hasChecklist ? "0 1px 2px rgba(15, 23, 42, 0.035)" : "none"};
+`;
+
+const GoalRow = styled.div`
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+`;
+
+const GoalLabel = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  color: var(--tide-muted);
+  font-size: 12px;
+  font-weight: 560;
+  line-height: 1;
+
+  svg {
+    color: var(--tide-muted);
+  }
+`;
+
+const goalControlCss = `
+  min-width: 0;
+  min-height: 26px;
+  border: 0;
+  border-radius: 6px;
+  font: inherit;
+`;
+
+const GoalTextButton = styled.button<{ $empty: boolean }>`
+  ${goalControlCss}
+  padding: 3px 6px;
+  color: ${({ $empty }) => ($empty ? "var(--tide-muted)" : "var(--tide-text)")};
+  background: transparent;
+  text-align: left;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  cursor: text;
+
+  &:hover {
+    background: color-mix(in srgb, var(--tide-selection) 60%, transparent);
+  }
+`;
+
+const GoalInput = styled.input`
+  ${goalControlCss}
+  width: 100%;
+  padding: 0 7px;
+  color: var(--tide-text);
+  background: var(--tide-bg);
+  outline: 1px solid var(--tide-accent);
+`;
+
+const GoalStatusPill = styled.span<{ $status: AgentChatGoalState["status"] }>`
+  ${goalControlCss}
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  color: ${({ $status }) => {
+    if ($status === "active") {
+      return "var(--tide-accent)";
+    }
+    if ($status === "complete") {
+      return "var(--tide-success)";
+    }
+    if ($status === "blocked" || $status === "usage_limited" || $status === "budget_limited") {
+      return "var(--tide-danger)";
+    }
+    return "var(--tide-muted)";
+  }};
+  background: color-mix(in srgb, var(--tide-bg) 82%, var(--tide-text) 6%);
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+`;
+
+const ChecklistProgressButton = styled.button`
+  ${goalControlCss}
+  padding: 0 8px;
+  color: var(--tide-muted);
+  background: var(--tide-bg);
+  font-size: 12px;
+  font-weight: 600;
+
+  &:hover {
+    color: var(--tide-text);
+  }
+`;
+
+const ChecklistList = styled.ul`
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0 0 0 23px;
+  list-style: none;
+`;
+
+const ChecklistItem = styled.li<{ $status: AgentChatChecklistStatus }>`
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: 7px;
+  color: ${({ $status }) => {
+    if ($status === "in_progress") {
+      return "var(--tide-text)";
+    }
+    if ($status === "done") {
+      return "color-mix(in srgb, var(--tide-muted) 82%, var(--tide-text) 18%)";
+    }
+    return "var(--tide-muted)";
+  }};
+  font-size: 12.5px;
+  line-height: 1.35;
+
+  > svg {
+    margin-top: 1px;
+    color: currentColor;
+  }
+`;
+
+const ChecklistItemText = styled.span`
+  min-width: 0;
+  overflow-wrap: anywhere;
+`;

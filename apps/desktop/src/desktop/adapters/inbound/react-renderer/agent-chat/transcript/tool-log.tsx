@@ -1,11 +1,24 @@
 import type { AgentChatBlockView } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import { useState } from "react";
 import type { ReactElement, ReactNode } from "react";
+import { styled } from "styled-components";
 import { pickStringField, readToolFilePath, renderFileChip } from "./file-chip.tsx";
 import { editDiffLines } from "./tool-diff.ts";
 import { guessLanguage, highlightToHtml } from "../../support/code-highlight.ts";
 import { ChevronDown, Wrench } from "lucide-react";
 import { fileIconFor } from "../../support/file-icons.ts";
+import {
+  DiffBody,
+  DiffLine,
+  DiffLineSign,
+  DiffLineText,
+  DiffStat,
+  DiffStatValue,
+  ToolBody,
+  ToolName,
+  TranscriptTurn,
+  TurnDiff,
+} from "./transcript.parts.tsx";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 // A provider tool call/result renders as a compact log entry: a small header
@@ -20,11 +33,11 @@ export function createToolLogTurn(block: AgentChatBlockView): ReactElement | nul
     return null;
   }
   return (
-    <article
+    <TranscriptTurn
       key={block.blockId}
-      className={`agent-session-turn agent-session-turn--tool agent-session-turn--tool-${
-        isResult ? "result" : "call"
-      }`}
+      $role="tool"
+      $toolResult={isResult}
+      data-transcript-turn="true"
       data-block-id={block.blockId}
       data-parent-block-id={block.parentBlockId}
       data-block-kind={block.kind}
@@ -35,9 +48,9 @@ export function createToolLogTurn(block: AgentChatBlockView): ReactElement | nul
     >
       {/* A call shows a quiet tool-name label; a result drops the (repeated) label
           and just shows its output flowing under the call. No arrow markers. */}
-      {isResult ? null : <span className="agent-session-turn__tool-name">{block.title}</span>}
+      {isResult ? null : <ToolName>{block.title}</ToolName>}
       {body}
-    </article>
+    </TranscriptTurn>
   );
 }
 
@@ -62,30 +75,29 @@ function renderToolBody(block: AgentChatBlockView): ReactNode {
     // highlighted consistently.
     const diffLang = guessLanguage(diff.map((line) => line.text).join("\n"));
     return (
-      <div className="agent-session-turn__diff">
-        <div className="agent-session-turn__diff-stat">
-          {adds > 0 ? <span className="diff-stat--add">{`+${adds}`}</span> : null}
-          {dels > 0 ? <span className="diff-stat--del">{`-${dels}`}</span> : null}
-        </div>
-        <div className="agent-session-turn__diff-body">
+      <TurnDiff>
+        <DiffStat>
+          {adds > 0 ? <DiffStatValue $kind="add">{`+${adds}`}</DiffStatValue> : null}
+          {dels > 0 ? <DiffStatValue $kind="del">{`-${dels}`}</DiffStatValue> : null}
+        </DiffStat>
+        <DiffBody>
           {diff.map((line, index) => (
-            <div key={index} className={`diff-line diff-line--${line.kind}`}>
-              <span className="diff-line__sign" aria-hidden>
+            <DiffLine key={index} $kind={line.kind}>
+              <DiffLineSign $kind={line.kind} aria-hidden>
                 {line.kind === "add" ? "+" : line.kind === "del" ? "-" : " "}
-              </span>
-              <span
-                className="diff-line__text"
+              </DiffLineSign>
+              <DiffLineText
                 dangerouslySetInnerHTML={{ __html: highlightToHtml(line.text, diffLang) }}
               />
-            </div>
+            </DiffLine>
           ))}
-        </div>
-      </div>
+        </DiffBody>
+      </TurnDiff>
     );
   }
   return (
-    <pre
-      className="agent-session-turn__tool-body"
+    <ToolBody
+      data-tool-body="true"
       dangerouslySetInnerHTML={{ __html: highlightToHtml(toolBodyText(block.title, block.body)) }}
     />
   );
@@ -143,26 +155,25 @@ export function ToolActivityGroup({ blocks }: { blocks: AgentChatBlockView[] }):
   const [expanded, setExpanded] = useState(false);
   const summary = summarizeToolActivity(blocks);
   return (
-    <article
-      className={`agent-session-tools${expanded ? " agent-session-tools--expanded" : ""}`}
+    <ToolActivityFrame
       data-block-role="tool"
       data-tool-count={blocks.length}
+      data-tool-activity="true"
     >
-      <button
+      <ToolActivitySummaryButton
         type="button"
-        className="agent-session-tools__summary"
         aria-expanded={expanded}
         onClick={() => setExpanded((value) => !value)}
       >
-        <Wrench className="agent-session-tools__icon" size={14} aria-hidden />
-        <span className="agent-session-tools__summary-text">{summary}</span>
-        <ChevronDown className="agent-session-tools__chevron" size={13} aria-hidden />
-      </button>
+        <Wrench size={14} aria-hidden />
+        <ToolActivitySummaryText data-tool-activity-summary="true">{summary}</ToolActivitySummaryText>
+        <ToolActivityChevron $expanded={expanded} size={13} aria-hidden />
+      </ToolActivitySummaryButton>
       {createFilesChangedList(blocks)}
       {expanded ? (
-        <div className="agent-session-tools__detail">{blocks.map(createToolLogTurn)}</div>
+        <ToolActivityDetail>{blocks.map(createToolLogTurn)}</ToolActivityDetail>
       ) : null}
-    </article>
+    </ToolActivityFrame>
   );
 }
 
@@ -173,27 +184,26 @@ function createFilesChangedList(blocks: AgentChatBlockView[]): ReactElement | nu
     return null;
   }
   return (
-    <div className="agent-session-tools__files">
+    <ToolActivityFiles data-tool-activity-files="true">
       {paths.map((path) => {
         const slash = path.lastIndexOf("/");
         const name = slash === -1 ? path : path.slice(slash + 1);
         const dir = slash === -1 ? "" : path.slice(0, slash);
         const Icon = fileIconFor(name);
         return (
-          <button
+          <ToolActivityFileButton
             key={path}
             type="button"
-            className="agent-session-tools__file"
             data-open-file={path}
             title={`Open ${name} in the Workbench`}
           >
-            <Icon className="agent-session-tools__file-icon" size={13} aria-hidden />
-            <span className="agent-session-tools__file-name">{name}</span>
-            {dir.length > 0 ? <span className="agent-session-tools__file-dir">{dir}</span> : null}
-          </button>
+            <Icon size={13} aria-hidden />
+            <ToolActivityFileName>{name}</ToolActivityFileName>
+            {dir.length > 0 ? <ToolActivityFileDir>{dir}</ToolActivityFileDir> : null}
+          </ToolActivityFileButton>
         );
       })}
-    </div>
+    </ToolActivityFiles>
   );
 }
 
@@ -277,3 +287,109 @@ function summarizeToolActivity(blocks: AgentChatBlockView[]): string {
   const joined = parts.join(", ");
   return joined.length === 0 ? "Tool activity" : joined.charAt(0).toUpperCase() + joined.slice(1);
 }
+
+const ToolActivityFrame = styled.article`
+  width: min(760px, calc(100% - 32px));
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+`;
+
+const ToolActivitySummaryButton = styled.button`
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--tide-muted);
+  font-size: 13.5px;
+  line-height: 20px;
+  cursor: pointer;
+  transition: color 0.12s ease;
+
+  &:hover {
+    color: var(--tide-text);
+  }
+
+  > svg:first-child {
+    flex-shrink: 0;
+    color: var(--tide-muted);
+    opacity: 0.8;
+  }
+`;
+
+const ToolActivitySummaryText = styled.span`
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const ToolActivityChevron = styled(ChevronDown)<{ $expanded: boolean }>`
+  flex-shrink: 0;
+  opacity: 0.7;
+  transform: ${({ $expanded }) => ($expanded ? "rotate(180deg)" : "none")};
+  transition: transform 0.14s ease;
+`;
+
+const ToolActivityDetail = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 4px;
+`;
+
+const ToolActivityFiles = styled.div`
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 4px 0;
+  border: 1px solid var(--tide-line);
+  border-radius: 10px;
+  background: var(--tide-bg);
+  overflow: hidden;
+`;
+
+const ToolActivityFileButton = styled.button`
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--tide-selection);
+  }
+
+  > svg {
+    flex-shrink: 0;
+    color: var(--tide-muted);
+  }
+`;
+
+const ToolActivityFileName = styled.span`
+  flex: 0 0 auto;
+  color: var(--tide-text);
+  font-weight: 500;
+  white-space: nowrap;
+`;
+
+const ToolActivityFileDir = styled.span`
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--tide-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;

@@ -2,6 +2,7 @@ import type { AgentChatChoiceSurfaceView } from "../../../../../application/doma
 import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
 import { ChevronLeft, ExternalLink, KeyRound, Wrench } from "lucide-react";
+import { styled } from "styled-components";
 
 export function OpencodeModelProviderPanel(props: {
   surface: AgentChatChoiceSurfaceView;
@@ -18,137 +19,131 @@ export function OpencodeModelProviderPanel(props: {
 
   if (data === undefined) {
     return (
-      <section className="oc-model-provider" aria-label="opencode model provider">
-        <header className="oc-model-provider__head">
-          <h2>Provider</h2>
-          <span>opencode</span>
-        </header>
-      </section>
+      <OpencodeModelProviderSurface aria-label="opencode model provider">
+        <OpencodeModelProviderHeader>
+          <OpencodeModelProviderTitle>Provider</OpencodeModelProviderTitle>
+          <OpencodeModelProviderVersion>opencode</OpencodeModelProviderVersion>
+        </OpencodeModelProviderHeader>
+      </OpencodeModelProviderSurface>
     );
   }
 
   const providerLabel = data.providerLabel ?? "Provider";
   const apiKeySubmitLabel = submitLabelForProviderStatus(data.providerStatus);
   return (
-    <section
-      className="oc-model-provider"
+    <OpencodeModelProviderSurface
       aria-label="opencode model provider"
       data-choice-surface="opencode_model_provider"
       data-opencode-step={data.step}
     >
-      <header className="oc-model-provider__head">
-        <h2>{props.surface.title}</h2>
-        <span>{data.version ? `opencode ${data.version}` : props.surface.sourceLabel}</span>
-      </header>
+      <OpencodeModelProviderHeader>
+        <OpencodeModelProviderTitle>{props.surface.title}</OpencodeModelProviderTitle>
+        <OpencodeModelProviderVersion>
+          {data.version ? `opencode ${data.version}` : props.surface.sourceLabel}
+        </OpencodeModelProviderVersion>
+      </OpencodeModelProviderHeader>
 
       {data.step === "provider_list" || data.step === "connect_vendor" ? (
-        <div className="oc-model-provider__rows">
+        <OpencodeProviderRows>
           {data.providers.map((provider) => (
-            <button
+            <OpencodeProviderRowButton
               key={provider.rowId}
               type="button"
-              className="oc-model-provider__row"
-              data-selected={provider.selected ? "true" : "false"}
-              data-connected={provider.connected ? "true" : "false"}
-              data-reconnect={provider.needsReconnect ? "true" : undefined}
+              $selected={provider.selected}
               onClick={() => select(provider.rowId)}
             >
-              <span className="oc-model-provider__mark" aria-hidden>{provider.monogram}</span>
-              <span className="oc-model-provider__body">
-                <b>{provider.label}</b>
-                <span>{provider.detail}</span>
-              </span>
-              <span className="oc-model-provider__meta">
+              <OpencodeProviderMark aria-hidden>{provider.monogram}</OpencodeProviderMark>
+              <OpencodeProviderBody>
+                <OpencodeProviderName>{provider.label}</OpencodeProviderName>
+                <OpencodeProviderDetail>{provider.detail}</OpencodeProviderDetail>
+              </OpencodeProviderBody>
+              <OpencodeProviderMeta>
                 {provider.selected ? "Current" : provider.needsReconnect ? "Reconnect" : provider.connected ? ">" : "Connect"}
-              </span>
-            </button>
+              </OpencodeProviderMeta>
+            </OpencodeProviderRowButton>
           ))}
-        </div>
+        </OpencodeProviderRows>
       ) : null}
 
       {data.step === "model_list" ? (
-        <div className="oc-model-provider__rows">
+        <OpencodeProviderRows>
           <BackRow label="Back to providers" detail="opencode" onClick={() => select("opencode-back")} />
           {data.connection ? (
-            <button
+            <OpencodeProviderRowButton
               type="button"
-              className="oc-model-provider__row oc-model-provider__row--subtle"
+              $subtle
               onClick={() => select(data.connection?.rowId ?? "")}
             >
-              <span className="oc-model-provider__mark" aria-hidden><Wrench size={13} strokeWidth={1.9} /></span>
-              <span className="oc-model-provider__body">
-                <b>{data.connection.label}</b>
-                <span>{data.connection.detail}</span>
-              </span>
-              <span className="oc-model-provider__meta">Update</span>
-            </button>
+              <OpencodeProviderMark aria-hidden><Wrench size={13} strokeWidth={1.9} /></OpencodeProviderMark>
+              <OpencodeProviderBody>
+                <OpencodeProviderName $subtle>{data.connection.label}</OpencodeProviderName>
+                <OpencodeProviderDetail>{data.connection.detail}</OpencodeProviderDetail>
+              </OpencodeProviderBody>
+              <OpencodeProviderMeta>Update</OpencodeProviderMeta>
+            </OpencodeProviderRowButton>
           ) : null}
-          <div className="oc-model-provider__section">Models</div>
+          <OpencodeProviderSection>Models</OpencodeProviderSection>
           {data.models.length > 0 ? data.models.map((model) => (
-            <button
+            <OpencodeProviderRowButton
               key={model.rowId}
               type="button"
-              className="oc-model-provider__row"
-              data-selected={model.selected ? "true" : "false"}
+              $selected={model.selected}
               onClick={() => select(model.rowId)}
             >
-              <span className="oc-model-provider__mark" aria-hidden>{model.monogram}</span>
-              <span className="oc-model-provider__body">
-                <b>{model.label}</b>
-                <span>{model.detail ?? model.value}</span>
-              </span>
-              <span className="oc-model-provider__meta">{model.selected ? "Current" : model.meta ?? ""}</span>
-            </button>
+              <OpencodeProviderMark aria-hidden>{model.monogram}</OpencodeProviderMark>
+              <OpencodeProviderBody>
+                <OpencodeProviderName>{model.label}</OpencodeProviderName>
+                <OpencodeProviderDetail>{model.detail ?? model.value}</OpencodeProviderDetail>
+              </OpencodeProviderBody>
+              <OpencodeProviderMeta>{model.selected ? "Current" : model.meta ?? ""}</OpencodeProviderMeta>
+            </OpencodeProviderRowButton>
           )) : (
-            <div className="oc-model-provider__empty">No models from {providerLabel} yet.</div>
+            <OpencodeProviderEmpty>No models from {providerLabel} yet.</OpencodeProviderEmpty>
           )}
-          <div className="oc-model-provider__section">Effort</div>
-          <div className="oc-model-provider__effort">
+          <OpencodeProviderSection>Effort</OpencodeProviderSection>
+          <OpencodeProviderEffortGrid>
             {data.effortRows.map((row) => (
-              <button
+              <OpencodeProviderEffortButton
                 key={row.rowId}
                 type="button"
-                data-active={row.selected ? "true" : "false"}
+                $active={row.selected}
                 onClick={() => select(row.rowId)}
               >
                 {row.label}
-              </button>
+              </OpencodeProviderEffortButton>
             ))}
-          </div>
-        </div>
+          </OpencodeProviderEffortGrid>
+        </OpencodeProviderRows>
       ) : null}
 
       {data.step === "vendor_method" ? (
-        <div className="oc-model-provider__rows">
+        <OpencodeProviderRows>
           <BackRow label="Back" detail={providerLabel} onClick={() => select("opencode-back")} />
-          <button
+          <OpencodeProviderMethodButton
             type="button"
-            className="oc-model-provider__method"
             onClick={() => data.method && select(data.method.browserRowId)}
           >
             <ExternalLink size={15} strokeWidth={1.9} aria-hidden />
-            <span className="oc-model-provider__body">
-              <b>Sign in with browser</b>
-              <span>opens opencode auth in a readiness terminal</span>
-            </span>
-          </button>
-          <button
+            <OpencodeProviderBody>
+              <OpencodeProviderName>Sign in with browser</OpencodeProviderName>
+              <OpencodeProviderDetail>opens opencode auth in a readiness terminal</OpencodeProviderDetail>
+            </OpencodeProviderBody>
+          </OpencodeProviderMethodButton>
+          <OpencodeProviderMethodButton
             type="button"
-            className="oc-model-provider__method"
             onClick={() => data.method && select(data.method.apiKeyRowId)}
           >
             <KeyRound size={15} strokeWidth={1.9} aria-hidden />
-            <span className="oc-model-provider__body">
-              <b>Paste API key</b>
-              <span>stored by opencode, not Tide</span>
-            </span>
-          </button>
-        </div>
+            <OpencodeProviderBody>
+              <OpencodeProviderName>Paste API key</OpencodeProviderName>
+              <OpencodeProviderDetail>stored by opencode, not Tide</OpencodeProviderDetail>
+            </OpencodeProviderBody>
+          </OpencodeProviderMethodButton>
+        </OpencodeProviderRows>
       ) : null}
 
       {data.step === "api_key" ? (
-        <form
-          className="oc-model-provider__key"
+        <OpencodeProviderKeyForm
           onSubmit={(event) => {
             event.preventDefault();
             if (data.providerId && keyDraft.trim().length > 0) {
@@ -157,7 +152,7 @@ export function OpencodeModelProviderPanel(props: {
             }
           }}
         >
-          <input
+          <OpencodeProviderKeyInput
             type="password"
             autoFocus
             autoComplete="new-password"
@@ -167,17 +162,17 @@ export function OpencodeModelProviderPanel(props: {
             aria-label={`${providerLabel} API key`}
             onChange={(event) => setKeyDraft(event.currentTarget.value)}
           />
-          <div className="oc-model-provider__foot">
-            <button type="button" onClick={() => select("opencode-back")}>
+          <OpencodeProviderFooter>
+            <OpencodeProviderFooterButton type="button" onClick={() => select("opencode-back")}>
               Back
-            </button>
-            <button type="submit" data-primary="true" disabled={keyDraft.trim().length === 0}>
+            </OpencodeProviderFooterButton>
+            <OpencodeProviderFooterButton type="submit" $primary disabled={keyDraft.trim().length === 0}>
               {apiKeySubmitLabel}
-            </button>
-          </div>
-        </form>
+            </OpencodeProviderFooterButton>
+          </OpencodeProviderFooter>
+        </OpencodeProviderKeyForm>
       ) : null}
-    </section>
+    </OpencodeModelProviderSurface>
   );
 }
 
@@ -193,15 +188,247 @@ function submitLabelForProviderStatus(status: string | undefined): "Connect" | "
 
 function BackRow(props: { label: string; detail: string; onClick: () => void }): ReactElement {
   return (
-    <button type="button" className="oc-model-provider__row" onClick={props.onClick}>
-      <span className="oc-model-provider__mark" aria-hidden>
+    <OpencodeProviderRowButton type="button" onClick={props.onClick}>
+      <OpencodeProviderMark aria-hidden>
         <ChevronLeft size={14} strokeWidth={2} />
-      </span>
-      <span className="oc-model-provider__body">
-        <b>{props.label}</b>
-        <span>{props.detail}</span>
-      </span>
-      <span className="oc-model-provider__meta">Esc</span>
-    </button>
+      </OpencodeProviderMark>
+      <OpencodeProviderBody>
+        <OpencodeProviderName>{props.label}</OpencodeProviderName>
+        <OpencodeProviderDetail>{props.detail}</OpencodeProviderDetail>
+      </OpencodeProviderBody>
+      <OpencodeProviderMeta>Esc</OpencodeProviderMeta>
+    </OpencodeProviderRowButton>
   );
 }
+
+const OpencodeModelProviderSurface = styled.section`
+  display: flex;
+  flex-direction: column;
+  width: 384px;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  padding: 6px;
+  border: 1px solid var(--tide-line);
+  border-radius: 12px;
+  background: var(--tide-bg);
+  box-shadow: var(--tide-shadow-popover);
+  transform-origin: top;
+  animation: tide-pop-in 0.13s ease;
+`;
+
+const OpencodeModelProviderHeader = styled.header`
+  min-height: 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 8px 4px;
+`;
+
+const OpencodeModelProviderTitle = styled.h2`
+  margin: 0;
+  overflow: hidden;
+  color: var(--tide-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+`;
+
+const OpencodeModelProviderVersion = styled.span`
+  color: var(--tide-muted);
+  font-size: 12px;
+  white-space: nowrap;
+`;
+
+const OpencodeProviderRows = styled.div`
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 56vh;
+  display: grid;
+  gap: 0;
+  overflow-y: auto;
+`;
+
+const OpencodeProviderRowButton = styled.button<{
+  $selected?: boolean;
+  $subtle?: boolean;
+}>`
+  min-height: ${({ $subtle }) => ($subtle ? "30px" : "34px")};
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: ${({ $selected }) => ($selected ? "var(--tide-selection)" : "transparent")};
+  color: ${({ $subtle }) => ($subtle ? "var(--tide-muted)" : "var(--tide-text)")};
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--tide-selection);
+  }
+`;
+
+const OpencodeProviderMethodButton = styled.button`
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: transparent;
+  color: var(--tide-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--tide-selection);
+  }
+`;
+
+const OpencodeProviderMark = styled.span`
+  width: 21px;
+  height: 21px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--tide-line);
+  border-radius: 6px;
+  background: var(--tide-surface);
+  color: var(--tide-muted);
+  font-size: 10px;
+  font-weight: 700;
+`;
+
+const OpencodeProviderBody = styled.span`
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+`;
+
+const OpencodeProviderName = styled.b<{ $subtle?: boolean }>`
+  min-width: 0;
+  overflow: hidden;
+  color: ${({ $subtle }) => ($subtle ? "var(--tide-muted)" : "inherit")};
+  font-size: ${({ $subtle }) => ($subtle ? "12px" : "13px")};
+  font-weight: 560;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const OpencodeProviderDetail = styled.span`
+  min-width: 0;
+  overflow: hidden;
+  color: var(--tide-muted);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const OpencodeProviderMeta = styled.span`
+  justify-self: end;
+  max-width: 92px;
+  overflow: hidden;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--tide-selection);
+  color: var(--tide-muted);
+  font-size: 11px;
+  line-height: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const OpencodeProviderSection = styled.div`
+  margin: 9px 8px 3px;
+  color: var(--tide-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+`;
+
+const OpencodeProviderEmpty = styled.div`
+  padding: 8px;
+  color: var(--tide-muted);
+  font-size: 12px;
+`;
+
+const OpencodeProviderEffortGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  padding: 0 8px 6px;
+`;
+
+const OpencodeProviderEffortButton = styled.button<{ $active?: boolean }>`
+  min-width: 0;
+  height: 28px;
+  border: 1px solid var(--tide-line);
+  border-radius: 7px;
+  background: ${({ $active }) => ($active ? "var(--tide-selection)" : "transparent")};
+  color: ${({ $active }) => ($active ? "var(--tide-text)" : "var(--tide-muted)")};
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--tide-selection);
+    color: var(--tide-text);
+  }
+`;
+
+const OpencodeProviderKeyForm = styled.form`
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+`;
+
+const OpencodeProviderKeyInput = styled.input`
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-surface);
+  color: var(--tide-text);
+  font: inherit;
+
+  &:focus {
+    outline: 2px solid var(--tide-line-strong);
+    outline-offset: -1px;
+  }
+`;
+
+const OpencodeProviderFooter = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+`;
+
+const OpencodeProviderFooterButton = styled.button<{ $primary?: boolean }>`
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid ${({ $primary }) => ($primary ? "var(--tide-text)" : "var(--tide-line)")};
+  border-radius: 7px;
+  background: ${({ $primary }) => ($primary ? "var(--tide-text)" : "transparent")};
+  color: ${({ $primary }) => ($primary ? "var(--tide-bg)" : "var(--tide-text)")};
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+`;

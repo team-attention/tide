@@ -22,10 +22,10 @@ const repo = path.resolve(__dirname, "..");
     env: { ...process.env, TIDE_APP_DATA_ROOT: dataRoot },
   });
   const page = await app.firstWindow();
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(1200);
 
-  const threadRows = page.locator(".thread-row__main");
+  const threadRows = page.locator("[data-thread-row-main]");
   if ((await threadRows.count()) > 0) {
     await threadRows.first().click();
     await page.waitForTimeout(1000);
@@ -44,12 +44,12 @@ const repo = path.resolve(__dirname, "..");
 
   // The popover renders the active choice surface. Probe several plausible hooks.
   const probes = [
-    ".chip-popover",
+    "[data-chip-popover]",
     "[data-surface-kind='command_suggestions']",
-    ".choice-surface",
+    "[data-choice-surface]",
     "[role='listbox']",
-    ".chip-popover__row",
-    ".choice-surface__row",
+    "[data-choice-row]",
+    "[data-choice-row]",
   ];
   for (const sel of probes) {
     const c = await page.locator(sel).count();
@@ -57,7 +57,7 @@ const repo = path.resolve(__dirname, "..");
   }
 
   // Dump any popover row text we can find.
-  const rows = page.locator(".chip-popover__row, .choice-surface__row, [role='option']");
+  const rows = page.locator("[data-choice-row], [data-choice-row], [role='option']");
   const rowCount = await rows.count();
   console.log("popover rows:", rowCount);
   const labels = [];

@@ -28,26 +28,26 @@ const log = (o) => console.log(JSON.stringify(o));
   page.on("pageerror", (e) => pageErrors.push(String(e.message).slice(0, 200)));
   const shot = (l) => page.screenshot({ path: `/tmp/pw-liveact-${l}.png` });
 
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(800);
 
   // claude + Bypass permissions (unattended fan-out)
-  await page.locator('.composer-shell__context-chip[data-context-kind="agent"]').first().click();
+  await page.locator('[data-composer-context-chip][data-context-kind="agent"]').first().click();
   await page.waitForSelector('[data-choice-surface="agent_menu"]', { timeout: 5000 });
-  await page.locator('[data-choice-surface="agent_menu"] .choice-surface__row', { hasText: "Claude Code" }).first().click();
+  await page.locator('[data-choice-surface="agent_menu"] [data-choice-row]', { hasText: "Claude Code" }).first().click();
   await page.waitForTimeout(300);
   await page.locator('[aria-label="Permission"]').first().click();
   await page.locator('[data-choice-surface="permission_menu"]').waitFor({ timeout: 5000 });
-  await page.locator('[data-choice-surface="permission_menu"] .choice-surface__row', { hasText: "Bypass permissions" }).first().click();
+  await page.locator('[data-choice-surface="permission_menu"] [data-choice-row]', { hasText: "Bypass permissions" }).first().click();
   await page.waitForTimeout(300);
 
   await page.locator('[aria-label="Composer draft"]').first().fill(PROMPT);
-  await page.locator(".composer-shell__send").first().click();
+  await page.locator("[data-composer-send]").first().click();
   log({ phase: "sent" });
 
   // A fresh data root may gate on workspace trust — grant it so the turn runs.
   await page.waitForTimeout(1500);
-  const trust = page.locator('.choice-surface__row, button', { hasText: /Trust this folder/i });
+  const trust = page.locator('[data-choice-row], button', { hasText: /Trust this folder/i });
   if (await trust.count()) {
     await trust.first().click();
     log({ phase: "trusted_folder" });
@@ -55,7 +55,7 @@ const log = (o) => console.log(JSON.stringify(o));
     // Re-send if the draft was held behind the trust gate.
     const draft = page.locator('[aria-label="Composer draft"]').first();
     if ((await draft.inputValue().catch(() => "")).trim().length > 0) {
-      await page.locator(".composer-shell__send").first().click();
+      await page.locator("[data-composer-send]").first().click();
       log({ phase: "resent" });
     }
   }
@@ -73,12 +73,12 @@ const log = (o) => console.log(JSON.stringify(o));
     const at = Math.round((Date.now() - t0) / 1000);
     const snap = await page.evaluate(() => {
       const q = (s) => document.querySelectorAll(s).length;
-      const workingText = document.querySelector(".agent-session-working__text");
+      const workingText = document.querySelector("[data-working-text]");
       return {
         workingText: workingText ? workingText.textContent.trim() : null,
-        workingTurn: q(".agent-session-turn--working"),
-        toolBlocks: q('[data-block-role="tool"], .tool-activity, .agent-session-turn--tool'),
-        agentTurns: q(".agent-session-turn--agent"),
+        workingTurn: q("[data-working="true"]"),
+        toolBlocks: q('[data-block-role="tool"]'),
+        agentTurns: q("[data-block-role="agent"]"),
         readiness: q('[data-choice-surface="provider_readiness"], .provider-readiness'),
       };
     }).catch(() => null);

@@ -2,6 +2,19 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
 import { computeWorktreePath } from "../../../../../../shared/worktree/path.ts";
 import { GitBranchPlus } from "lucide-react";
+import {
+  WorktreeDialogActions,
+  WorktreeDialogBackdrop,
+  WorktreeDialogCancelButton,
+  WorktreeDialogConfirmButton,
+  WorktreeDialogField,
+  WorktreeDialogFieldLabel,
+  WorktreeDialogInput,
+  WorktreeDialogPanel,
+  WorktreeDialogPreview,
+  WorktreeDialogSelect,
+  WorktreeDialogTitle,
+} from "./worktree-dialog.parts.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 // A short random worktree name, used when there is no typed name and the first
@@ -49,24 +62,24 @@ export function WorktreeNameInput(props: {
       ? computeWorktreePath(props.baseCwd, name, { baseDirPattern: props.baseDirPattern })
       : "";
   return (
-    <div
-      className="worktree-create-backdrop"
+    <WorktreeDialogBackdrop
       role="dialog"
       aria-label="New worktree"
+      data-worktree-dialog="new-worktree"
       onMouseDown={(event: { target: EventTarget | null; currentTarget: EventTarget | null }) => {
         if (event.target === event.currentTarget) {
           props.onClose();
         }
       }}
     >
-      <div className="worktree-create">
-        <div className="worktree-create__title">
+      <WorktreeDialogPanel>
+        <WorktreeDialogTitle>
           <GitBranchPlus size={15} strokeWidth={1.9} aria-hidden />
           New worktree
-        </div>
-        <input
+        </WorktreeDialogTitle>
+        <WorktreeDialogInput
           ref={inputRef}
-          className="worktree-create__input"
+          data-worktree-dialog-input="name"
           placeholder="name (optional — auto-named from your first message)"
           value={name}
           spellCheck={false}
@@ -83,10 +96,10 @@ export function WorktreeNameInput(props: {
           }}
         />
         {orderedBranches.length > 0 ? (
-          <label className="worktree-create__field">
-            <span className="worktree-create__field-label">Branch from</span>
-            <select
-              className="worktree-create__select"
+          <WorktreeDialogField>
+            <WorktreeDialogFieldLabel>Branch from</WorktreeDialogFieldLabel>
+            <WorktreeDialogSelect
+              data-worktree-dialog-select="base-branch"
               value={baseBranch}
               aria-label="Base branch for the new worktree"
               onChange={(event: ChangeEvent<HTMLSelectElement>) => setBaseBranch(event.currentTarget.value)}
@@ -100,27 +113,27 @@ export function WorktreeNameInput(props: {
                       : branch.name}
                 </option>
               ))}
-            </select>
-          </label>
+            </WorktreeDialogSelect>
+          </WorktreeDialogField>
         ) : null}
-        <div className="worktree-create__preview">
+        <WorktreeDialogPreview>
           {preview.length > 0
             ? `${preview}${baseBranch.length > 0 ? ` · off ${baseBranch}` : ""}`
             : `Created on send · named from your first message, or a short hash${baseBranch.length > 0 ? ` · off ${baseBranch}` : ""}`}
-        </div>
-        <div className="worktree-create__actions">
-          <button type="button" className="worktree-create__cancel" onClick={() => props.onClose()}>
+        </WorktreeDialogPreview>
+        <WorktreeDialogActions>
+          <WorktreeDialogCancelButton type="button" onClick={() => props.onClose()}>
             Cancel
-          </button>
-          <button
+          </WorktreeDialogCancelButton>
+          <WorktreeDialogConfirmButton
             type="button"
-            className="worktree-create__confirm"
+            data-worktree-create-confirm="true"
             onClick={() => props.onSubmit(name, baseBranch)}
           >
             Use worktree
-          </button>
-        </div>
-      </div>
-    </div>
+          </WorktreeDialogConfirmButton>
+        </WorktreeDialogActions>
+      </WorktreeDialogPanel>
+    </WorktreeDialogBackdrop>
   );
 }

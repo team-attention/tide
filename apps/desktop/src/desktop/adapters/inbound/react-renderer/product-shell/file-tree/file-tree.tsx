@@ -6,10 +6,37 @@ import { relativeBaseName } from "../../../../../application/domains/product-she
 import type { GitChangeStatus, GitChangesView, ProductShellHandlers } from "../support/types.ts";
 import { createColumnResizeHandle } from "../chrome/chrome.tsx";
 import { createFileTreeContextMenuOverlay } from "./file-tree-context-menu.tsx";
-import type { FileTreeRenderEntry } from "./git-status.ts";
+import { filterFileTreeEntries } from "./file-tree-filter.ts";
 import { createGitAwareEntries, gitStatusTitle } from "./git-status.ts";
-import { ChevronRight, FilePlus, Folder, FolderOpen, FolderPlus, Search, X } from "lucide-react";
+import { FilePlus, Folder, FolderOpen, FolderPlus, Search, X } from "lucide-react";
 import { fileIconFor } from "../../support/file-icons.ts";
+import { ColumnTopRowLeading, ColumnTopRowTitle } from "../support/column-top-row.parts.tsx";
+import {
+  FileTreeBody,
+  FileTreeChevron,
+  FileTreeChevronSpacer,
+  FileTreeColumnFrame,
+  FileTreeEditingRow,
+  FileTreeEmpty,
+  FileTreeEntries,
+  FileTreeGitDot,
+  FileTreeInlineInputField,
+  FileTreeLoadingRow,
+  FileTreeNotice,
+  FileTreeNoticeDismiss,
+  FileTreeRowButton,
+  FileTreeRowName,
+  FileTreeSearch,
+  FileTreeSearchClear,
+  FileTreeSearchInput,
+  FileTreeSkeleton,
+  FileTreeSkeletonIcon,
+  FileTreeSkeletonLabel,
+  FileTreeSkeletonRow,
+  FileTreeToolbar,
+  FileTreeToolbarButton,
+  FileTreeTopRow,
+} from "./file-tree.parts.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure); file
 // operations (toolbar / context menu / inline edits / drag-move) added per
 // workbench-filetree-file-operations.
@@ -24,54 +51,26 @@ export interface FileTreeColumnViewModel {
   gitChanges: GitChangesView | null;
 }
 
-export function filterFileTreeEntries(
-  entries: FileTreeRenderEntry[],
-  filterDraft: string,
-): FileTreeRenderEntry[] {
-  const normalizedFilter = filterDraft.trim().toLowerCase();
-  if (normalizedFilter.length === 0) {
-    return entries;
-  }
-  const visiblePaths = new Set<string>();
-  for (const entry of entries) {
-    const relativePath = entry?.relativePath;
-    if (typeof relativePath !== "string" || relativePath.length === 0) {
-      continue;
-    }
-    if (!relativePath.toLowerCase().includes(normalizedFilter)) {
-      continue;
-    }
-    const parts = relativePath.split("/");
-    for (let index = 1; index <= parts.length; index++) {
-      visiblePaths.add(parts.slice(0, index).join("/"));
-    }
-  }
-  return entries.filter((entry) => {
-    const relativePath = entry?.relativePath;
-    return typeof relativePath === "string" && visiblePaths.has(relativePath);
-  });
-}
+export { filterFileTreeEntries } from "./file-tree-filter.ts";
 
 // Shimmer rows shown while the active thread's file tree is (re)loading, so a thread
 // switch shows motion instead of a blank/empty tree.
 function createFileTreeSkeleton(): ReactElement {
   const widths = [82, 64, 73, 58, 70, 50, 66, 60];
   return (
-    <div className="file-tree-skeleton" aria-hidden aria-label="Loading files">
+    <FileTreeSkeleton aria-hidden aria-label="Loading files" data-file-tree-skeleton>
       {widths.map((width, index) => (
-        <div
+        <FileTreeSkeletonRow
           key={index}
-          className="file-tree-skeleton__row"
           style={{ "--depth": index % 3 } as CSSProperties}
         >
-          <span className="file-tree-skeleton__icon" />
-          <span
-            className="file-tree-skeleton__label"
+          <FileTreeSkeletonIcon />
+          <FileTreeSkeletonLabel
             style={{ width: `${width}%` } as CSSProperties}
           />
-        </div>
+        </FileTreeSkeletonRow>
       ))}
-    </div>
+    </FileTreeSkeleton>
   );
 }
 
@@ -79,17 +78,17 @@ function createFileTreeSkeleton(): ReactElement {
 // (an expand round-trip is in flight), indented to sit where the children will land.
 function createFileTreeLoadingRow(depth: number): ReactElement {
   return (
-    <div
+    <FileTreeLoadingRow
       key="__file-tree-loading__"
-      className="file-tree-row file-tree-row--loading"
       data-depth={depth}
+      data-file-tree-loading-row
       style={{ "--file-tree-depth": depth } as CSSProperties}
       aria-hidden
     >
-      <span className="file-tree-row__chevron-spacer" aria-hidden />
-      <span className="file-tree-skeleton__icon" />
-      <span className="file-tree-skeleton__label" style={{ width: "52%" } as CSSProperties} />
-    </div>
+      <FileTreeChevronSpacer aria-hidden />
+      <FileTreeSkeletonIcon />
+      <FileTreeSkeletonLabel style={{ width: "52%" } as CSSProperties} />
+    </FileTreeLoadingRow>
   );
 }
 
@@ -157,16 +156,15 @@ const FileTreeRow = memo(function FileTreeRow(props: {
     handlers.onFileTreeEntryOpen(id);
   };
   return (
-    <button
+    <FileTreeRowButton
       type="button"
-      className={[
-        "file-tree-row",
-        active ? "file-tree-row--active" : "",
-        syntheticDeleted === true ? "file-tree-row--git-deleted" : "",
-      ].filter(Boolean).join(" ")}
+      $active={active}
+      $syntheticDeleted={syntheticDeleted === true}
       data-depth={depth}
       data-file-kind={kind}
       data-expanded={isFolder ? String(expanded ?? true) : undefined}
+      data-active={active ? "true" : undefined}
+      data-synthetic-deleted={syntheticDeleted === true ? "true" : undefined}
       data-drag-over={isFolder && isDragOver ? "true" : undefined}
       data-git-status={gitStatusForRow}
       aria-expanded={isFolder ? (expanded ?? true) : undefined}
@@ -232,26 +230,26 @@ const FileTreeRow = memo(function FileTreeRow(props: {
       {/* Folders show a disclosure chevron + open/closed folder icon; both are
           clickable to toggle. Files open in the editor. */}
       {isFolder ? (
-        <ChevronRight
+        <FileTreeChevron
           size={12}
           strokeWidth={2}
-          className={`file-tree-row__chevron${expanded === false ? "" : " file-tree-row__chevron--expanded"}`}
+          $expanded={expanded !== false}
           aria-hidden
         />
       ) : (
-        <span className="file-tree-row__chevron-spacer" aria-hidden />
+        <FileTreeChevronSpacer aria-hidden />
       )}
       <RowIcon size={14} strokeWidth={1.8} aria-hidden />
-      <span className="file-tree-row__name">{name}</span>
+      <FileTreeRowName>{name}</FileTreeRowName>
       {gitStatusForRow !== undefined ? (
-        <span
-          className={`file-tree-row__git-dot file-tree-row__git-dot--${gitStatusForRow}`}
+        <FileTreeGitDot
+          $status={gitStatusForRow}
           title={gitStatusHint}
           aria-label={gitStatusHint}
           role="img"
         />
       ) : null}
-    </button>
+    </FileTreeRowButton>
   );
 });
 
@@ -264,14 +262,13 @@ function FileTreeInlineInput(props: {
   handlers: ProductShellHandlers;
 }): ReactElement {
   return (
-    <div
-      className="file-tree-row file-tree-row--editing"
+    <FileTreeEditingRow
       data-depth={props.depth}
       style={{ "--file-tree-depth": props.depth } as CSSProperties}
     >
-      <span className="file-tree-row__chevron-spacer" aria-hidden />
-      <input
-        className="file-tree-inline-input"
+      <FileTreeChevronSpacer aria-hidden />
+      <FileTreeInlineInputField
+        data-file-tree-inline-input
         autoFocus
         spellCheck={false}
         placeholder={props.placeholder}
@@ -289,7 +286,7 @@ function FileTreeInlineInput(props: {
           }
         }}
       />
-    </div>
+    </FileTreeEditingRow>
   );
 }
 
@@ -324,52 +321,48 @@ function FileTreeColumn(props: {
   );
 
   return (
-    <aside className="file-tree-column" aria-label="FileTree" data-column="file-tree">
+    <FileTreeColumnFrame aria-label="FileTree" data-column="file-tree">
       {createColumnResizeHandle("fileTree", "left", handlers)}
-      <header className="file-tree-column__top-row column-top-row" aria-label="FileTree Top Row">
-        <div className="column-top-row__leading">
+      <FileTreeTopRow aria-label="FileTree Top Row">
+        <ColumnTopRowLeading>
           <FolderOpen size={15} strokeWidth={1.9} aria-hidden />
-          <span className="column-top-row__title">{fileTree.cwdLabel}</span>
-        </div>
-        <div className="column-top-row__trailing file-tree-toolbar">
-          <button
+          <ColumnTopRowTitle>{fileTree.cwdLabel}</ColumnTopRowTitle>
+        </ColumnTopRowLeading>
+        <FileTreeToolbar>
+          <FileTreeToolbarButton
             type="button"
-            className="file-tree-toolbar__button"
             title="New File"
             aria-label="New File"
             onClick={() => handlers.onNewUntitledFile()}
           >
             <FilePlus size={14} strokeWidth={1.9} aria-hidden />
-          </button>
-          <button
+          </FileTreeToolbarButton>
+          <FileTreeToolbarButton
             type="button"
-            className="file-tree-toolbar__button"
             title="New Folder"
             aria-label="New Folder"
             onClick={() => handlers.onFileTreeNewFolder("")}
           >
             <FolderPlus size={14} strokeWidth={1.9} aria-hidden />
-          </button>
-        </div>
-      </header>
+          </FileTreeToolbarButton>
+        </FileTreeToolbar>
+      </FileTreeTopRow>
       {fileTreeNotice !== null ? (
-        <div className="file-tree-notice" role="alert">
+        <FileTreeNotice role="alert">
           <span>{fileTreeNotice}</span>
-          <button
+          <FileTreeNoticeDismiss
             type="button"
-            className="file-tree-notice__dismiss"
             aria-label="Dismiss"
             onClick={() => handlers.onFileTreeNoticeClear()}
           >
             <X size={12} strokeWidth={2} aria-hidden />
-          </button>
-        </div>
+          </FileTreeNoticeDismiss>
+        </FileTreeNotice>
       ) : null}
-      <div className="file-tree-column__body">
-        <label className="file-tree-column__search">
+      <FileTreeBody>
+        <FileTreeSearch>
           <Search size={14} strokeWidth={1.9} aria-hidden />
-          <input
-            className="file-tree-column__search-input"
+          <FileTreeSearchInput
             aria-label="Filter files"
             placeholder="Filter files..."
             spellCheck={false}
@@ -377,21 +370,19 @@ function FileTreeColumn(props: {
             onChange={(event) => setFilterDraft(event.currentTarget.value)}
           />
           {filterDraft.length > 0 ? (
-            <button
+            <FileTreeSearchClear
               type="button"
-              className="file-tree-column__search-clear"
               title="Clear filter"
               aria-label="Clear file filter"
               onClick={() => setFilterDraft("")}
             >
               <X size={12} strokeWidth={2} aria-hidden />
-            </button>
+            </FileTreeSearchClear>
           ) : null}
-        </label>
+        </FileTreeSearch>
         {/* The entries container is the root drop target: dropping here (not on a
             folder) moves an item to the workspace root. */}
-        <div
-          className="file-tree-column__entries"
+        <FileTreeEntries
           onDragOver={(event: DragEvent) => {
             event.preventDefault();
             event.dataTransfer.dropEffect = "move";
@@ -474,15 +465,15 @@ function FileTreeColumn(props: {
                 }),
                 ...(filterActive && entriesForView.length === 0
                   ? [
-                      <div key="__file-tree-filter-empty__" className="file-tree-column__empty">
+                      <FileTreeEmpty key="__file-tree-filter-empty__">
                         No matching files
-                      </div>,
+                      </FileTreeEmpty>,
                     ]
                   : []),
               ]}
-        </div>
-      </div>
+        </FileTreeEntries>
+      </FileTreeBody>
       {fileTreeMenu !== null ? createFileTreeContextMenuOverlay(fileTreeMenu, handlers) : null}
-    </aside>
+    </FileTreeColumnFrame>
   );
 }

@@ -5,6 +5,14 @@ import { createToolLogTurn } from "./tool-log.tsx";
 import { renderAgentMarkdown } from "./markdown.tsx";
 import { renderUserBody } from "./user-turn.tsx";
 import { Check, Copy, CornerDownRight, RotateCcw } from "lucide-react";
+import {
+  TranscriptTurn,
+  TurnActionButton,
+  TurnActions,
+  TurnBody,
+  TurnLabel,
+  TurnRawFallback,
+} from "./transcript.parts.tsx";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 // A message/event turn wrapped in React.memo: during a streaming turn the whole
@@ -46,16 +54,13 @@ function createAgentSessionTurn(
   }
   const role = block.role === "user" ? "user" : block.role === "agent" ? "agent" : "event";
   const isCommentary = role === "agent" && block.phase === "commentary";
-  const turnClassName = [
-    "agent-session-turn",
-    `agent-session-turn--${role}`,
-    isCommentary ? "agent-session-turn--commentary" : "",
-  ].filter(Boolean).join(" ");
 
   return (
-    <article
+    <TranscriptTurn
       key={block.blockId}
-      className={turnClassName}
+      $commentary={isCommentary}
+      $role={role}
+      data-transcript-turn="true"
       data-block-id={block.blockId}
       data-parent-block-id={block.parentBlockId}
       data-block-kind={block.kind}
@@ -70,68 +75,68 @@ function createAgentSessionTurn(
           the agent answer is flat prose (the text is the hero), and structured
           events keep a small muted label. */}
       {role === "event" ? (
-        <span className="agent-session-turn__label">{block.title}</span>
+        <TurnLabel>{block.title}</TurnLabel>
       ) : null}
-      {isCommentary ? <span className="agent-session-turn__label">Update</span> : null}
+      {isCommentary ? <TurnLabel>Update</TurnLabel> : null}
       {role === "agent" ? (
         renderAgentMarkdown(block.body)
       ) : role === "user" ? (
         renderUserBody(block.body)
       ) : (
-        <p className="agent-session-turn__body">{block.body}</p>
+        <TurnBody data-turn-body="true">{block.body}</TurnBody>
       )}
       {/* Prompt blocks are historical markers for an interactive card; their raw
           fallback is the hook's JSON payload — runtime transport, not content. */}
       {block.rawFallback && block.rawFallback !== block.body && !block.kind.endsWith("_prompt") ? (
-        <pre className="agent-session-turn__raw">{block.rawFallback}</pre>
+        <TurnRawFallback>{block.rawFallback}</TurnRawFallback>
       ) : null}
       {/* Hover actions on a completed agent answer: copy the answer, or retry the
           prompt. Click handling is event-delegated on the session container. */}
       {role === "agent" && !isCommentary && block.status !== "streaming" && block.status !== "pending" && block.body.trim().length > 0
         ? createAgentTurnActions()
         : null}
-    </article>
+    </TranscriptTurn>
   );
 }
 
 function createAgentTurnActions(): ReactElement {
   return (
-    <div className="agent-turn-actions" aria-hidden={false}>
-      <button
+    <TurnActions data-agent-turn-actions="true" aria-hidden={false}>
+      <TurnActionButton
         type="button"
-        className="agent-turn-actions__btn agent-turn-actions__btn--copy"
+        data-agent-turn-action="copy"
         title="Copy answer"
         aria-label="Copy answer"
       >
         <Copy
           size={13}
           strokeWidth={1.8}
-          className="agent-turn-actions__icon agent-turn-actions__icon--copy"
+          data-turn-action-icon="copy"
           aria-hidden
         />
         <Check
           size={13}
           strokeWidth={2}
-          className="agent-turn-actions__icon agent-turn-actions__icon--check"
+          data-turn-action-icon="check"
           aria-hidden
         />
-      </button>
-      <button
+      </TurnActionButton>
+      <TurnActionButton
         type="button"
-        className="agent-turn-actions__btn agent-turn-actions__btn--quote"
+        data-agent-turn-action="quote"
         title="Quote in chat"
         aria-label="Quote this message in the composer"
       >
-        <CornerDownRight size={13} strokeWidth={1.8} className="agent-turn-actions__icon" aria-hidden />
-      </button>
-      <button
+        <CornerDownRight size={13} strokeWidth={1.8} aria-hidden />
+      </TurnActionButton>
+      <TurnActionButton
         type="button"
-        className="agent-turn-actions__btn agent-turn-actions__btn--retry"
+        data-agent-turn-action="retry"
         title="Retry"
         aria-label="Retry this prompt"
       >
-        <RotateCcw size={13} strokeWidth={1.8} className="agent-turn-actions__icon" aria-hidden />
-      </button>
-    </div>
+        <RotateCcw size={13} strokeWidth={1.8} aria-hidden />
+      </TurnActionButton>
+    </TurnActions>
   );
 }

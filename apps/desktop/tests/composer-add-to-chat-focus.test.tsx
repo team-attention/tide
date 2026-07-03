@@ -159,7 +159,7 @@ test("switching_threads_closes_the_agent_chat_find_bar", async () => {
   });
   await act(async () => {
     container
-      .querySelector(".agent-chat-shell")
+      .querySelector("[data-agent-chat-shell]")
       ?.dispatchEvent(new dom.window.MouseEvent("mousedown", { bubbles: true }));
     window.dispatchEvent(
       new dom.window.KeyboardEvent("keydown", {

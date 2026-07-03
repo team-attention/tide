@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactElement } from "react";
+import { styled } from "styled-components";
 import { GitBranch, PanelLeftClose, PanelLeftOpen, RefreshCw } from "lucide-react";
 import { createDiffView } from "./diff-pane.tsx";
 import type { GitChangeStatus, GitChangesViewResult } from "../support/types.ts";
@@ -121,12 +122,11 @@ export function ChangesPanel(props: {
   }
 
   return (
-    <div className="changes-pane" role="group" aria-label="Working tree changes">
-      <header className="changes-panel__header">
+    <ChangesPaneFrame role="group" aria-label="Working tree changes">
+      <ChangesHeader>
         {files.length > 0 ? (
-          <button
+          <ChangesIconButton
             type="button"
-            className="changes-panel__action"
             title={listCollapsed ? "Show file list" : "Hide file list"}
             aria-label={listCollapsed ? "Show file list" : "Hide file list"}
             aria-pressed={listCollapsed}
@@ -137,34 +137,33 @@ export function ChangesPanel(props: {
             ) : (
               <PanelLeftClose size={15} strokeWidth={1.9} aria-hidden />
             )}
-          </button>
+          </ChangesIconButton>
         ) : null}
-        <span className="changes-panel__branch" title={branch ?? undefined}>
+        <ChangesBranch title={branch ?? undefined}>
           <GitBranch size={13} strokeWidth={1.9} aria-hidden />
           <span>{branch ?? "detached"}</span>
-        </span>
+        </ChangesBranch>
         {files.length === 0 ? (
-          <span className="changes-panel__count">{isGitRepo ? "No changes" : "Not a git repo"}</span>
+          <ChangesCount>{isGitRepo ? "No changes" : "Not a git repo"}</ChangesCount>
         ) : (
-          <span className="changes-panel__stat">
-            {totalAdd > 0 ? <span className="changes-panel__add">{`+${totalAdd}`}</span> : null}
-            {totalDel > 0 ? <span className="changes-panel__del">{`−${totalDel}`}</span> : null}
-            <span className="changes-panel__count">{`${files.length} file${files.length === 1 ? "" : "s"}`}</span>
-          </span>
+          <ChangesStat>
+            {totalAdd > 0 ? <ChangesAdd>{`+${totalAdd}`}</ChangesAdd> : null}
+            {totalDel > 0 ? <ChangesDel>{`−${totalDel}`}</ChangesDel> : null}
+            <ChangesCount>{`${files.length} file${files.length === 1 ? "" : "s"}`}</ChangesCount>
+          </ChangesStat>
         )}
-        <span className="changes-panel__spacer" />
-        <button
+        <ChangesHeaderSpacer />
+        <ChangesIconButton
           type="button"
-          className="changes-panel__action"
           title="Refresh"
           aria-label="Refresh changes"
           onClick={() => setNonce((value) => value + 1)}
         >
           <RefreshCw size={14} strokeWidth={1.9} aria-hidden />
-        </button>
-      </header>
-      <div
-        className={`changes-panel__body${listCollapsed ? " changes-panel__body--list-collapsed" : ""}`}
+        </ChangesIconButton>
+      </ChangesHeader>
+      <ChangesBody
+        data-list-collapsed={listCollapsed ? "true" : "false"}
         style={{
           // Always three tracks so the collapse interpolates (3↔1 track counts can't).
           // Collapsed shrinks the list + handle to 0; the diff (1fr) grows to fill.
@@ -176,47 +175,46 @@ export function ChangesPanel(props: {
       >
         {/* The list + handle stay mounted (so they can animate); when collapsed they clip
             to a 0-width track, fade out, and drop out of the focus/AT tree via inert. */}
-        <ul className="changes-panel__files" aria-hidden={listCollapsed || undefined} inert={listCollapsed}>
+        <ChangesFileList aria-hidden={listCollapsed || undefined} inert={listCollapsed}>
           {files.length === 0 ? (
-            <li className="changes-panel__clean">
+            <ChangesCleanState>
               {isGitRepo ? "Working tree clean — no uncommitted changes." : "Not a git repository."}
-            </li>
+            </ChangesCleanState>
           ) : (
             files.map((file) => (
               <li key={file.path}>
-                <button
+                <ChangesFileButton
                   type="button"
-                  className={`changes-panel__file${file.path === selected ? " changes-panel__file--active" : ""}`}
+                  data-active={file.path === selected ? "true" : "false"}
                   onClick={() => setSelected(file.path)}
                   title={file.path}
                 >
-                  <span
-                    className={`changes-panel__status changes-panel__status--${file.status}`}
+                  <ChangesStatusMark
+                    data-status={file.status}
                     aria-hidden
                   >
                     {STATUS_LABEL[file.status]}
-                  </span>
-                  <span className="changes-panel__file-name">{fileName(file.path)}</span>
+                  </ChangesStatusMark>
+                  <ChangesFileName>{fileName(file.path)}</ChangesFileName>
                   {fileDir(file.path) ? (
-                    <span className="changes-panel__file-dir">{fileDir(file.path)}</span>
+                    <ChangesFileDir>{fileDir(file.path)}</ChangesFileDir>
                   ) : null}
                   {(file.additions ?? 0) > 0 || (file.deletions ?? 0) > 0 ? (
-                    <span className="changes-panel__file-stat">
+                    <ChangesFileStat>
                       {(file.additions ?? 0) > 0 ? (
-                        <span className="changes-panel__add">{`+${file.additions}`}</span>
+                        <ChangesAdd>{`+${file.additions}`}</ChangesAdd>
                       ) : null}
                       {(file.deletions ?? 0) > 0 ? (
-                        <span className="changes-panel__del">{`−${file.deletions}`}</span>
+                        <ChangesDel>{`−${file.deletions}`}</ChangesDel>
                       ) : null}
-                    </span>
+                    </ChangesFileStat>
                   ) : null}
-                </button>
+                </ChangesFileButton>
               </li>
             ))
           )}
-        </ul>
-        <div
-          className="changes-panel__resize"
+        </ChangesFileList>
+        <ChangesResizeHandle
           role="separator"
           aria-orientation="vertical"
           aria-label="Resize file list"
@@ -227,19 +225,19 @@ export function ChangesPanel(props: {
           onPointerUp={endResize}
           onPointerCancel={endResize}
         />
-        <div className="changes-panel__diff">
+        <ChangesDiffPane>
           {selected === null ? (
-            <div className="changes-panel__diff-empty">Select a file to view its diff.</div>
+            <ChangesDiffEmpty>Select a file to view its diff.</ChangesDiffEmpty>
           ) : loadingDiff ? (
-            <div className="changes-panel__diff-empty">Loading diff…</div>
+            <ChangesDiffEmpty>Loading diff…</ChangesDiffEmpty>
           ) : diff.trim().length === 0 ? (
-            <div className="changes-panel__diff-empty">No textual diff (binary or empty).</div>
+            <ChangesDiffEmpty>No textual diff (binary or empty).</ChangesDiffEmpty>
           ) : (
             createDiffView(diff)
           )}
-        </div>
-      </div>
-    </div>
+        </ChangesDiffPane>
+      </ChangesBody>
+    </ChangesPaneFrame>
   );
 }
 
@@ -251,3 +249,235 @@ function fileDir(path: string): string {
   const index = path.lastIndexOf("/");
   return index < 0 ? "" : path.slice(0, index);
 }
+
+const ChangesPaneFrame = styled.div`
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--tide-bg);
+`;
+
+const ChangesHeader = styled.header`
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--tide-line);
+`;
+
+const ChangesIconButton = styled.button`
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+
+  &:hover {
+    background: var(--tide-selection);
+    color: var(--tide-text);
+  }
+`;
+
+const ChangesBranch = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--tide-text);
+  font-size: 13px;
+  font-weight: 600;
+`;
+
+const ChangesCount = styled.span`
+  color: var(--tide-muted);
+  font-size: 12px;
+`;
+
+const ChangesStat = styled.span`
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+`;
+
+const ChangesAdd = styled.span`
+  color: var(--tide-diff-add);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+`;
+
+const ChangesDel = styled.span`
+  color: var(--tide-danger);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+`;
+
+const ChangesHeaderSpacer = styled.span`
+  flex: 1 1 auto;
+`;
+
+const ChangesBody = styled.div`
+  min-height: 0;
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: 240px 6px 1fr;
+  transition: grid-template-columns 220ms cubic-bezier(0.4, 0, 0.2, 1);
+`;
+
+const ChangesFileList = styled.ul`
+  overflow-x: hidden;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px;
+  border-right: 1px solid var(--tide-line);
+  list-style: none;
+  transition: opacity 140ms ease;
+
+  ${ChangesBody}[data-list-collapsed="true"] & {
+    opacity: 0;
+  }
+`;
+
+const ChangesCleanState = styled.li`
+  padding: 16px 12px;
+  color: var(--tide-muted);
+  font-size: 12.5px;
+`;
+
+const ChangesFileButton = styled.button`
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-text);
+  cursor: pointer;
+  font-size: 12.5px;
+  text-align: left;
+  transition: background 0.1s ease;
+
+  &:hover,
+  &[data-active="true"] {
+    background: var(--tide-selection);
+  }
+`;
+
+const ChangesStatusMark = styled.span`
+  width: 14px;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+
+  &[data-status="modified"] {
+    color: var(--tide-warn);
+  }
+
+  &[data-status="added"],
+  &[data-status="untracked"] {
+    color: var(--tide-diff-add);
+  }
+
+  &[data-status="deleted"] {
+    color: var(--tide-danger);
+  }
+
+  &[data-status="renamed"] {
+    color: var(--tide-action);
+  }
+`;
+
+const ChangesFileName = styled.span`
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const ChangesFileDir = styled.span`
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--tide-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const ChangesFileStat = styled.span`
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+`;
+
+const ChangesResizeHandle = styled.div`
+  align-self: stretch;
+  background: transparent;
+  cursor: col-resize;
+  transition: background 0.12s ease, opacity 140ms ease;
+
+  &:hover,
+  &:active {
+    background: color-mix(in srgb, var(--tide-action) 45%, transparent);
+  }
+
+  ${ChangesBody}[data-list-collapsed="true"] & {
+    opacity: 0;
+  }
+`;
+
+const ChangesDiffPane = styled.div`
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  padding: 8px;
+
+  [data-diff-view] {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border: none;
+    border-radius: 0;
+  }
+
+  [data-diff-stat] {
+    left: 0;
+  }
+
+  [data-diff-body] {
+    width: max-content;
+    min-width: 100%;
+  }
+
+  [data-diff-row] {
+    width: 100%;
+    min-width: 100%;
+  }
+
+  [data-diff-line-text] {
+    flex: 0 0 auto;
+    white-space: pre;
+    word-break: normal;
+  }
+`;
+
+const ChangesDiffEmpty = styled.div`
+  padding: 24px;
+  color: var(--tide-muted);
+  font-size: 12.5px;
+`;

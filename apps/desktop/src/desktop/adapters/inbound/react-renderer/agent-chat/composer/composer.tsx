@@ -3,6 +3,7 @@ import type { LaunchOptionFeedback } from "../../../../../application/domains/ag
 import type { ComposerHandlers } from "../support/types.ts";
 import type { ChangeEvent, FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
 import { useEffect, useState } from "react";
+import { keyframes, styled } from "styled-components";
 import { handleComposerPaste } from "./attachments.ts";
 import { ArrowUp, Check, ChevronDown, Plus, ShieldCheck, Square, X } from "lucide-react";
 import { chipAnchorFromEvent, contextChipIcon, createContextChip } from "./context-chips.tsx";
@@ -10,6 +11,13 @@ import { createProviderReadiness } from "../readiness/readiness.ts";
 import { PromptCard } from "../prompt-card/prompt-card.tsx";
 import { createQueuedSteerStack } from "./steer-queue.tsx";
 import { SessionContextMeter } from "./usage-meter.tsx";
+import {
+  ComposerChipChevron,
+  ComposerChipIcon,
+  ComposerChipLabel,
+  ComposerChoiceChip,
+} from "./composer.parts.tsx";
+import { VisuallyHidden } from "../../support/visually-hidden.tsx";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
 
 // The composer has something sendable when there is text, a pasted image, OR a
@@ -30,19 +38,19 @@ export function createComposer(
   const isStartComposer = viewModel.composer.mode === "start";
 
   return (
-    <form
-      className="composer-shell"
+    <ComposerShell
       aria-label="Composer"
+      data-composer-shell="true"
       data-composer-mode={viewModel.composer.mode}
       onSubmit={(event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         handlers.onSubmit?.();
       }}
     >
-      <div className="composer-shell__body">
-        <textarea
+      <ComposerBody data-composer-body="true">
+        <ComposerInput
           aria-label="Composer draft"
-          className="composer-shell__input"
+          data-composer-input="true"
           ref={handlers.inputRef}
           // One row at rest (CSS min-height sets the floor per mode); the input
           // grows with content via CSS field-sizing in Chromium.
@@ -80,62 +88,56 @@ export function createComposer(
           placeholder={isStartComposer ? "Do anything" : "Ask for follow-up changes"}
         />
         {viewModel.composer.attachments.length > 0 ? (
-          <div className="composer-shell__attachments">
+          <ComposerAttachments>
             {viewModel.composer.attachments.map((attachment) => (
-              <div key={attachment.id} className="composer-shell__attachment">
-                <button
+              <ComposerAttachment key={attachment.id}>
+                <ComposerAttachmentOpen
                   type="button"
-                  className="composer-shell__attachment-open"
                   title="Preview image"
                   aria-label={`Preview ${attachment.name}`}
                   onClick={() => handlers.onPreviewAttachment?.(attachment.previewUrl)}
                 >
-                  <img
-                    className="composer-shell__attachment-thumb"
+                  <ComposerAttachmentThumb
                     src={attachment.previewUrl}
                     alt={attachment.name}
                   />
-                </button>
-                <button
+                </ComposerAttachmentOpen>
+                <ComposerAttachmentRemove
                   type="button"
-                  className="composer-shell__attachment-remove"
                   title="Remove attachment"
                   aria-label={`Remove ${attachment.name}`}
                   onClick={() => handlers.onRemoveAttachment?.(attachment.id)}
                 >
                   <X size={12} strokeWidth={2.2} aria-hidden />
-                </button>
-              </div>
+                </ComposerAttachmentRemove>
+              </ComposerAttachment>
             ))}
-          </div>
+          </ComposerAttachments>
         ) : null}
         {viewModel.composer.contextChips.length > 0 ? (
-          <div className="composer-shell__chips">
+          <ComposerContextCards>
             {viewModel.composer.contextChips.map((chip) => {
               const ChipIcon = contextChipIcon(chip.kind);
               return (
-                <div key={chip.id} className={`composer-chip-card composer-chip-card--${chip.kind}`}>
-                  <div className="composer-chip-card__head">
+                <ComposerContextCard key={chip.id} data-context-chip-kind={chip.kind}>
+                  <ComposerContextCardHead>
                     <ChipIcon
                       size={13}
                       strokeWidth={1.9}
-                      className="composer-chip-card__icon"
                       aria-hidden
                     />
-                    <span className="composer-chip-card__label">{chip.label}</span>
-                    <span className="composer-chip-card__kind">{chip.kind}</span>
-                    <button
+                    <ComposerContextCardLabel>{chip.label}</ComposerContextCardLabel>
+                    <ComposerContextCardKind>{chip.kind}</ComposerContextCardKind>
+                    <ComposerContextCardRemove
                       type="button"
-                      className="composer-chip-card__remove"
                       title="Remove"
                       aria-label={`Remove ${chip.label}`}
                       onClick={() => handlers.onRemoveContextChip?.(chip.id)}
                     >
                       <X size={15} strokeWidth={2.2} aria-hidden />
-                    </button>
-                  </div>
-                  <textarea
-                    className="composer-chip-card__comment"
+                    </ComposerContextCardRemove>
+                  </ComposerContextCardHead>
+                  <ComposerContextCardComment
                     // Lets AgentChatShell focus THIS chip's comment field the moment the
                     // chip is added ("Add to chat" → type your note here). See agent-chat.tsx.
                     data-chip-comment-id={chip.id}
@@ -155,76 +157,89 @@ export function createComposer(
                       }
                     }}
                   />
-                </div>
+                </ComposerContextCard>
               );
             })}
-          </div>
+          </ComposerContextCards>
         ) : null}
         {isStartComposer ? (
-          <dl className="composer-shell__start-context">
+          <ComposerStartContext data-composer-start-context="true">
             {viewModel.composer.contextItems.map((item) => createContextChip(item, handlers))}
-          </dl>
+          </ComposerStartContext>
         ) : null}
-        <div className="composer-shell__toolbar">
-          <button
+        <ComposerToolbar data-composer-toolbar="true">
+          <ComposerIconButton
             type="button"
-            className="composer-shell__icon-button"
             title="Composer options"
             aria-label="Composer options"
+            data-composer-options-button="true"
             onClick={(event: { currentTarget: HTMLElement }) =>
               handlers.onOpenSurface?.("composer_options", chipAnchorFromEvent(event))
             }
           >
             <Plus size={16} strokeWidth={2.1} aria-hidden />
-          </button>
-          <button
+          </ComposerIconButton>
+          <ComposerChoiceChip
             type="button"
-            className="composer-shell__choice-chip"
             title="Permission"
             aria-label="Permission"
+            data-composer-choice-chip="true"
+            data-choice-kind="permission"
             onClick={(event: { currentTarget: HTMLElement }) =>
               handlers.onOpenSurface?.("permission_menu", chipAnchorFromEvent(event))
             }
           >
             {/* Figma: shield-check icon + label + chevron-down. */}
-            <ShieldCheck size={14} strokeWidth={1.9} className="composer-shell__chip-icon" aria-hidden />
-            <span className="composer-shell__chip-label">{viewModel.composer.permissionLabel}</span>
+            <ComposerChipIcon data-composer-chip-icon="true" aria-hidden>
+              <ShieldCheck size={14} strokeWidth={1.9} aria-hidden />
+            </ComposerChipIcon>
+            <ComposerChipLabel data-composer-chip-label="true">{viewModel.composer.permissionLabel}</ComposerChipLabel>
             <ChipFeedbackBadge feedback={viewModel.composer.permissionFeedback} />
-            <ChevronDown size={13} strokeWidth={1.9} className="composer-shell__chip-chevron" aria-hidden />
-          </button>
-          <span className="composer-shell__toolbar-spacer" />
+            <ComposerChipChevron aria-hidden>
+              <ChevronDown size={13} strokeWidth={1.9} aria-hidden />
+            </ComposerChipChevron>
+          </ComposerChoiceChip>
+          <ComposerToolbarSpacer />
           {/* Non-blocking agent-CLI update advisory (spec: version-management.md, Lane 2 / D2):
               a quiet pill, not a card. Present even when the agent is ready and on the start
               composer. One click runs the same readiness terminal update as install
               (update_available:terminal); the vX → vY detail lives in the tooltip. */}
           {viewModel.providerUpdateAdvisory ? (
-            <button
+            <ComposerChoiceChip
+              $variant="update"
               type="button"
-              className="composer-shell__choice-chip composer-shell__choice-chip--update"
               title={`v${viewModel.providerUpdateAdvisory.currentVersion} → v${viewModel.providerUpdateAdvisory.latestVersion} — updates the CLI in a terminal, your draft is kept`}
               aria-label={`Update ${viewModel.providerUpdateAdvisory.agentLabel}`}
+              data-composer-choice-chip="true"
+              data-choice-kind="update"
               onClick={() =>
                 handlers.onChoiceSurfaceRowSelect?.("provider_readiness", "update_available:terminal")
               }
             >
-              <ArrowUp size={14} strokeWidth={2} className="composer-shell__chip-icon" aria-hidden />
-              <span className="composer-shell__chip-label">{`Update ${viewModel.providerUpdateAdvisory.agentLabel}`}</span>
-            </button>
+              <ComposerChipIcon data-composer-chip-icon="true" aria-hidden>
+                <ArrowUp size={14} strokeWidth={2} aria-hidden />
+              </ComposerChipIcon>
+              <ComposerChipLabel data-composer-chip-label="true">{`Update ${viewModel.providerUpdateAdvisory.agentLabel}`}</ComposerChipLabel>
+            </ComposerChoiceChip>
           ) : null}
-          <button
+          <ComposerChoiceChip
+            $variant="model"
             type="button"
-            className="composer-shell__choice-chip composer-shell__choice-chip--model"
             title="Model"
             aria-label="Model"
+            data-composer-choice-chip="true"
+            data-choice-kind="model"
             onClick={(event: { currentTarget: HTMLElement }) =>
               handlers.onOpenSurface?.(viewModel.composer.modelChipSurface, chipAnchorFromEvent(event))
             }
           >
             {/* Figma: label + chevron-down (no leading icon). */}
-            <span className="composer-shell__chip-label">{viewModel.composer.modelLabel}</span>
+            <ComposerChipLabel data-composer-chip-label="true">{viewModel.composer.modelLabel}</ComposerChipLabel>
             <ChipFeedbackBadge feedback={viewModel.composer.modelFeedback} />
-            <ChevronDown size={13} strokeWidth={1.9} className="composer-shell__chip-chevron" aria-hidden />
-          </button>
+            <ComposerChipChevron aria-hidden>
+              <ChevronDown size={13} strokeWidth={1.9} aria-hidden />
+            </ComposerChipChevron>
+          </ComposerChoiceChip>
           {/* While the runtime is LIVE with NOTHING to send, the button is Stop (interrupt) —
               "live" includes waiting on a prompt, so a Thread parked on an approval/question
               the UI didn't surface is always escapable (Stop clears it backend-side). Add any
@@ -237,9 +252,9 @@ export function createComposer(
           !composerHasContent(viewModel)
             ? createComposerStopButton(handlers.onInterrupt)
             : createComposerSendButton(viewModel.composer.submitLabel, viewModel.prompt != null)}
-        </div>
-      </div>
-    </form>
+        </ComposerToolbar>
+      </ComposerBody>
+    </ComposerShell>
   );
 }
 
@@ -250,7 +265,7 @@ export function createComposer(
 // reducer clears at the next turn start. See
 // docs_v2/specs/mid-thread-launch-option-feedback.md.
 // Unmount reclaims the chip width once the flash has faded out; MUST match the
-// composer-chip-feedback-flash animation duration in composer.css.
+// ComposerChipFeedback animation duration below.
 const APPLIED_FLASH_MS = 2400;
 
 function ChipFeedbackBadge({ feedback }: { feedback: LaunchOptionFeedback | undefined }): ReactElement | null {
@@ -274,16 +289,16 @@ function ChipFeedbackBadge({ feedback }: { feedback: LaunchOptionFeedback | unde
       return null;
     }
     return (
-      <span className="composer-shell__chip-feedback composer-shell__chip-feedback--applied" role="status">
+      <ComposerChipFeedback $state="applied" role="status">
         <Check size={11} strokeWidth={2.8} aria-hidden />
         Applied
-      </span>
+      </ComposerChipFeedback>
     );
   }
   return (
-    <span className="composer-shell__chip-feedback composer-shell__chip-feedback--pending" role="status">
+    <ComposerChipFeedback $state="pending" role="status">
       Next message
-    </span>
+    </ComposerChipFeedback>
   );
 }
 
@@ -293,34 +308,36 @@ function ChipFeedbackBadge({ feedback }: { feedback: LaunchOptionFeedback | unde
 function createComposerSendButton(label: string, disabled = false): ReactElement {
   const title = disabled ? "Answer the prompt above first" : label;
   return (
-    <button
+    <ComposerRunButton
+      $mode="send"
       key="send"
       type="submit"
-      className="composer-shell__send"
       title={title}
       aria-label={title}
       disabled={disabled}
+      data-composer-send="true"
     >
       <ArrowUp size={17} strokeWidth={2.4} aria-hidden />
-      <span className="visually-hidden">{title}</span>
-    </button>
+      <VisuallyHidden>{title}</VisuallyHidden>
+    </ComposerRunButton>
   );
 }
 
 // Stop button: interrupts the live turn (a queued follow-up then runs next).
 function createComposerStopButton(onInterrupt?: () => void): ReactElement {
   return (
-    <button
+    <ComposerRunButton
+      $mode="stop"
       key="stop"
       type="button"
-      className="composer-shell__send composer-shell__send--stop"
       title="Interrupt"
       aria-label="Interrupt"
       onClick={() => onInterrupt?.()}
+      data-composer-stop="true"
     >
       <Square size={13} strokeWidth={0} fill="currentColor" aria-hidden />
-      <span className="visually-hidden">Interrupt</span>
-    </button>
+      <VisuallyHidden>Interrupt</VisuallyHidden>
+    </ComposerRunButton>
   );
 }
 
@@ -329,7 +346,7 @@ export function createComposerStack(
   handlers: ComposerHandlers,
 ): ReactElement {
   return (
-    <div className="agent-chat-shell__composer-stack">
+    <ComposerStackFrame data-composer-stack="true">
       {/* composer.activeSurface (chip dropdown) is rendered as an anchored popover
           by AgentChatShell. Provider readiness and prompt cards remain in flow. */}
       {createProviderReadiness(viewModel, handlers.onChoiceSurfaceRowSelect)}
@@ -359,6 +376,308 @@ export function createComposerStack(
         : null}
       {viewModel.usage ? <SessionContextMeter usage={viewModel.usage} /> : null}
       {createComposer(viewModel, handlers)}
-    </div>
+    </ComposerStackFrame>
   );
 }
+
+const composerChipFeedbackFlash = keyframes`
+  0% {
+    opacity: 0;
+    transform: translateY(1px);
+  }
+  7% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  90% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+`;
+
+const ComposerStackFrame = styled.div`
+  width: min(760px, calc(100% - 32px));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  margin: 0 auto;
+`;
+
+const ComposerShell = styled.form`
+  width: 100%;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--tide-line);
+  border-radius: 14px;
+  background: var(--tide-bg);
+  box-shadow: var(--tide-shadow-composer);
+`;
+
+const ComposerBody = styled.div`
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+`;
+
+const ComposerInput = styled.textarea`
+  width: 100%;
+  min-height: 44px;
+  max-height: 240px;
+  field-sizing: content;
+  resize: none;
+  border: 0;
+  outline: none;
+  padding: 0;
+  background: transparent;
+  color: var(--tide-text);
+  font-size: 16px;
+  line-height: 1.4;
+
+  ${ComposerShell}[data-composer-mode="follow_up"] & {
+    min-height: 22px;
+    max-height: 200px;
+    font-size: 14px;
+  }
+
+  &::placeholder {
+    color: color-mix(in srgb, var(--tide-muted) 58%, transparent);
+  }
+`;
+
+const ComposerAttachments = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+`;
+
+const ComposerAttachment = styled.div`
+  position: relative;
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-surface-2, rgba(127, 127, 127, 0.08));
+`;
+
+const ComposerAttachmentOpen = styled.button`
+  width: 100%;
+  height: 100%;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+`;
+
+const ComposerAttachmentThumb = styled.img`
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+`;
+
+const ComposerAttachmentRemove = styled.button`
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--tide-bg);
+  background: rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.82);
+  }
+`;
+
+const ComposerContextCards = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+`;
+
+const ComposerContextCard = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 7px 8px 8px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-surface);
+`;
+
+const ComposerContextCardHead = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  & > svg {
+    flex: 0 0 auto;
+    color: var(--tide-muted);
+  }
+`;
+
+const ComposerContextCardLabel = styled.span`
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--tide-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const ComposerContextCardKind = styled.span`
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--tide-bg);
+  color: var(--tide-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+`;
+
+const ComposerContextCardRemove = styled.button`
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+
+  &:hover {
+    background: var(--tide-selection);
+    color: var(--tide-text);
+  }
+`;
+
+const ComposerContextCardComment = styled.textarea`
+  width: 100%;
+  min-height: 20px;
+  border: 0;
+  background: transparent;
+  color: var(--tide-text);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  outline: none;
+  resize: none;
+  field-sizing: content;
+
+  &::placeholder {
+    color: var(--tide-muted);
+  }
+`;
+
+const ComposerToolbar = styled.div`
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`;
+
+const ComposerStartContext = styled.dl`
+  min-height: 30px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  overflow: hidden;
+  margin: 0;
+`;
+
+const ComposerIconButton = styled.button`
+  width: 30px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--tide-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, opacity 0.12s ease;
+
+  &:hover {
+    border-color: var(--tide-line);
+    background: var(--tide-selection);
+  }
+`;
+
+const ComposerToolbarSpacer = styled.span`
+  flex: 1 1 auto;
+`;
+
+const ComposerChipFeedback = styled.span<{ $state: "applied" | "pending" }>`
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 10.5px;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+
+  ${({ $state }) =>
+    $state === "applied"
+      ? `
+        color: var(--tide-diff-add);
+        font-weight: 600;
+        animation: ${composerChipFeedbackFlash} 2400ms ease both;
+      `
+      : `
+        padding: 2px 6px;
+        border-radius: 999px;
+        background: var(--tide-selection);
+        color: var(--tide-muted);
+        font-weight: 500;
+      `}
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+`;
+
+const ComposerRunButton = styled.button<{ $mode: "send" | "stop" }>`
+  width: 32px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: var(--tide-action);
+  color: var(--tide-bg);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, opacity 0.12s ease;
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+  }
+`;

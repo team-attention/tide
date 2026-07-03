@@ -1,6 +1,7 @@
 import type { ProductShellContentSearch } from "../../../../../application/domains/product-shell/product-shell.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
+import { keyframes, styled } from "styled-components";
 import { Search } from "lucide-react";
 import { fileIconFor } from "../../support/file-icons.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
@@ -46,8 +47,7 @@ export function ContentSearchPanel(props: {
   const showResults = (props.results?.query ?? "") === query.trim() && query.trim().length >= 2;
 
   return (
-    <div
-      className="content-search-backdrop"
+    <ContentSearchBackdrop
       role="dialog"
       aria-label="Search in files"
       onMouseDown={(event: { target: EventTarget | null; currentTarget: EventTarget | null }) => {
@@ -56,13 +56,12 @@ export function ContentSearchPanel(props: {
         }
       }}
     >
-      <div className="content-search">
-        <div className="content-search__field">
-          <Search size={15} strokeWidth={1.9} className="content-search__icon" aria-hidden />
-          <span className="content-search__scope">Files</span>
-          <input
+      <ContentSearchSurface>
+        <ContentSearchField>
+          <ContentSearchIcon size={15} strokeWidth={1.9} aria-hidden />
+          <ContentSearchScope>Files</ContentSearchScope>
+          <ContentSearchInput
             ref={inputRef}
-            className="content-search__input"
             placeholder="Search in files…"
             value={query}
             spellCheck={false}
@@ -76,18 +75,18 @@ export function ContentSearchPanel(props: {
             }}
           />
           {showResults && total > 0 ? (
-            <span className="content-search__count">
+            <ContentSearchCount>
               {`${total}${props.results?.truncated ? "+" : ""} in ${groups.length}`}
-            </span>
+            </ContentSearchCount>
           ) : null}
-        </div>
-        <div className="content-search__results">
+        </ContentSearchField>
+        <ContentSearchResults>
           {query.trim().length < 2 ? (
-            <div className="content-search__empty">Type at least 2 characters</div>
+            <ContentSearchEmpty>Type at least 2 characters</ContentSearchEmpty>
           ) : !showResults ? (
-            <div className="content-search__empty">Searching…</div>
+            <ContentSearchEmpty>Searching…</ContentSearchEmpty>
           ) : groups.length === 0 ? (
-            <div className="content-search__empty">No matches</div>
+            <ContentSearchEmpty>No matches</ContentSearchEmpty>
           ) : (
             groups.map(([relativePath, matches]) => {
               const slash = relativePath.lastIndexOf("/");
@@ -95,22 +94,21 @@ export function ContentSearchPanel(props: {
               const dir = slash === -1 ? "" : relativePath.slice(0, slash);
               const Icon = fileIconFor(name);
               return (
-                <div key={relativePath} className="content-search__group">
-                  <div className="content-search__file">
-                    <span className="content-search__file-icon" aria-hidden>
+                <ContentSearchGroup key={relativePath}>
+                  <ContentSearchFile>
+                    <ContentSearchFileIcon aria-hidden>
                       <Icon size={14} strokeWidth={1.7} />
-                    </span>
-                    <span className="content-search__file-name">{name}</span>
-                    {dir ? <span className="content-search__file-dir">{dir}</span> : null}
-                    <span className="content-search__file-count">{`${matches.length}`}</span>
-                  </div>
+                    </ContentSearchFileIcon>
+                    <ContentSearchFileName>{name}</ContentSearchFileName>
+                    {dir ? <ContentSearchFileDir>{dir}</ContentSearchFileDir> : null}
+                    <ContentSearchFileCount>{`${matches.length}`}</ContentSearchFileCount>
+                  </ContentSearchFile>
                   {matches.slice(0, 40).map((match, index) => {
                     const lineText = match.lineText ?? "";
                     return (
-                      <button
+                      <ContentSearchMatch
                         key={index}
                         type="button"
-                        className="content-search__match"
                         onClick={() => {
                           props.onOpen(relativePath, {
                             line: match.line,
@@ -121,20 +119,20 @@ export function ContentSearchPanel(props: {
                           props.onClose();
                         }}
                       >
-                        <span className="content-search__line-no">{`${match.line + 1}:${match.column + 1}`}</span>
-                        <span className="content-search__line">
+                        <ContentSearchLineNumber>{`${match.line + 1}:${match.column + 1}`}</ContentSearchLineNumber>
+                        <ContentSearchLine>
                           {renderSearchPreview(lineText, match.column, query.trim().length)}
-                        </span>
-                      </button>
+                        </ContentSearchLine>
+                      </ContentSearchMatch>
                     );
                   })}
-                </div>
+                </ContentSearchGroup>
               );
             })
           )}
-        </div>
-      </div>
-    </div>
+        </ContentSearchResults>
+      </ContentSearchSurface>
+    </ContentSearchBackdrop>
   );
 }
 
@@ -153,8 +151,208 @@ function renderSearchPreview(
   return (
     <>
       {lineText.slice(0, column)}
-      <mark className="content-search__hit">{lineText.slice(column, end)}</mark>
+      <ContentSearchHit>{lineText.slice(column, end)}</ContentSearchHit>
       {lineText.slice(end)}
     </>
   );
 }
+
+const contentSearchOverlayIn = keyframes`
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+`;
+
+const contentSearchSheetIn = keyframes`
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+`;
+
+const ContentSearchBackdrop = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 10vh;
+  background: rgba(36, 33, 38, 0.28);
+  animation: ${contentSearchOverlayIn} 0.12s ease;
+`;
+
+const ContentSearchSurface = styled.div`
+  width: min(680px, calc(100vw - 48px));
+  max-height: 70vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--tide-line-strong, var(--tide-line));
+  border-radius: 12px;
+  background: var(--tide-bg);
+  box-shadow: 0 24px 60px -12px rgba(36, 33, 38, 0.35);
+  animation: ${contentSearchSheetIn} 0.16s ease;
+`;
+
+const ContentSearchField = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--tide-line);
+  padding: 10px 12px;
+  background: var(--tide-bg);
+`;
+
+const ContentSearchIcon = styled(Search)`
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+`;
+
+const ContentSearchScope = styled.span`
+  height: 22px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--tide-line);
+  border-radius: 6px;
+  padding: 0 7px;
+  background: var(--tide-surface);
+  color: var(--tide-muted);
+  font: 520 11px/1 Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+`;
+
+const ContentSearchInput = styled.input`
+  min-width: 0;
+  flex: 1 1 auto;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--tide-text);
+  font-size: 15px;
+
+  &::placeholder {
+    color: var(--tide-muted);
+  }
+`;
+
+const ContentSearchCount = styled.span`
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+`;
+
+const ContentSearchResults = styled.div`
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 4px 6px 8px;
+`;
+
+const ContentSearchEmpty = styled.div`
+  padding: 18px;
+  color: var(--tide-muted);
+  font-size: 13px;
+  text-align: center;
+`;
+
+const ContentSearchGroup = styled.div`
+  margin-bottom: 6px;
+`;
+
+const ContentSearchFile = styled.div`
+  position: sticky;
+  top: 0;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px 3px;
+  background: var(--tide-bg);
+`;
+
+const ContentSearchFileIcon = styled.span`
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--tide-muted);
+`;
+
+const ContentSearchFileName = styled.span`
+  flex: 0 0 auto;
+  color: var(--tide-text);
+  font-size: 13px;
+  font-weight: 600;
+`;
+
+const ContentSearchFileDir = styled.span`
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--tide-muted);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const ContentSearchFileCount = styled.span`
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+`;
+
+const ContentSearchMatch = styled.button`
+  width: 100%;
+  min-height: 30px;
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  border: 0;
+  border-radius: 6px;
+  padding: 3px 10px 3px 28px;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+
+  &:hover {
+    background: var(--tide-selection);
+  }
+`;
+
+const ContentSearchLineNumber = styled.span`
+  width: 48px;
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+  font: 11.5px/1.4 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+`;
+
+const ContentSearchLine = styled.span`
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--tide-text);
+  font-family: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const ContentSearchHit = styled.mark`
+  border-radius: 3px;
+  padding: 0 1px;
+  background: color-mix(in srgb, var(--tide-action) 12%, transparent);
+  color: var(--tide-text);
+`;

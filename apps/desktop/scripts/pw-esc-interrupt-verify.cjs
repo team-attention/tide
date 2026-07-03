@@ -22,40 +22,40 @@ function check(label, ok, detail = "") {
     env: { ...process.env, TIDE_APP_DATA_ROOT: dataRoot },
   });
   const page = await app.firstWindow();
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
   await page.waitForTimeout(800);
   await page.evaluate(async (cwd) => { await window.tide.registerProject(cwd); }, repo);
   await page.waitForTimeout(400);
-  const projectRow = page.locator(".project-row, [class*='project-row']").first();
+  const projectRow = page.locator("[data-project-row]").first();
   if (await projectRow.count()) await projectRow.hover().catch(() => {});
   await page.waitForTimeout(300);
   const newInProject = page.locator("[aria-label='New thread in project']").first();
   if (await newInProject.count()) await newInProject.click({ force: true });
-  await page.waitForSelector(".agent-chat-shell--start textarea", { timeout: 6000 }).catch(() => {});
+  await page.waitForSelector('[data-chat-start="true"] textarea', { timeout: 6000 }).catch(() => {});
   await page.waitForTimeout(600);
 
   // opencode agent.
-  await page.locator(".agent-chat-shell--start [data-context-kind='agent']").first().click().catch(() => {});
+  await page.locator(`[data-chat-start="true"] [data-context-kind='agent']`).first().click().catch(() => {});
   await page.waitForTimeout(500);
-  const ocRow = page.locator(".chip-popover__row, .choice-surface__row").filter({ hasText: /opencode/i }).first();
+  const ocRow = page.locator("[data-choice-row], [data-choice-row]").filter({ hasText: /opencode/i }).first();
   if (await ocRow.count()) await ocRow.click({ force: true });
   await page.waitForTimeout(9500);
 
   // Pick a known-working OpenAI model (valid token), avoiding the expired default.
-  await page.locator(".agent-chat-shell--start [aria-label='Model']").first().click().catch(() => {});
+  await page.locator(`[data-chat-start="true"] [aria-label='Model']`).first().click().catch(() => {});
   await page.waitForTimeout(700);
-  const gpt = page.locator(".chip-popover__row, .choice-surface__row, [role='option']").filter({ hasText: /gpt-5\.5-fast|gpt-5\.5|gpt-5\.4/i }).first();
+  const gpt = page.locator("[data-choice-row], [data-choice-row], [role='option']").filter({ hasText: /gpt-5\.5-fast|gpt-5\.5|gpt-5\.4/i }).first();
   if (await gpt.count()) { await gpt.click({ force: true }); } else { await page.keyboard.press("Escape"); }
   await page.waitForTimeout(800);
 
   // Send a streaming prompt that runs long enough to interrupt.
-  const composer = page.locator(".agent-chat-shell--start textarea, .agent-chat-shell textarea").first();
+  const composer = page.locator('[data-chat-start="true"] textarea, [data-agent-chat-shell] textarea').first();
   await composer.click();
   await composer.fill("List every integer from 1 to 80, one number per line, with a short word after each.");
   await composer.press("Enter");
 
   // Wait for the run to be live: the composer Stop button appears.
-  const stop = page.locator(".composer-shell__send--stop");
+  const stop = page.locator("[data-composer-stop]");
   let became = false;
   try { await stop.waitFor({ state: "visible", timeout: 25000 }); became = true; } catch {}
   check("turn reaches the running state (Stop button shown)", became);

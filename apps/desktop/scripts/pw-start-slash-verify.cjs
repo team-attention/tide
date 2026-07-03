@@ -52,14 +52,14 @@ console.log("seeded");
     env: { ...process.env, TIDE_APP_DATA_ROOT: dataRoot },
   });
   const page = await app.firstWindow();
-  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
-  await page.waitForSelector(".thread-row__main", { timeout: 10000 }).catch(() => {});
+  await page.waitForSelector("[data-product-shell]", { timeout: 20000 });
+  await page.waitForSelector("[data-thread-row-main]", { timeout: 10000 }).catch(() => {});
   await page.waitForTimeout(800);
-  console.log("project rows:", await page.locator(".project-row__title").count());
-  console.log("thread rows:", await page.locator(".thread-row__main").count());
+  console.log("project rows:", await page.locator("[data-project-row-title]").count());
+  console.log("thread rows:", await page.locator("[data-thread-row-main]").count());
 
   const dumpRows = async () => {
-    const rows = page.locator(".chip-popover__row, .choice-surface__row, [role='option']");
+    const rows = page.locator("[data-choice-row], [data-choice-row], [role='option']");
     const n = await rows.count();
     const labels = [];
     for (let i = 0; i < Math.min(n, 40); i += 1) labels.push((await rows.nth(i).innerText()).trim().replace(/\s+/g, " "));
@@ -77,20 +77,20 @@ console.log("seeded");
 
   // PART B FIRST (clean rail) — Start Composer scoped to the project: project
   // commands only, the built-ins must be hidden.
-  const projectRow = page.locator(".project-row, [class*='project-row']").first();
+  const projectRow = page.locator("[data-project-row]").first();
   if ((await projectRow.count()) > 0) await projectRow.hover().catch(() => {});
   await page.waitForTimeout(400);
   const newInProject = page.locator("[aria-label='New thread in project']").first();
   let bLabels = null;
   if ((await newInProject.count()) > 0) {
     await newInProject.click({ force: true });
-    await page.waitForSelector(".agent-chat-shell--start textarea", { timeout: 6000 }).catch(() => {});
+    await page.waitForSelector('[data-chat-start="true"] textarea', { timeout: 6000 }).catch(() => {});
     // The Start Composer scope dispatches provider.discoverCommands; the backend
     // handshake probe spawns the agent (~1-2s) and replies via commandsChanged.
     await page.waitForTimeout(4500);
-    const onStart = await page.locator(".agent-chat-shell--start textarea").count();
+    const onStart = await page.locator('[data-chat-start="true"] textarea').count();
     console.log("B) on start composer?", onStart > 0);
-    bLabels = await typeSlash(".agent-chat-shell--start");
+    bLabels = await typeSlash('[data-chat-start="true"]');
     await page.screenshot({ path: "/tmp/pw-slash-B-start.png" });
     const bJoined = (bLabels ?? []).join(" | ");
     console.log("B) start-composer rows:", (bLabels ?? []).length, JSON.stringify((bLabels ?? []).map((l) => l.split(" ")[0])));
@@ -104,13 +104,13 @@ console.log("seeded");
   // navigating to PART A.
   await page.keyboard.press("Escape").catch(() => {});
   await page.waitForTimeout(300);
-  await page.locator(".agent-chat-shell--start textarea, .agent-chat-shell textarea").first().fill("").catch(() => {});
+  await page.locator('[data-chat-start="true"] textarea, [data-agent-chat-shell] textarea').first().fill("").catch(() => {});
   await page.waitForTimeout(300);
 
   // PART A — in-thread (repo-root, claude): full list incl. built-ins.
-  await page.locator(".thread-row__main").first().click();
+  await page.locator("[data-thread-row-main]").first().click();
   await page.waitForTimeout(1200);
-  const threadLabels = await typeSlash(".agent-chat-shell");
+  const threadLabels = await typeSlash("[data-agent-chat-shell]");
   await page.screenshot({ path: "/tmp/pw-slash-A-thread.png" });
   const aJoined = (threadLabels ?? []).join(" | ");
   console.log("A) in-thread rows:", JSON.stringify(threadLabels));

@@ -55,7 +55,7 @@ test("session_context_meter_shows_only_current_session_context", () => {
   const html = renderToStaticMarkup(<SessionContextMeter usage={usage} />);
   const text = visibleText(html);
 
-  assert.match(html, /class="agent-usage"/);
+  assert.match(html, /data-agent-usage="true"/);
   assert.match(html, /width:\s*25%/);
   assert.match(text, /Session context\s*64k \/ 256k tokens\s*75% left/);
   assert.doesNotMatch(text, /5h/);
@@ -140,7 +140,7 @@ test("settings_shows_provider_window_usage_and_reset_while_composer_shows_contex
   assert.doesNotMatch(settingsText, /64k \/ 256k tokens/);
   assert.doesNotMatch(settingsText, /window|Resets/);
 
-  assert.match(composerHtml, /class="agent-usage"/);
+  assert.match(composerHtml, /data-agent-usage="true"/);
   assert.match(composerText, /Session context\s*64k \/ 256k tokens\s*75% left/);
   assert.doesNotMatch(composerText, /5h window|1 week window/);
 });
