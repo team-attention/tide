@@ -3,7 +3,7 @@ import type { LaunchOptionFeedback } from "../../../../../application/domains/ag
 import type { ComposerHandlers } from "../support/types.ts";
 import type { ChangeEvent, FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
 import { useEffect, useState } from "react";
-import { keyframes, styled } from "styled-components";
+import { css, keyframes, styled } from "styled-components";
 import { handleComposerPaste } from "./attachments.ts";
 import { ArrowUp, Check, ChevronDown, Plus, ShieldCheck, Square, X } from "lucide-react";
 import { chipAnchorFromEvent, contextChipIcon, createContextChip } from "./context-chips.tsx";
@@ -645,12 +645,12 @@ const ComposerChipFeedback = styled.span<{ $state: "applied" | "pending" }>`
 
   ${({ $state }) =>
     $state === "applied"
-      ? `
+      ? css`
         color: var(--tide-diff-add);
         font-weight: 600;
         animation: ${composerChipFeedbackFlash} 2400ms ease both;
       `
-      : `
+      : css`
         padding: 2px 6px;
         border-radius: 999px;
         background: var(--tide-selection);

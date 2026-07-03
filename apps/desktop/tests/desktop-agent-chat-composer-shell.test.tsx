@@ -1455,6 +1455,25 @@ test("launch_options_changed_sets_chip_feedback_from_the_applied_signal", () => 
   assert.deepEqual(noop.launchOptionFeedback, {});
 });
 
+test("applied_launch_option_chip_feedback_renders_without_keyframe_runtime_error", () => {
+  const open = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  const live = applyBackendEventToAgentChatShell(
+    open,
+    backendEvent("thread.launchOptionsChanged", {
+      thread: { ...thread, launchOptions: { model: "gpt-5.2" } },
+      applied: "live",
+      changedKeys: ["model"],
+    }),
+  );
+
+  const html = renderShell(live);
+
+  assert.match(html, /Applied/);
+});
+
 test("a_new_turn_clears_pending_launch_option_chip_feedback", () => {
   const pending = applyBackendEventToAgentChatShell(
     applyBackendEventToAgentChatShell(
@@ -1733,6 +1752,34 @@ test("the_working_indicator_is_hidden_while_the_agent_answer_streams", () => {
   assert.ok(!html.includes('data-working="true"'));
   assert.match(html, /data-chat-state="running"/);
   assert.match(html, /data-block-id="b1"[^>]*data-streaming-caret="active"/);
+});
+
+test("streaming_reasoning_block_renders_without_keyframe_runtime_error", () => {
+  const running = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "running" }),
+  );
+  const withReasoning = applyBackendEventToAgentChatShell(
+    running,
+    backendEvent("agentSessionBlock.upserted", {
+      block: {
+        blockId: "reasoning-1",
+        threadId: "thread-shell",
+        agentId: "codex",
+        kind: "reasoning",
+        role: "reasoning",
+        status: "streaming",
+        title: "Thinking",
+        body: "Checking the renderer.",
+        updatedAt: later,
+      },
+    }),
+  );
+
+  const html = renderShell(withReasoning);
+
+  assert.match(html, /data-block-role="reasoning"/);
+  assert.match(html, /Checking the renderer/);
 });
 
 test("stale_streaming_agent_blocks_do_not_keep_the_blinking_caret_after_interrupt", () => {

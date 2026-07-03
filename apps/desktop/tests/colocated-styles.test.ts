@@ -113,3 +113,33 @@ test("styled component helper files use semantic parts naming", () => {
   }
   assert.deepEqual(problems, [], `\n${problems.join("\n")}`);
 });
+
+test("styled-components keyframes are not interpolated into raw conditional strings", () => {
+  const problems: string[] = [];
+  for (const file of walk(renderer, ".tsx")) {
+    const text = fs.readFileSync(file, "utf8");
+    const keyframeNames = [...text.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*keyframes`/g)]
+      .map((match) => match[1]);
+    if (keyframeNames.length === 0) {
+      continue;
+    }
+    for (const name of keyframeNames) {
+      const templateTick = "`";
+      const rawTemplateBody = String.raw`(?:[^` + templateTick + String.raw`\\]|\\[\s\S])*?`;
+      const rawConditionalAnimation = new RegExp(
+        String.raw`\?\s*` +
+          templateTick +
+          rawTemplateBody +
+          String.raw`animation\s*:\s*\$\{${name}\}`,
+        "g",
+      );
+      for (const match of text.matchAll(rawConditionalAnimation)) {
+        const line = text.slice(0, match.index ?? 0).split("\n").length;
+        problems.push(
+          `${path.relative(renderer, file)}:${line}: wrap conditional keyframe CSS in the styled-components css helper`,
+        );
+      }
+    }
+  }
+  assert.deepEqual(problems, [], `\n${problems.join("\n")}`);
+});

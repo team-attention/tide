@@ -269,6 +269,30 @@ const ThreadMainButton = styled.button`
 `;
 ```
 
+### Conditional Fragments
+
+When a conditional interpolation returns multiple CSS declarations, return a
+`css` helper fragment, not a raw template string. This is required for
+fragments that interpolate `keyframes`, because `styled-components` cannot
+inject a keyframe declaration from an untagged string.
+
+```tsx
+import { css, keyframes, styled } from "styled-components";
+
+const pulse = keyframes`50% { opacity: 0.5; }`;
+
+const StatusDot = styled.span<{ $running: boolean }>`
+  ${({ $running }) =>
+    $running
+      ? css`
+          animation: ${pulse} 1s ease infinite;
+        `
+      : css`
+          animation: none;
+        `}
+`;
+```
+
 This order keeps the human-reading path at the top: imports, behavior, returned
 structure, then visual definitions. A styled constant declared below the
 component is fine because the function body runs after module initialization.

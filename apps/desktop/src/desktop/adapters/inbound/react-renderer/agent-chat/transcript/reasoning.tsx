@@ -1,7 +1,7 @@
 import type { AgentChatBlockView } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import { useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
-import { keyframes, styled } from "styled-components";
+import { css, keyframes, styled } from "styled-components";
 import { ChevronDown, Sparkles } from "lucide-react";
 import { renderMarkdownToHtml } from "./markdown.tsx";
 // Extracted from agent-chat-shell.ts (spec: navigable-source-structure).
@@ -65,7 +65,7 @@ const ReasoningFrame = styled.div<{ $streaming: boolean }>`
 
   ${({ $streaming }) =>
     $streaming
-      ? `
+      ? css`
         ${ReasoningLabel} {
           background: linear-gradient(
             100deg,
