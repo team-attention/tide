@@ -264,6 +264,7 @@ export interface ProductShellHandlers {
   onOpenChanges: (cwd?: string) => void;
   onOpenThreadChanges: (threadId: string) => void;
   onOpenReview: (cwd?: string) => void;
+  onOpenThreadReview: (threadId: string) => void;
   // The Changes pane self-fetches its data from its cwd (Main-process git).
   onGitChanges: (cwd: string) => Promise<GitChangesViewResult>;
   onGitFileDiff: (cwd: string, relPath: string) => Promise<string>;

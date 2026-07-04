@@ -25,6 +25,7 @@ This branch implements the first product slice of the plan:
   - opencode: `opencode run --format json` prompt review.
 - Review pane target/provider controls, running state with elapsed time, raw output fallback, persisted structured finding extraction, and "Ask agent to fix selected" handoff into the composer.
 - Composer `/review` capability row that opens Tide's Review pane as a Tide-owned surface, separate from provider-native review invocation.
+- Thread context menu `Review changes` entry point that focuses the thread and opens Tide's Review pane.
 - Review pane failure/unavailable results preserve the provider message in the pane instead of rendering an empty raw-output state.
 - Backend provider capability invocation surfaces unsupported provider paths as `provider_capability_unsupported` without starting a runtime.
 - Codex app-server `review/start` schema fixture coverage for target/delivery payload mapping, plus fake app-server provider-method coverage that verifies Tide sends `review/start` on the initialized provider thread and returns the app-server result.
@@ -212,7 +213,7 @@ Entry points:
 
 - Changes pane header: `Review`.
 - Composer slash command/capability row: `/review`.
-- Thread menu later: `Review changes`.
+- Thread menu: `Review changes`.
 
 Review pane:
 

@@ -4,7 +4,7 @@ import { applyProductShellWorkbenchDrop, closeProductShellWorkbenchPane, ensureC
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ProductShellHandlerContext } from "./context.ts";
 
-export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onWorkbenchToggle" | "onWorkbenchFullscreenToggle" | "onWorkbenchSetLayout" | "onWorkbenchMaximizePane" | "onWorkbenchPaneDrop" | "onWorkbenchSplitRatio" | "onNewWorkbenchPane" | "onLauncherAction" | "onFocusWorkbenchPane" | "onCloseWorkbenchPane" | "onReleaseAgentBrowserControl" | "onTerminalInput" | "onTerminalResize" | "onOpenBrowserPane" | "onOpenChanges" | "onOpenThreadChanges" | "onOpenReview" | "onGitChanges" | "onGitFileDiff" | "onGitStageFile" | "onGitUnstageFile" | "onGitDiscardFile" | "onGitApplyHunk" | "onGitGenerateCommitMessage" | "onGitCommit" | "onGitPushTarget" | "onGitPush" | "onRunReview" | "onLoadWorkbenchImage"> {
+export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onWorkbenchToggle" | "onWorkbenchFullscreenToggle" | "onWorkbenchSetLayout" | "onWorkbenchMaximizePane" | "onWorkbenchPaneDrop" | "onWorkbenchSplitRatio" | "onNewWorkbenchPane" | "onLauncherAction" | "onFocusWorkbenchPane" | "onCloseWorkbenchPane" | "onReleaseAgentBrowserControl" | "onTerminalInput" | "onTerminalResize" | "onOpenBrowserPane" | "onOpenChanges" | "onOpenThreadChanges" | "onOpenReview" | "onOpenThreadReview" | "onGitChanges" | "onGitFileDiff" | "onGitStageFile" | "onGitUnstageFile" | "onGitDiscardFile" | "onGitApplyHunk" | "onGitGenerateCommitMessage" | "onGitCommit" | "onGitPushTarget" | "onGitPush" | "onRunReview" | "onLoadWorkbenchImage"> {
   const { props, shellState, getShellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
   return {
     onWorkbenchToggle: () =>
@@ -113,6 +113,23 @@ export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<P
           payload: { threadId: state.activeThreadId, command: "open_review" },
         });
         return state.workbenchOpen ? state : { ...state, workbenchOpen: true };
+      });
+    },
+    onOpenThreadReview: (threadId) => {
+      setShellState((state) => {
+        const result = openProductShellThreadFromLeftRail(state, threadId, {
+          backendTransportAvailable: props.onBackendCommand !== undefined,
+        });
+        dispatchBackendCommand(result.command);
+        dispatchBackendCommand({
+          kind: "workbench.command",
+          payload: { threadId, command: "open_review" },
+        });
+        return {
+          ...result.state,
+          workbenchOpen: true,
+          workbenchOpenByThreadId: { ...result.state.workbenchOpenByThreadId, [threadId]: true },
+        };
       });
     },
     onRunReview: (cwd, provider, target) =>

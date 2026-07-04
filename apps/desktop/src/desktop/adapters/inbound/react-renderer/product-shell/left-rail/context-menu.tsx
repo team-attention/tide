@@ -2,7 +2,7 @@ import type { ProductShellLeftRailMenu, ProductShellListSettings } from "../../.
 import type { MenuAnchorRect, ProductShellHandlers } from "../support/types.ts";
 import type { CSSProperties, ReactElement, ReactNode } from "react";
 import { createListSettingsMenu } from "./section-header.tsx";
-import { Archive, FolderOpen, GitBranchPlus, Pencil, Pin, Trash2 } from "lucide-react";
+import { Archive, ClipboardCheck, FolderOpen, GitBranchPlus, Pencil, Pin, Trash2 } from "lucide-react";
 import {
   FloatingMenuBackdrop,
   FloatingMenuIcon,
@@ -24,7 +24,7 @@ export function createLeftRailContextMenuOverlay(
   const viewportH = typeof window === "undefined" ? 900 : window.innerHeight;
   const viewportW = typeof window === "undefined" ? 1200 : window.innerWidth;
   const width = menu.kind === "project" ? 244 : menu.kind === "list_settings" ? 200 : 200;
-  const estimated = menu.kind === "project" ? 230 : menu.kind === "list_settings" ? 230 : 110;
+  const estimated = menu.kind === "project" ? 230 : menu.kind === "list_settings" ? 230 : 146;
   const openUp = anchor.bottom + estimated > viewportH;
   // The trigger (⋯) sits at the right edge of the narrow left rail, so right-align
   // the menu to it (open leftward) — left-aligning would spill over into the chat.
@@ -71,6 +71,11 @@ function createLeftRailContextMenu(
             label: "Pin / unpin",
             icon: <Pin size={15} strokeWidth={1.9} />,
             onClick: () => handlers.onThreadPinToggle(menu.threadId),
+          },
+          {
+            label: "Review changes",
+            icon: <ClipboardCheck size={15} strokeWidth={1.9} />,
+            onClick: () => handlers.onOpenThreadReview(menu.threadId),
           },
           {
             label: "Archive",

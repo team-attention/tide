@@ -2,6 +2,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { JSDOM } from "jsdom";
+import { act } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
@@ -19,7 +21,35 @@ import {
   openProductShellThread,
   setProductShellRegisteredProjects,
   setProductShellGitContext,
+  type ProductShellBackendCommand,
 } from "../src/desktop/application/domains/product-shell/product-shell.ts";
+
+class TestResizeObserver {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+
+const dom = new JSDOM("<!doctype html><html><body></body></html>", {
+  pretendToBeVisual: true,
+  url: "http://localhost/",
+});
+const globals = globalThis as unknown as {
+  window: unknown;
+  document: unknown;
+  HTMLElement: unknown;
+  Element: unknown;
+  MutationObserver: unknown;
+  ResizeObserver: unknown;
+  IS_REACT_ACT_ENVIRONMENT: boolean;
+};
+globals.window = dom.window;
+globals.document = dom.window.document;
+globals.HTMLElement = dom.window.HTMLElement;
+globals.Element = dom.window.Element;
+globals.MutationObserver = dom.window.MutationObserver;
+globals.ResizeObserver = TestResizeObserver;
+globals.IS_REACT_ACT_ENVIRONMENT = true;
 
 function render(target: WorktreeDeleteTarget): string {
   return renderToStaticMarkup(
@@ -112,18 +142,61 @@ test("worktree_thread_row_exposes_delete_worktree_as_direct_button", () => {
 
 test("worktree_thread_menu_offers_archive_and_delete_worktree", () => {
   // D1: a thread living in a `<repo>.worktree/<branch>` worktree exposes both
-  // Archive and a "Delete worktree (branch)" item in its context menu.
+  // Review, Archive, and a "Delete worktree (branch)" item in its context menu.
   const markup = renderThreadContextMenu("/Users/you/repo.worktree/fix-login");
+  assert.match(markup, /Review changes/);
   assert.match(markup, /Delete worktree \(fix-login\)/);
   assert.match(markup, /Archive/);
 });
 
 test("non_worktree_thread_menu_omits_delete_worktree", () => {
   // Invariant 4: a thread in the main repo (not a worktree) cannot delete a
-  // worktree — its menu offers Pin / Archive only, no "Delete worktree".
+  // worktree — its menu offers Review / Archive, but no "Delete worktree".
   const markup = renderThreadContextMenu("/Users/you/repo");
+  assert.match(markup, /Review changes/);
   assert.match(markup, /Archive/);
   assert.doesNotMatch(markup, /Delete worktree/);
+});
+
+test("thread_menu_review_changes_opens_review_pane_for_that_thread", async () => {
+  const { createRoot } = await import("react-dom/client");
+  const container = dom.window.document.createElement("div");
+  dom.window.document.body.appendChild(container);
+  const root = createRoot(container);
+  const commands: ProductShellBackendCommand[] = [];
+  const state = openProductShellLeftRailMenu(seedThreads([{ threadId: "t1", cwd: "/Users/you/repo" }]), {
+    kind: "thread",
+    threadId: "t1",
+  });
+
+  await act(async () => {
+    root.render(
+      <TideProductShell
+        initialState={state}
+        onBackendCommand={(command) => {
+          commands.push(command);
+        }}
+      />,
+    );
+  });
+
+  const button = container.querySelector(
+    'button[data-left-rail-menu-item="Review changes"]',
+  ) as HTMLButtonElement | null;
+  assert.ok(button);
+
+  await act(async () => {
+    button.click();
+  });
+
+  const reviewCommand = commands.find(
+    (command) => command.kind === "workbench.command" && command.payload.command === "open_review",
+  );
+  assert.equal(reviewCommand?.kind === "workbench.command" ? reviewCommand.payload.threadId : null, "t1");
+
+  await act(async () => {
+    root.unmount();
+  });
 });
 
 test("deleting_a_worktree_archives_its_threads_and_drops_it_from_lists", () => {
