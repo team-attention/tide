@@ -16,18 +16,25 @@ export function providerCapabilityCatalogFromRuntimeCommands(
   switch (agentId) {
     case "codex":
       return [
+        tideReviewCapability(agentId),
         ...codexBaseCapabilityRegistry(),
         ...commands.map((command) => codexRuntimeCommandCapability(command)),
       ];
     case "claude":
-      return claudeBaseCapabilityRegistry({ runtimeCommands: commands });
+      return [
+        tideReviewCapability(agentId),
+        ...claudeBaseCapabilityRegistry({ runtimeCommands: commands }),
+      ];
     case "opencode":
-      return acpCapabilitiesFromSession({
-        provider: "opencode",
-        commands: commands
-          .filter((command) => command.trigger === "/")
-          .map((command) => ({ name: command.name, description: command.description })),
-      });
+      return [
+        tideReviewCapability(agentId),
+        ...acpCapabilitiesFromSession({
+          provider: "opencode",
+          commands: commands
+            .filter((command) => command.trigger === "/")
+            .map((command) => ({ name: command.name, description: command.description })),
+        }),
+      ];
   }
 }
 
@@ -188,6 +195,21 @@ function codexRuntimeCommandCapability(command: DiscoveredCommand): ProviderCapa
     },
     nativePayload: command,
     available: false,
+  };
+}
+
+function tideReviewCapability(agentId: ProviderCliAgentId): ProviderCapability {
+  return {
+    capabilityId: `${agentId}:tide:review`,
+    provider: agentId,
+    source: "manual_audit",
+    kind: "prompt_command",
+    trigger: "/",
+    label: "Review",
+    description: "Open Tide's review pane",
+    group: "commands",
+    invoke: { kind: "tide_surface", surface: "review" },
+    available: true,
   };
 }
 

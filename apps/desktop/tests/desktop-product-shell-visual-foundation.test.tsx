@@ -3156,6 +3156,43 @@ test("product_shell_opencode_selection_updates_model_before_thread_start", () =>
   assert.equal(view.agentChat.composer.modelLabel, "Default");
 });
 
+test("product_shell_review_capability_opens_workbench_review_pane", () => {
+  const withReviewCapability = {
+    ...openProductShellThread(createProductShellState(), "thread-workbench"),
+    workbenchOpen: false,
+    providerCapabilities: [
+      {
+        capabilityId: "codex:tide:review",
+        agentId: "codex" as const,
+        source: "manual_audit" as const,
+        kind: "prompt_command" as const,
+        trigger: "/" as const,
+        label: "Review",
+        description: "Open Tide's review pane",
+        group: "commands" as const,
+        invoke: { kind: "tide_surface" as const, surface: "review" },
+        available: true,
+      },
+    ],
+  };
+  const state = updateProductShellComposerDraft(withReviewCapability, "/rev");
+
+  const selected = selectProductShellChoiceSurfaceRow(
+    state,
+    "command_suggestions",
+    "capability:codex:tide:review",
+  );
+
+  assert.equal(selected.state.workbenchOpen, true);
+  assert.deepEqual(selected.command, {
+    kind: "workbench.command",
+    payload: {
+      threadId: "thread-workbench",
+      command: "open_review",
+    },
+  });
+});
+
 test("product_shell_opencode_selection_updates_start_command_launch_options", () => {
   const withAgentMenu = setProductShellComposerActiveSurface(createProductShellState(), "agent_menu");
   const selected = selectProductShellChoiceSurfaceRow(

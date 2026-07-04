@@ -419,6 +419,7 @@ test("provider capability snapshots keep initialize setup rows when command rows
     latest?.payload.capabilities.map((capability) => capability.capabilityId),
     [
       "opencode:command:compact",
+      "opencode:tide:review",
       "opencode:setup:auth",
       "opencode:setup:capabilities",
     ],

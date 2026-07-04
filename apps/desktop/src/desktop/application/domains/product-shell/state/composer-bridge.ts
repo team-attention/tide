@@ -91,6 +91,9 @@ export function selectProductShellChoiceSurfaceRow(
     state: {
       ...state,
       agentChat: result.state,
+      ...(result.command?.kind === "workbench.command" && result.command.payload.command === "open_review"
+        ? { workbenchOpen: true }
+        : {}),
     },
     command: result.command,
   };

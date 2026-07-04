@@ -14,6 +14,7 @@ import { createNativeRuntimePipeline } from "../src/backend/adapters/outbound/ag
 import { codexBaseCapabilityRegistry } from "../src/backend/adapters/outbound/agent-integrations/codex/codex-capability-registry.ts";
 import { claudeBaseCapabilityRegistry } from "../src/backend/adapters/outbound/agent-integrations/claude/claude-capability-registry.ts";
 import { acpCapabilitiesFromSession } from "../src/backend/adapters/outbound/agent-integrations/acp/acp-provider-factory.ts";
+import { providerCapabilityCatalogFromRuntimeCommands } from "../src/backend/adapters/outbound/agent-integrations/provider-capability-catalog.ts";
 import {
   CONTRACT_VERSION,
   type BackendEventEnvelope,
@@ -490,6 +491,17 @@ test("provider capability registries distinguish native methods, config, skills,
     qwenAcp.find((capability) => capability.capabilityId === "qwen:command:review")?.invoke,
     { kind: "provider_prompt_text", text: "/review" },
   );
+});
+
+test("provider capability catalog includes Tide-owned review surface for every provider", () => {
+  for (const agentId of ["codex", "claude", "opencode"] as const) {
+    const review = providerCapabilityCatalogFromRuntimeCommands(agentId, [])
+      .find((capability) => capability.capabilityId === `${agentId}:tide:review`);
+    assert.deepEqual(review?.invoke, { kind: "tide_surface", surface: "review" });
+    assert.equal(review?.trigger, "/");
+    assert.equal(review?.label, "Review");
+    assert.equal(review?.available, true);
+  }
 });
 
 test("capabilitiesChanged is a valid backend contract event", () => {
