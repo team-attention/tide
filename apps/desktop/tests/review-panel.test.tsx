@@ -56,7 +56,7 @@ test("review_panel_disables_invalid_commit_target_then_runs_selected_target", as
   });
 });
 
-test("review_panel_renders_findings_and_hands_raw_output_to_chat", async () => {
+test("review_panel_renders_findings_and_hands_selected_output_to_chat", async () => {
   let attached: { label: string; text: string } | null = null;
   let draft = "";
   let opened: { path: string; line?: number; character?: number; label?: string } | null = null;
@@ -84,6 +84,7 @@ test("review_panel_renders_findings_and_hands_raw_output_to_chat", async () => {
 
   assert.match(container.innerHTML, /High: src\/app\.ts:12 avoids stale state/);
   assert.match(container.innerHTML, /Full raw review output/);
+  assert.match(container.textContent ?? "", /1\/1 selected/);
 
   await act(async () => {
     buttonByText(container, "High: src/app.ts:12")?.click();
@@ -96,9 +97,11 @@ test("review_panel_renders_findings_and_hands_raw_output_to_chat", async () => {
     buttonByText(container, "Ask agent to fix")?.click();
   });
 
-  assert.equal(attached?.label, "Review findings");
-  assert.match(attached?.text ?? "", /Full raw review output/);
-  assert.match(draft, /Please fix the review findings/);
+  assert.equal(attached?.label, "Selected review findings");
+  assert.match(attached?.text ?? "", /High: src\/app\.ts:12 avoids stale state/);
+  assert.match(attached?.text ?? "", /Location: src\/app\.ts:12/);
+  assert.doesNotMatch(attached?.text ?? "", /Full raw review output/);
+  assert.match(draft, /Please fix the selected review findings/);
   await act(async () => {
     root.unmount();
   });
@@ -141,6 +144,63 @@ test("review_panel_prefers_persisted_structured_findings_over_raw_output", async
   assert.equal(opened?.line, 24);
   assert.equal(opened?.character, 1);
   assert.equal(opened?.label, "High: src/persisted.ts:24 persisted parser result");
+  await act(async () => {
+    root.unmount();
+  });
+});
+
+test("review_panel_hands_only_checked_findings_to_chat", async () => {
+  let attached: { label: string; text: string } | null = null;
+  const firstFinding: ReviewFinding = {
+    findingId: "first",
+    severity: "high",
+    file: "src/first.ts",
+    line: 10,
+    title: "High: src/first.ts:10 first finding",
+    body: "First finding body.",
+  };
+  const secondFinding: ReviewFinding = {
+    findingId: "second",
+    severity: "medium",
+    file: "src/second.ts",
+    line: 20,
+    title: "Medium: src/second.ts:20 second finding",
+    body: "Second finding body.",
+  };
+  const { container, root } = renderReviewPanel({
+    onRunReview: async (_cwd, _provider, target) => reviewResult({
+      target,
+      rawText: "Provider raw output that mentions both findings.",
+      findings: [firstFinding, secondFinding],
+    }),
+    onAddContentToChat: (chip) => {
+      attached = { label: chip.label, text: chip.text };
+    },
+  });
+  await flushEffects();
+
+  await act(async () => {
+    buttonByText(container, "Run review")?.click();
+  });
+  await flushEffects();
+
+  assert.match(container.textContent ?? "", /2\/2 selected/);
+  const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[];
+  assert.equal(checkboxes.length, 2);
+  await act(async () => {
+    checkboxes[1]?.click();
+  });
+
+  assert.match(container.textContent ?? "", /1\/2 selected/);
+  await act(async () => {
+    buttonByText(container, "Ask agent to fix")?.click();
+  });
+
+  assert.equal(attached?.label, "Selected review findings");
+  assert.match(attached?.text ?? "", /High: src\/first\.ts:10 first finding/);
+  assert.match(attached?.text ?? "", /First finding body/);
+  assert.doesNotMatch(attached?.text ?? "", /Medium: src\/second\.ts:20 second finding/);
+  assert.doesNotMatch(attached?.text ?? "", /Second finding body/);
   await act(async () => {
     root.unmount();
   });

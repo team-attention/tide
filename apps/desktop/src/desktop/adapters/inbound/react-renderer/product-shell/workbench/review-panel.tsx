@@ -3,6 +3,7 @@ import { styled } from "styled-components";
 import { CheckCircle2, ClipboardCheck, Loader2, Send, TriangleAlert } from "lucide-react";
 import type {
   ProductShellHandlers,
+  ReviewFinding,
   ReviewProvider,
   ReviewRunResult,
   ReviewTarget,
@@ -27,6 +28,7 @@ export function ReviewPanel(props: {
   const [running, setRunning] = useState(false);
   const [runStartedAtMs, setRunStartedAtMs] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [selectedFindingIds, setSelectedFindingIds] = useState<Set<string>>(() => new Set());
   const [result, setResult] = useState<ReviewRunResult | null>(null);
 
   const target = useMemo<ReviewTarget | null>(() => {
@@ -60,9 +62,15 @@ export function ReviewPanel(props: {
     }
     return result.findings.length > 0 ? result.findings : parseReviewFindings(result.rawText);
   }, [result]);
+  const selectedFindings = useMemo(
+    () => findings.filter((finding) => selectedFindingIds.has(finding.findingId)),
+    [findings, selectedFindingIds],
+  );
   const runningElapsedLabel = running && runStartedAtMs !== null
     ? formatReviewElapsed(nowMs - runStartedAtMs)
     : null;
+  const canAskAgentToFix = result !== null &&
+    (findings.length > 0 ? selectedFindings.length > 0 : result.rawText.trim().length > 0);
   const rawOutputText = result?.rawText.trim() ||
     (result !== null && !result.ok
       ? result.message ?? "Review failed."
@@ -89,23 +97,51 @@ export function ReviewPanel(props: {
     setNowMs(startedAtMs);
     setRunning(true);
     setResult(null);
+    setSelectedFindingIds(new Set());
     try {
-      setResult(await handlers.onRunReview(cwd, provider, target));
+      const nextResult = await handlers.onRunReview(cwd, provider, target);
+      const nextFindings = nextResult.findings.length > 0
+        ? nextResult.findings
+        : parseReviewFindings(nextResult.rawText);
+      setSelectedFindingIds(new Set(nextFindings.map((finding) => finding.findingId)));
+      setResult(nextResult);
     } finally {
       setRunning(false);
     }
   }
 
+  function toggleFindingSelection(findingId: string): void {
+    setSelectedFindingIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(findingId)) {
+        next.delete(findingId);
+      } else {
+        next.add(findingId);
+      }
+      return next;
+    });
+  }
+
   function askAgentToFix(): void {
-    if (result === null || result.rawText.trim().length === 0) {
+    if (result === null) {
+      return;
+    }
+    const attachmentText = findings.length > 0
+      ? formatSelectedReviewFindings(selectedFindings)
+      : result.rawText.trim();
+    if (attachmentText.length === 0) {
       return;
     }
     handlers.onAddContentToChat({
       kind: "message",
-      label: "Review findings",
-      text: result.rawText,
+      label: findings.length > 0 ? "Selected review findings" : "Review findings",
+      text: attachmentText,
     });
-    handlers.onDraftChange("Please fix the review findings I attached. Keep the changes focused and explain what you changed.");
+    handlers.onDraftChange(
+      findings.length > 0
+        ? "Please fix the selected review findings I attached. Keep the changes focused and explain what you changed."
+        : "Please fix the review findings I attached. Keep the changes focused and explain what you changed.",
+    );
   }
 
   return (
@@ -204,7 +240,12 @@ export function ReviewPanel(props: {
       ) : null}
       <ReviewBody>
         <ReviewFindingsPane>
-          <ReviewSectionTitle>Findings</ReviewSectionTitle>
+          <ReviewFindingsHeader>
+            <ReviewSectionTitle>Findings</ReviewSectionTitle>
+            {findings.length > 0 ? (
+              <ReviewSelectionMeta>{selectedFindings.length}/{findings.length} selected</ReviewSelectionMeta>
+            ) : null}
+          </ReviewFindingsHeader>
           {running ? (
             <ReviewEmpty>Review is running.</ReviewEmpty>
           ) : result === null ? (
@@ -215,21 +256,31 @@ export function ReviewPanel(props: {
             <ReviewFindingList>
               {findings.map((finding, index) => (
                 <li key={finding.findingId}>
-                  {finding.file !== undefined && finding.line !== undefined ? (
-                    <ReviewFindingButton
-                      type="button"
-                      title={`Open ${finding.file}:${finding.line}`}
-                      onClick={() => handlers.onOpenFile(finding.file!, {
-                        line: finding.line!,
-                        character: 1,
-                        label: finding.title,
-                      })}
-                    >
-                      {finding.title}
-                    </ReviewFindingButton>
-                  ) : (
-                    finding.title
-                  )}
+                  <ReviewFindingRow>
+                    <ReviewFindingCheckbox
+                      type="checkbox"
+                      aria-label={`Select finding ${index + 1}`}
+                      checked={selectedFindingIds.has(finding.findingId)}
+                      onChange={() => toggleFindingSelection(finding.findingId)}
+                    />
+                    <ReviewFindingContent>
+                      {finding.file !== undefined && finding.line !== undefined ? (
+                        <ReviewFindingButton
+                          type="button"
+                          title={`Open ${finding.file}:${finding.line}`}
+                          onClick={() => handlers.onOpenFile(finding.file!, {
+                            line: finding.line!,
+                            character: 1,
+                            label: finding.title,
+                          })}
+                        >
+                          {finding.title}
+                        </ReviewFindingButton>
+                      ) : (
+                        finding.title
+                      )}
+                    </ReviewFindingContent>
+                  </ReviewFindingRow>
                 </li>
               ))}
             </ReviewFindingList>
@@ -255,11 +306,11 @@ export function ReviewPanel(props: {
           <ReviewActions>
             <ReviewRunButton
               type="button"
-              disabled={result === null || result.rawText.trim().length === 0}
+              disabled={!canAskAgentToFix}
               onClick={askAgentToFix}
             >
               <Send size={14} strokeWidth={1.9} aria-hidden />
-              <span>Ask agent to fix</span>
+              <span>{findings.length > 0 ? "Ask agent to fix selected" : "Ask agent to fix"}</span>
             </ReviewRunButton>
           </ReviewActions>
         </ReviewRawPane>
@@ -298,6 +349,20 @@ function reviewStatusLabel(result: ReviewRunResult): string {
     return "Completed";
   }
   return result.message?.toLowerCase().includes("unavailable") ? "Unavailable" : "Failed";
+}
+
+function formatSelectedReviewFindings(findings: ReviewFinding[]): string {
+  return findings.map((finding) => {
+    const lines = [`- ${finding.title}`];
+    if (finding.file !== undefined) {
+      lines.push(`  Location: ${finding.file}${finding.line !== undefined ? `:${finding.line}` : ""}`);
+    }
+    const body = finding.body.trim();
+    if (body.length > 0 && body !== finding.title.trim()) {
+      lines.push(`  ${body}`);
+    }
+    return lines.join("\n");
+  }).join("\n\n");
 }
 
 function formatReviewElapsed(elapsedMs: number): string {
@@ -477,6 +542,19 @@ const ReviewSectionTitle = styled.h3`
   font-weight: 700;
 `;
 
+const ReviewFindingsHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+`;
+
+const ReviewSelectionMeta = styled.span`
+  color: var(--tide-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+`;
+
 const ReviewEmpty = styled.p`
   margin: 12px 0 0;
   color: var(--tide-muted);
@@ -489,6 +567,24 @@ const ReviewFindingList = styled.ol`
   color: var(--tide-text);
   font-size: 12.5px;
   line-height: 1.45;
+`;
+
+const ReviewFindingRow = styled.div`
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+`;
+
+const ReviewFindingCheckbox = styled.input`
+  width: 14px;
+  height: 14px;
+  margin: 2px 0 0;
+  accent-color: var(--tide-action);
+`;
+
+const ReviewFindingContent = styled.span`
+  min-width: 0;
 `;
 
 const ReviewFindingButton = styled.button`
