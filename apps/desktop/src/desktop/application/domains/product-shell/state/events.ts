@@ -1,6 +1,6 @@
 import type { ProductShellBackendEventSource, ProductShellContentSearch, ProductShellProviderCapability, ProductShellProviderUsage, ProductShellState } from "./types.ts";
 import { applyAgentChatBackendEvent, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
-import type { AgentChatBackendEvent, AgentChatCommandOption, AgentChatProviderCatalog, AgentChatProviderCatalogVendor, AgentChatProviderInventory, AgentChatProviderModelOption, AgentChatThreadSummary } from "../../agent-chat/agent-chat.ts";
+import type { AgentChatBackendEvent, AgentChatCommandOption, AgentChatProviderCatalog, AgentChatProviderCatalogVendor, AgentChatProviderInventory, AgentChatProviderModelOption, AgentChatProviderOption, AgentChatThreadSummary } from "../../agent-chat/agent-chat.ts";
 import { applyAppChromeBackendEvent } from "../../app-chrome/app-chrome-state.ts";
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import { applyProductShellThreadArchivedEvent, applyProductShellThreadEvent, applyProductShellThreadLaunchOptionsChangedEvent, applyProductShellThreadPinChangedEvent, applyProductShellThreadRenamedEvent, toProductShellThreadFromSummary } from "./thread-list.ts";
@@ -514,6 +514,7 @@ function providerCatalogSnapshotFromPayload(payload: unknown): AgentChatProvider
     scope?: unknown;
     models?: unknown;
     vendors?: unknown;
+    providerOptions?: unknown;
     environment?: unknown;
     currentModel?: unknown;
     defaultModel?: unknown;
@@ -532,6 +533,7 @@ function providerCatalogSnapshotFromPayload(payload: unknown): AgentChatProvider
     scope: providerScopeFromPayload(raw.scope),
     models: providerModelsFromPayload(raw.models),
     vendors: providerVendorsFromPayload(raw.vendors),
+    providerOptions: providerOptionsFromPayload(raw.providerOptions),
     environment: providerEnvironmentFromPayload(raw.environment),
     currentModel: typeof raw.currentModel === "string" ? raw.currentModel : undefined,
     defaultModel:
@@ -602,6 +604,72 @@ function providerVendorsFromPayload(payload: unknown): AgentChatProviderCatalogV
       };
     })
     .filter((entry): entry is AgentChatProviderCatalogVendor => entry !== null);
+}
+
+function providerOptionsFromPayload(payload: unknown): AgentChatProviderOption[] | undefined {
+  if (!Array.isArray(payload)) {
+    return undefined;
+  }
+  return payload
+    .map((entry): AgentChatProviderOption | null => {
+      const option = entry as {
+        id?: unknown;
+        label?: unknown;
+        source?: unknown;
+        env?: unknown;
+        modelCount?: unknown;
+        connected?: unknown;
+        authMethods?: unknown;
+      };
+      if (
+        typeof option.id !== "string" ||
+        typeof option.label !== "string" ||
+        typeof option.modelCount !== "number" ||
+        typeof option.connected !== "boolean"
+      ) {
+        return null;
+      }
+      return {
+        id: option.id,
+        label: option.label,
+        source:
+          option.source === "env" ||
+          option.source === "config" ||
+          option.source === "custom" ||
+          option.source === "api"
+            ? option.source
+            : undefined,
+        env: Array.isArray(option.env)
+          ? option.env.filter((name): name is string => typeof name === "string")
+          : undefined,
+        modelCount: option.modelCount,
+        connected: option.connected,
+        authMethods: providerAuthMethodsFromPayload(option.authMethods),
+      };
+    })
+    .filter((entry): entry is AgentChatProviderOption => entry !== null);
+}
+
+function providerAuthMethodsFromPayload(
+  payload: unknown,
+): AgentChatProviderOption["authMethods"] {
+  if (!Array.isArray(payload)) {
+    return undefined;
+  }
+  const methods = payload
+    .map((entry): NonNullable<AgentChatProviderOption["authMethods"]>[number] | null => {
+      const method = entry as { type?: unknown; label?: unknown; promptCount?: unknown };
+      if ((method.type !== "oauth" && method.type !== "api") || typeof method.label !== "string") {
+        return null;
+      }
+      return {
+        type: method.type,
+        label: method.label,
+        promptCount: typeof method.promptCount === "number" ? method.promptCount : undefined,
+      };
+    })
+    .filter((entry): entry is NonNullable<AgentChatProviderOption["authMethods"]>[number] => entry !== null);
+  return methods.length > 0 ? methods : undefined;
 }
 
 function providerEnvironmentFromPayload(

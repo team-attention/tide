@@ -10,9 +10,11 @@ import {
   openOpencodeModelProviderApiKey,
   openOpencodeModelProviderConnection,
   openOpencodeModelProviderForProvider,
+  openOpencodeProviderSearch,
   opencodeApiKeyProviderIdFromRow,
   opencodeConnectionProviderIdFromRow,
   opencodeProviderIdFromRow,
+  providerSearchRowId,
   selectedOpencodeModelProviderId,
 } from "./opencode-model-provider.ts";
 import { providerReadinessTerminalCommandData } from "./provider-readiness-terminal-command.ts";
@@ -47,6 +49,15 @@ export function selectOpencodeModelProviderSurfaceRow(
       state: withOpencodeModelProviderFlowState(
         state,
         finishOpencodeModelProviderApiKey(flowState, currentModel, catalog),
+      ),
+      command: null,
+    };
+  }
+  if (rowId === providerSearchRowId()) {
+    return {
+      state: withOpencodeModelProviderFlowState(
+        state,
+        openOpencodeProviderSearch(flowState, currentModel, catalog),
       ),
       command: null,
     };

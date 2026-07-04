@@ -40,6 +40,22 @@ export interface AgentChatProviderCatalogVendor {
   usable?: boolean;
 }
 
+export interface AgentChatProviderAuthMethodOption {
+  type: "oauth" | "api";
+  label: string;
+  promptCount?: number;
+}
+
+export interface AgentChatProviderOption {
+  id: string;
+  label: string;
+  source?: "env" | "config" | "custom" | "api";
+  env?: string[];
+  modelCount: number;
+  connected: boolean;
+  authMethods?: AgentChatProviderAuthMethodOption[];
+}
+
 export interface AgentChatProviderCatalogEnvironment {
   version?: string;
   testedWith?: string;
@@ -58,6 +74,7 @@ export interface AgentChatProviderCatalog {
   scope?: { cwd?: string };
   models: AgentChatProviderModelOption[];
   vendors?: AgentChatProviderCatalogVendor[];
+  providerOptions?: AgentChatProviderOption[];
   environment?: AgentChatProviderCatalogEnvironment;
   currentModel?: string;
   defaultModel: string;

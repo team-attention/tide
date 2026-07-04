@@ -2072,6 +2072,9 @@ test("model_chip_routes_menu_data_by_provider_cli_agent", () => {
           vendors: [
             { id: "openai", label: "OpenAI", connected: true, popular: true, usable: true },
           ],
+          providerOptions: [
+            { id: "abacus", label: "Abacus", source: "custom", env: ["ABACUS_API_KEY"], modelCount: 65, connected: false },
+          ],
           defaultModel: "opencode default",
         },
       },
@@ -2089,9 +2092,43 @@ test("model_chip_routes_menu_data_by_provider_cli_agent", () => {
   assert.match(opencodeHtml, /opencode/);
   assert.match(opencodeHtml, /data-choice-surface="opencode_model_provider"/);
   assert.match(opencodeHtml, /OpenCode Zen/);
+  assert.match(opencodeHtml, /Search providers/);
   assert.doesNotMatch(opencodeHtml, /Add a vendor/);
   assert.match(opencodeLoadingHtml, /Loading provider catalog/);
   assert.doesNotMatch(opencodeLoadingHtml, /OpenCode Zen/);
+});
+
+test("opencode_provider_search_surface_renders_search_input_and_provider_rows", () => {
+  const selectedOpencode = selectComposerAgent(createAgentChatShellState(), "opencode").state;
+  const opened = setComposerActiveSurface(
+    {
+      ...selectedOpencode,
+      availableProviderCatalogs: {
+        opencode: {
+          agentId: "opencode",
+          status: "ready",
+          models: [{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }],
+          providerOptions: [
+            { id: "abacus", label: "Abacus", source: "custom", env: ["ABACUS_API_KEY"], modelCount: 65, connected: false },
+            { id: "alibaba-cn", label: "Alibaba (China)", source: "custom", env: ["DASHSCOPE_API_KEY"], modelCount: 84, connected: false },
+          ],
+          defaultModel: "opencode default",
+        },
+      },
+    },
+    "model_menu",
+  ).state;
+  const searchState = selectAgentChatChoiceSurfaceRow(
+    opened,
+    "opencode_model_provider",
+    "opencode-provider-search",
+  ).state;
+  const html = renderShell(searchState);
+
+  assert.match(html, /data-opencode-step="provider_search"/);
+  assert.match(html, /aria-label="Search opencode providers"/);
+  assert.match(html, /Abacus/);
+  assert.match(html, /Alibaba \(China\)/);
 });
 
 test("codex_model_chip_renders_polished_label_but_stores_provider_native_value", () => {

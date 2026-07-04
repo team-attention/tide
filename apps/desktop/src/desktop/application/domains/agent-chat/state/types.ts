@@ -17,9 +17,11 @@ export type {
   AgentChatProviderCatalogStatus,
   AgentChatProviderCatalogVendor,
   AgentChatProviderCliAgentId,
+  AgentChatProviderAuthMethodOption,
   AgentChatProviderInventory,
   AgentChatProviderInventoryAgent,
   AgentChatProviderModelOption,
+  AgentChatProviderOption,
 } from "./provider-state-types.ts";
 
 export type AgentChatState =
@@ -725,8 +727,24 @@ export interface AgentChatOpencodeModelProviderConnectionView {
 }
 
 export interface AgentChatOpencodeModelProviderMethodView {
-  browserRowId: string;
-  apiKeyRowId: string;
+  browserRowId?: string;
+  browserLabel?: string;
+  browserDetail?: string;
+  apiKeyRowId?: string;
+  apiKeyLabel?: string;
+  apiKeyDetail?: string;
+}
+
+export interface AgentChatOpencodeModelProviderSearchProviderView {
+  rowId: string;
+  id: string;
+  label: string;
+  detail: string;
+  monogram: string;
+  connected: boolean;
+  needsReconnect: boolean;
+  modelCount: number;
+  env: string[];
 }
 
 export interface AgentChatOpencodeModelProviderView {
@@ -741,6 +759,7 @@ export interface AgentChatOpencodeModelProviderView {
   currentModel?: string;
   currentEffort?: string;
   providers: AgentChatOpencodeModelProviderProviderView[];
+  searchProviders?: AgentChatOpencodeModelProviderSearchProviderView[];
   models: AgentChatOpencodeModelProviderModelView[];
   effortRows: AgentChatChoiceSurfaceRowView[];
   connection?: AgentChatOpencodeModelProviderConnectionView;

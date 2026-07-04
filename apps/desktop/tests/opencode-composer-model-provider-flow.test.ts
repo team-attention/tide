@@ -55,6 +55,9 @@ test("opencode model chip opens provider root, not the flat model menu", () => {
       { value: "opencode/big-pickle", label: "big-pickle", vendor: "opencode" },
       { value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" },
     ],
+    providerOptions: [
+      { id: "abacus", label: "Abacus", source: "custom", env: ["ABACUS_API_KEY"], modelCount: 65, connected: false },
+    ],
   })), "model_menu").state;
   const surface = createActiveComposerSurface(opened);
 
@@ -65,7 +68,61 @@ test("opencode model chip opens provider root, not the flat model menu", () => {
   assert.ok(surface?.rows.some((row) => row.rowId === "opencode-provider:anthropic"));
   assert.ok(!surface?.rows.some((row) => row.rowId === "add-vendor"));
   assert.ok(!surface?.rows.some((row) => row.rowId === "all-providers"));
+  assert.ok(surface?.rows.some((row) => row.rowId === "opencode-provider-search"));
   assert.ok(!surface?.rows.some((row) => row.rowId === "opencode-back"));
+});
+
+test("provider search lists opencode provider options and backs to provider root", () => {
+  const opened = setComposerActiveSurface(opencodeState(opencodeCatalog({
+    vendors: [{ id: "openai", label: "OpenAI", connected: true, popular: true, usable: true }],
+    models: [{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }],
+    providerOptions: [
+      { id: "abacus", label: "Abacus", source: "custom", env: ["ABACUS_API_KEY"], modelCount: 65, connected: false },
+      { id: "alibaba-cn", label: "Alibaba (China)", source: "custom", env: ["DASHSCOPE_API_KEY"], modelCount: 84, connected: false },
+    ],
+  })), "opencode_model_provider").state;
+  const searchState = selectAgentChatChoiceSurfaceRow(
+    opened,
+    "opencode_model_provider",
+    "opencode-provider-search",
+  ).state;
+  const searchSurface = createActiveComposerSurface(searchState);
+
+  assert.equal(searchSurface?.opencodeModelProvider?.step, "provider_search");
+  assert.ok(searchSurface?.rows.some((row) => row.rowId === "opencode-provider:abacus"));
+  assert.equal(searchSurface?.opencodeModelProvider?.searchProviders?.[0]?.env[0], "ABACUS_API_KEY");
+
+  const rootState = selectAgentChatChoiceSurfaceRow(
+    searchState,
+    "opencode_model_provider",
+    "opencode-back",
+  ).state;
+  assert.equal(createActiveComposerSurface(rootState)?.opencodeModelProvider?.step, "provider_list");
+});
+
+test("selecting an unconnected provider search result opens API-key auth by default", () => {
+  const opened = setComposerActiveSurface(opencodeState(opencodeCatalog({
+    providerOptions: [
+      { id: "abacus", label: "Abacus", source: "custom", env: ["ABACUS_API_KEY"], modelCount: 65, connected: false },
+    ],
+    models: [{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }],
+  })), "opencode_model_provider").state;
+  const searchState = selectAgentChatChoiceSurfaceRow(
+    opened,
+    "opencode_model_provider",
+    "opencode-provider-search",
+  ).state;
+  const methodState = selectAgentChatChoiceSurfaceRow(
+    searchState,
+    "opencode_model_provider",
+    "opencode-provider:abacus",
+  ).state;
+  const methodSurface = createActiveComposerSurface(methodState);
+
+  assert.equal(methodSurface?.opencodeModelProvider?.step, "vendor_method");
+  assert.equal(methodSurface?.title, "Connect Abacus");
+  assert.ok(methodSurface?.rows.some((row) => row.rowId === "opencode-api-key:abacus"));
+  assert.ok(!methodSurface?.rows.some((row) => row.rowId === "connect-vendor:abacus"));
 });
 
 test("connected provider drilldown renders models, connection update row, and provider back", () => {
@@ -168,6 +225,17 @@ test("browser auth dispatches opencode auth login for the selected provider", ()
   const opened = setComposerActiveSurface(opencodeState(opencodeCatalog({
     vendors: [{ id: "google", label: "Google", connected: false, popular: true }],
     environment: { executablePath: "/bin/opencode", version: "1.17.3" },
+    providerOptions: [
+      {
+        id: "google",
+        label: "Google",
+        source: "custom",
+        env: ["GOOGLE_API_KEY"],
+        modelCount: 22,
+        connected: false,
+        authMethods: [{ type: "oauth", label: "Google OAuth" }],
+      },
+    ],
     models: [{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }],
   })), "opencode_model_provider").state;
   const methodState = selectAgentChatChoiceSurfaceRow(
@@ -189,6 +257,37 @@ test("browser auth dispatches opencode auth login for the selected provider", ()
     assert.equal(result.command.payload.data.expectedCompletion, "retry_preflight");
   }
   assert.equal(result.state.composer.activeSurface, null);
+});
+
+test("prompted provider auth methods route to the readiness terminal, not inline API key", () => {
+  const opened = setComposerActiveSurface(opencodeState(opencodeCatalog({
+    environment: { executablePath: "/bin/opencode", version: "1.17.3" },
+    providerOptions: [
+      {
+        id: "azure",
+        label: "Azure",
+        source: "custom",
+        env: ["AZURE_API_KEY"],
+        modelCount: 109,
+        connected: false,
+        authMethods: [{ type: "api", label: "API key", promptCount: 1 }],
+      },
+    ],
+    models: [{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }],
+  })), "opencode_model_provider").state;
+  const searchState = selectAgentChatChoiceSurfaceRow(
+    opened,
+    "opencode_model_provider",
+    "opencode-provider-search",
+  ).state;
+  const methodState = selectAgentChatChoiceSurfaceRow(
+    searchState,
+    "opencode_model_provider",
+    "opencode-provider:azure",
+  ).state;
+  const methodSurface = createActiveComposerSurface(methodState);
+  assert.ok(methodSurface?.rows.some((row) => row.rowId === "connect-vendor:azure"));
+  assert.ok(!methodSurface?.rows.some((row) => row.rowId === "opencode-api-key:azure"));
 });
 
 test("api key row stays local and returns to provider root after submit action", () => {

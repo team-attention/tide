@@ -1,5 +1,9 @@
 import { spawn as nodeSpawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
+import type {
+  OpencodeProviderAuthMethodDto,
+  OpencodeProviderOptionDto,
+} from "../../../../shared/contracts/index.ts";
 
 // The canonical (server-API) path for opencode vendor auth — exactly what palot and the
 // other opencode GUI clients use, instead of the interactive `auth login` TUI (which
@@ -15,11 +19,16 @@ import type { ChildProcess } from "node:child_process";
 export interface OpencodeProviderAuthMethod {
   type: "oauth" | "api";
   label: string;
+  prompts?: unknown[];
+  promptCount?: number;
 }
 
 export type OpencodeProviderAuthMap = Record<string, OpencodeProviderAuthMethod[]>;
 
 export interface OpencodeAuthServer {
+  // Searchable provider catalog from opencode `GET /provider` plus auth methods
+  // from `GET /provider/auth`.
+  listProviderOptions(): Promise<OpencodeProviderOptionDto[]>;
   // Provider → its auth methods (the real list, fetched live, no hang).
   listProviderAuth(): Promise<OpencodeProviderAuthMap>;
   // Set an API-key credential for a provider (PUT /auth/{id} { type:"api", key }).
@@ -36,6 +45,7 @@ export interface CreateOpencodeAuthServerInput {
 
 const LISTEN_RE = /listening on\s+(https?:\/\/\S+)/i;
 const SERVER_START_TIMEOUT_MS = 8_000;
+const OPENCODE_PROVIDER_SOURCES = new Set(["env", "config", "custom", "api"]);
 
 export function createOpencodeAuthServer(input: CreateOpencodeAuthServerInput): OpencodeAuthServer {
   const fetchImpl = input.fetchImpl ?? fetch;
@@ -100,13 +110,20 @@ export function createOpencodeAuthServer(input: CreateOpencodeAuthServerInput): 
   };
 
   return {
+    async listProviderOptions() {
+      const base = await baseUrl();
+      const [providerResponse, auth] = await Promise.all([
+        fetchImpl(`${base}/provider`),
+        fetchProviderAuth(fetchImpl, base).catch(() => ({})),
+      ]);
+      if (!providerResponse.ok) {
+        throw new Error(`GET /provider failed: ${providerResponse.status}`);
+      }
+      return parseOpencodeProviderOptions(await providerResponse.json(), auth);
+    },
     async listProviderAuth() {
       const base = await baseUrl();
-      const response = await fetchImpl(`${base}/provider/auth`);
-      if (!response.ok) {
-        throw new Error(`GET /provider/auth failed: ${response.status}`);
-      }
-      return (await response.json()) as OpencodeProviderAuthMap;
+      return fetchProviderAuth(fetchImpl, base);
     },
     async setApiKey(providerId: string, key: string) {
       const base = await baseUrl();
@@ -128,4 +145,105 @@ export function createOpencodeAuthServer(input: CreateOpencodeAuthServerInput): 
       baseUrlPromise = undefined;
     },
   };
+}
+
+async function fetchProviderAuth(fetchImpl: typeof fetch, base: string): Promise<OpencodeProviderAuthMap> {
+  const response = await fetchImpl(`${base}/provider/auth`);
+  if (!response.ok) {
+    throw new Error(`GET /provider/auth failed: ${response.status}`);
+  }
+  return parseOpencodeProviderAuthMap(await response.json());
+}
+
+export function parseOpencodeProviderOptions(
+  payload: unknown,
+  authMap: OpencodeProviderAuthMap = {},
+): OpencodeProviderOptionDto[] {
+  if (typeof payload !== "object" || payload === null) {
+    return [];
+  }
+  const raw = payload as { all?: unknown; connected?: unknown };
+  const connected = new Set(
+    Array.isArray(raw.connected)
+      ? raw.connected.filter((providerId): providerId is string => typeof providerId === "string")
+      : [],
+  );
+  if (!Array.isArray(raw.all)) {
+    return [];
+  }
+  return raw.all
+    .map((entry): OpencodeProviderOptionDto | null => {
+      if (typeof entry !== "object" || entry === null) {
+        return null;
+      }
+      const provider = entry as {
+        id?: unknown;
+        name?: unknown;
+        source?: unknown;
+        env?: unknown;
+        models?: unknown;
+      };
+      if (typeof provider.id !== "string" || typeof provider.name !== "string") {
+        return null;
+      }
+      const authMethods = providerAuthMethods(authMap[provider.id]);
+      return {
+        id: provider.id,
+        label: provider.name,
+        source:
+          typeof provider.source === "string" && OPENCODE_PROVIDER_SOURCES.has(provider.source)
+            ? provider.source as OpencodeProviderOptionDto["source"]
+            : undefined,
+        env: Array.isArray(provider.env)
+          ? provider.env.filter((name): name is string => typeof name === "string")
+          : undefined,
+        modelCount:
+          typeof provider.models === "object" && provider.models !== null
+            ? Object.keys(provider.models).length
+            : 0,
+        connected: connected.has(provider.id),
+        ...(authMethods.length > 0 ? { authMethods } : {}),
+      };
+    })
+    .filter((entry): entry is OpencodeProviderOptionDto => entry !== null)
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function parseOpencodeProviderAuthMap(payload: unknown): OpencodeProviderAuthMap {
+  if (typeof payload !== "object" || payload === null) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(payload as Record<string, unknown>).flatMap(([providerId, methods]) => {
+      const parsed = providerAuthMethods(methods);
+      return parsed.length > 0 ? [[providerId, parsed]] : [];
+    }),
+  );
+}
+
+function providerAuthMethods(methods: unknown): OpencodeProviderAuthMethodDto[] {
+  if (!Array.isArray(methods)) {
+    return [];
+  }
+  return methods
+    .map((method): OpencodeProviderAuthMethodDto | null => {
+      if (typeof method !== "object" || method === null) {
+        return null;
+      }
+      const raw = method as { type?: unknown; label?: unknown; prompts?: unknown; promptCount?: unknown };
+      if ((raw.type !== "oauth" && raw.type !== "api") || typeof raw.label !== "string") {
+        return null;
+      }
+      const promptCount = Array.isArray(raw.prompts)
+        ? raw.prompts.length
+        : typeof raw.promptCount === "number" && raw.promptCount > 0
+          ? raw.promptCount
+          : 0;
+      return {
+        type: raw.type,
+        label: raw.label,
+        ...(promptCount > 0 ? { promptCount } : {}),
+      };
+    })
+    .filter((method): method is OpencodeProviderAuthMethodDto => method !== null);
 }

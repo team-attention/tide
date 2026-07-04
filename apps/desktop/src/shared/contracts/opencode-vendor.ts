@@ -27,6 +27,29 @@ export interface OpencodeVendorDto {
   usable?: boolean;
 }
 
+export interface OpencodeProviderAuthMethodDto {
+  type: "oauth" | "api";
+  label: string;
+  // opencode auth methods can require extra fields (for example enterprise URL
+  // or Azure resource name). The current composer flow only owns promptless API
+  // keys; prompted methods route to opencode's provider-owned terminal flow.
+  promptCount?: number;
+}
+
+export interface OpencodeProviderOptionDto {
+  // opencode provider id — exactly what `/provider`, `/auth/{providerID}`, and
+  // model ids use.
+  id: string;
+  label: string;
+  source?: "env" | "config" | "custom" | "api";
+  env?: string[];
+  modelCount: number;
+  // From opencode `GET /provider.connected`, which reflects actually available
+  // providers more closely than credential-existence-only `auth list`.
+  connected: boolean;
+  authMethods?: OpencodeProviderAuthMethodDto[];
+}
+
 // opencode runtime environment, surfaced where the on-ramp / hub names opencode.
 export interface OpencodeEnvironmentDto {
   // `opencode --version` output, when resolvable.

@@ -9,6 +9,7 @@ import {
   reconcileVendorUsability,
 } from "../src/backend/infrastructure/node/provider/opencode-vendor-catalog.ts";
 import { createOpencodeAuthServer } from "../src/backend/infrastructure/node/provider/opencode-auth-server.ts";
+import { parseOpencodeProviderOptions } from "../src/backend/infrastructure/node/provider/opencode-auth-server.ts";
 import {
   buildOpencodeConnectSurface,
   createAgentChatShellState,
@@ -124,6 +125,48 @@ test("buildOpencodeVendors de-dupes a vendor with multiple credentials (no dupli
   assert.equal(vendors.filter((vendor) => vendor.id === "openai").length, 1);
   assert.equal(vendors.filter((vendor) => vendor.id === "some-router").length, 1);
   assert.equal(new Set(vendors.map((vendor) => vendor.id)).size, vendors.length);
+});
+
+test("parseOpencodeProviderOptions maps /provider + /provider/auth into searchable provider options", () => {
+  const options = parseOpencodeProviderOptions(
+    {
+      all: [
+        {
+          id: "abacus",
+          name: "Abacus",
+          source: "custom",
+          env: ["ABACUS_API_KEY"],
+          models: { "model-a": {}, "model-b": {} },
+        },
+        {
+          id: "openai",
+          name: "OpenAI",
+          source: "custom",
+          env: ["OPENAI_API_KEY"],
+          models: { "gpt-5.5": {} },
+        },
+      ],
+      connected: ["openai"],
+    },
+    {
+      openai: [
+        { type: "oauth", label: "ChatGPT Pro/Plus (browser)" },
+        { type: "api", label: "Manually enter API Key" },
+      ],
+    },
+  );
+
+  assert.deepEqual(options.map((option) => option.id), ["abacus", "openai"]);
+  assert.deepEqual(options[0], {
+    id: "abacus",
+    label: "Abacus",
+    source: "custom",
+    env: ["ABACUS_API_KEY"],
+    modelCount: 2,
+    connected: false,
+  });
+  assert.equal(options[1].connected, true);
+  assert.deepEqual(options[1].authMethods?.map((method) => method.type), ["oauth", "api"]);
 });
 
 // ---- backend: reconcile connected vendors against the model catalog ----
@@ -329,4 +372,68 @@ test("auth server listProviderAuth returns the parsed method map", async () => {
     fetchImpl: (async () => fakeResponse({ ok: true, status: 200, json: map })) as typeof fetch,
   });
   assert.deepEqual(await server.listProviderAuth(), map);
+});
+
+test("auth server listProviderOptions reads /provider and merges auth method prompts", async () => {
+  const calls: string[] = [];
+  const server = createOpencodeAuthServer({
+    resolveExecutable: () => "/bin/opencode",
+    resolveBaseUrl: async () => "http://127.0.0.1:9999",
+    fetchImpl: (async (url: string | URL) => {
+      calls.push(String(url));
+      if (String(url).endsWith("/provider/auth")) {
+        return fakeResponse({
+          ok: true,
+          status: 200,
+          json: {
+            azure: [{ type: "api", label: "API key", prompts: [{ type: "text", key: "resourceName" }] }],
+          },
+        });
+      }
+      return fakeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          all: [
+            { id: "azure", name: "Azure", source: "custom", env: ["AZURE_API_KEY"], models: { a: {} } },
+          ],
+          connected: [],
+        },
+      });
+    }) as typeof fetch,
+  });
+
+  const options = await server.listProviderOptions();
+  assert.deepEqual(calls.sort(), [
+    "http://127.0.0.1:9999/provider",
+    "http://127.0.0.1:9999/provider/auth",
+  ]);
+  assert.equal(options[0].id, "azure");
+  assert.equal(options[0].authMethods?.[0]?.promptCount, 1);
+});
+
+test("auth server listProviderOptions keeps provider search available when auth metadata fails", async () => {
+  const server = createOpencodeAuthServer({
+    resolveExecutable: () => "/bin/opencode",
+    resolveBaseUrl: async () => "http://127.0.0.1:9999",
+    fetchImpl: (async (url: string | URL) => {
+      if (String(url).endsWith("/provider/auth")) {
+        return fakeResponse({ ok: false, status: 500, text: "auth metadata unavailable" });
+      }
+      return fakeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          all: [
+            { id: "abacus", name: "Abacus", source: "custom", env: ["ABACUS_API_KEY"], models: { a: {} } },
+          ],
+          connected: [],
+        },
+      });
+    }) as typeof fetch,
+  });
+
+  const options = await server.listProviderOptions();
+  assert.equal(options[0].id, "abacus");
+  assert.equal(options[0].authMethods, undefined);
 });
