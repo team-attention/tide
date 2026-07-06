@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -34,6 +34,43 @@ test("applyGitHunk stages exactly the selected hunk in a scratch repo", async ()
     assert.equal(result.ok, true);
     const staged = git(dir, ["diff", "--cached", "--no-color", "HEAD", "--", "app.txt"]);
     const unstaged = git(dir, ["diff", "--no-color", "--", "app.txt"]);
+    assert.match(staged, /line 01 changed/);
+    assert.doesNotMatch(staged, /line 12 changed/);
+    assert.match(unstaged, /line 12 changed/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("applyGitHunk accepts git patches whose path lines are C-quoted", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-git-hunk-quoted-"));
+  try {
+    git(dir, ["init"]);
+    git(dir, ["config", "user.email", "tide@example.test"]);
+    git(dir, ["config", "user.name", "Tide Test"]);
+    const relPath = "src/ü file.txt";
+    mkdirSync(join(dir, "src"), { recursive: true });
+    const file = join(dir, relPath);
+    writeFileSync(file, numberedLines({ line1: "line 01", line12: "line 12" }), "utf8");
+    git(dir, ["add", relPath]);
+    git(dir, ["commit", "-m", "initial"]);
+
+    writeFileSync(file, numberedLines({ line1: "line 01 changed", line12: "line 12 changed" }), "utf8");
+    const diff = git(dir, ["-c", "core.quotepath=true", "diff", "--no-color", "HEAD", "--", relPath]);
+    const hunks = extractGitDiffHunks(diff);
+    assert.equal(hunks.length, 2);
+    assert.match(hunks[0].patch, /"a\/src\/\\303\\274 file\.txt"/);
+
+    const result = await applyGitHunk({
+      cwd: dir,
+      relPath,
+      patch: hunks[0].patch,
+      action: "stage",
+    });
+
+    assert.equal(result.ok, true);
+    const staged = git(dir, ["diff", "--cached", "--no-color", "HEAD", "--", relPath]);
+    const unstaged = git(dir, ["diff", "--no-color", "--", relPath]);
     assert.match(staged, /line 01 changed/);
     assert.doesNotMatch(staged, /line 12 changed/);
     assert.match(unstaged, /line 12 changed/);

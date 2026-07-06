@@ -75,19 +75,71 @@ function patchTargetsPath(patch: string, relPath: string): boolean {
   if (diffLines.length > 1) {
     return false;
   }
-  if (
-    diffLines.length === 1 &&
-    !diffLines[0].includes(` a/${normalized}`) &&
-    !diffLines[0].includes(` b/${normalized}`)
-  ) {
+  if (diffLines.length === 1 && !diffLineTargetsPath(diffLines[0], normalized)) {
     return false;
   }
-  return lines.some(
-    (line) =>
-      line === `--- a/${normalized}` ||
-      line === `+++ b/${normalized}` ||
-      line === `--- ${normalized}` ||
-      line === `+++ ${normalized}`,
+  return lines.some((line) => {
+    const path = patchHeaderPath(line);
+    return path !== null && gitPathMatches(path, normalized);
+  });
+}
+
+function diffLineTargetsPath(line: string, normalizedPath: string): boolean {
+  const quotedPaths = quotedGitPaths(line.slice("diff --git ".length));
+  if (quotedPaths.length > 0) {
+    return quotedPaths.some((path) => gitPathMatches(path, normalizedPath));
+  }
+  return line.includes(` a/${normalizedPath}`) || line.includes(` b/${normalizedPath}`);
+}
+
+function patchHeaderPath(line: string): string | null {
+  if (!line.startsWith("--- ") && !line.startsWith("+++ ")) {
+    return null;
+  }
+  const text = line.slice(4).trimEnd();
+  if (text.startsWith("\"")) {
+    return quotedGitPaths(text)[0] ?? null;
+  }
+  return text.split("\t", 1)[0] ?? null;
+}
+
+function quotedGitPaths(text: string): string[] {
+  return Array.from(text.matchAll(/"((?:\\.|[^"\\])*)"/g), (match) => decodeGitQuotedPath(match[1] ?? ""));
+}
+
+function decodeGitQuotedPath(value: string): string {
+  const bytes: number[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] === "\\") {
+      const octal = /^[0-7]{1,3}/.exec(value.slice(index + 1))?.[0];
+      if (octal !== undefined) {
+        bytes.push(parseInt(octal, 8));
+        index += octal.length;
+      } else {
+        pushUtf8(bytes, escapedGitPathChar(value[index + 1] ?? ""));
+        index += 1;
+      }
+    } else {
+      pushUtf8(bytes, value[index] ?? "");
+    }
+  }
+  return Buffer.from(bytes).toString("utf8");
+}
+
+function escapedGitPathChar(value: string): string {
+  return ({ a: "\x07", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t", v: "\v" } as Record<string, string>)[value] ?? value;
+}
+
+function pushUtf8(bytes: number[], value: string): void {
+  bytes.push(...Buffer.from(value, "utf8"));
+}
+
+function gitPathMatches(path: string, normalizedPath: string): boolean {
+  const normalizedGitPath = path.replace(/\\/g, "/");
+  return (
+    normalizedGitPath === normalizedPath ||
+    normalizedGitPath === `a/${normalizedPath}` ||
+    normalizedGitPath === `b/${normalizedPath}`
   );
 }
 

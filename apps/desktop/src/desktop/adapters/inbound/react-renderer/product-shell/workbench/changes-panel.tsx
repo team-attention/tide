@@ -5,7 +5,8 @@ import { ClipboardCheck, GitBranch, PanelLeftClose, PanelLeftOpen, RefreshCw } f
 import { createDiffView } from "./diff-pane.tsx";
 import { extractGitDiffHunks, type GitDiffHunk } from "./git-diff-hunks.ts";
 import { ChangesHunkActionList } from "./changes-hunk-actions.tsx";
-import type { GitChangeStatus, GitChangesViewResult, GitGeneratedCommitMessageResult, GitHunkAction, GitPushTargetResult } from "../support/types.ts";
+import { errorMessage, fileDir, fileName, pushTargetLabel, pushTargetTitle } from "./changes-panel-helpers.ts";
+import type { GitActionResult, GitChangeStatus, GitChangesViewResult, GitGeneratedCommitMessageResult, GitHunkAction, GitPushTargetResult } from "../support/types.ts";
 // First-class git Changes Workbench pane (spec: git-changes-view): self-fetches
 // status/diffs from the pane cwd and routes mutations through Main-process IPC.
 
@@ -27,14 +28,14 @@ export function ChangesPanel(props: {
   onGitChanges: (cwd: string) => Promise<GitChangesViewResult>;
   onGitFileDiff: (cwd: string, relPath: string) => Promise<string>;
   onOpenReview: (cwd: string) => void;
-  onGitStageFile: (cwd: string, relPath: string) => Promise<{ ok: boolean; message: string }>;
-  onGitUnstageFile: (cwd: string, relPath: string) => Promise<{ ok: boolean; message: string }>;
-  onGitDiscardFile: (cwd: string, relPath: string) => Promise<{ ok: boolean; message: string }>;
-  onGitApplyHunk: (cwd: string, relPath: string, patch: string, action: GitHunkAction) => Promise<{ ok: boolean; message: string }>;
+  onGitStageFile: (cwd: string, relPath: string) => Promise<GitActionResult>;
+  onGitUnstageFile: (cwd: string, relPath: string) => Promise<GitActionResult>;
+  onGitDiscardFile: (cwd: string, relPath: string) => Promise<GitActionResult>;
+  onGitApplyHunk: (cwd: string, relPath: string, patch: string, action: GitHunkAction) => Promise<GitActionResult>;
   onGitGenerateCommitMessage: (cwd: string) => Promise<GitGeneratedCommitMessageResult>;
-  onGitCommit: (cwd: string, message: string) => Promise<{ ok: boolean; message: string }>;
+  onGitCommit: (cwd: string, message: string) => Promise<GitActionResult>;
   onGitPushTarget: (cwd: string) => Promise<GitPushTargetResult>;
-  onGitPush: (cwd: string, remote: string, branch: string) => Promise<{ ok: boolean; message: string }>;
+  onGitPush: (cwd: string, remote: string, branch: string) => Promise<GitActionResult>;
 }): ReactElement {
   const {
     cwd,
@@ -169,6 +170,28 @@ export function ChangesPanel(props: {
     setDragStart(null);
   }
 
+  async function runGitMutation(
+    run: () => Promise<GitActionResult>,
+    fallback: string,
+    refresh = true,
+  ): Promise<GitActionResult | null> {
+    setGitBusy(true);
+    try {
+      const result = await run();
+      setGitNotice(result);
+      if (refresh) {
+        setNonce((value) => value + 1);
+        setDiffNonce((value) => value + 1);
+      }
+      return result;
+    } catch (error) {
+      setGitNotice({ ok: false, message: errorMessage(error, fallback) });
+      return null;
+    } finally {
+      setGitBusy(false);
+    }
+  }
+
   async function runFileGitAction(action: "stage" | "unstage" | "discard"): Promise<void> {
     if (selected === null || gitBusy) {
       return;
@@ -179,17 +202,15 @@ export function ChangesPanel(props: {
     ) {
       return;
     }
-    setGitBusy(true);
-    const result =
-      action === "stage"
-        ? await onGitStageFile(cwd, selected)
-        : action === "unstage"
-          ? await onGitUnstageFile(cwd, selected)
-          : await onGitDiscardFile(cwd, selected);
-    setGitNotice(result);
-    setGitBusy(false);
-    setNonce((value) => value + 1);
-    setDiffNonce((value) => value + 1);
+    await runGitMutation(
+      () =>
+        action === "stage"
+          ? onGitStageFile(cwd, selected)
+          : action === "unstage"
+            ? onGitUnstageFile(cwd, selected)
+            : onGitDiscardFile(cwd, selected),
+      "Git action failed.",
+    );
   }
 
   async function runHunkGitAction(action: GitHunkAction, hunk: GitDiffHunk): Promise<void> {
@@ -202,12 +223,7 @@ export function ChangesPanel(props: {
     ) {
       return;
     }
-    setGitBusy(true);
-    const result = await onGitApplyHunk(cwd, selected, hunk.patch, action);
-    setGitNotice(result);
-    setGitBusy(false);
-    setNonce((value) => value + 1);
-    setDiffNonce((value) => value + 1);
+    await runGitMutation(() => onGitApplyHunk(cwd, selected, hunk.patch, action), "Git hunk action failed.");
   }
 
   async function commitChanges(): Promise<void> {
@@ -215,15 +231,10 @@ export function ChangesPanel(props: {
     if (message.length === 0 || gitBusy) {
       return;
     }
-    setGitBusy(true);
-    const result = await onGitCommit(cwd, message);
-    setGitNotice(result);
-    if (result.ok) {
+    const result = await runGitMutation(() => onGitCommit(cwd, message), "Commit failed.");
+    if (result?.ok) {
       setCommitMessage("");
     }
-    setGitBusy(false);
-    setNonce((value) => value + 1);
-    setDiffNonce((value) => value + 1);
   }
 
   async function generateCommitMessage(): Promise<void> {
@@ -260,10 +271,7 @@ export function ChangesPanel(props: {
     ) {
       return;
     }
-    setGitBusy(true);
-    const result = await onGitPush(cwd, pushTarget.remote, pushTarget.branch);
-    setGitNotice(result);
-    setGitBusy(false);
+    await runGitMutation(() => onGitPush(cwd, pushTarget.remote, pushTarget.branch), "Push failed.", false);
   }
 
   return (
@@ -462,23 +470,6 @@ export function ChangesPanel(props: {
       </ChangesBody>
     </ChangesPaneFrame>
   );
-}
-
-function fileName(path: string): string {
-  return path.slice(path.lastIndexOf("/") + 1);
-}
-
-function fileDir(path: string): string {
-  const index = path.lastIndexOf("/");
-  return index < 0 ? "" : path.slice(0, index);
-}
-
-function pushTargetLabel(pushTarget: GitPushTargetResult | null): string {
-  return pushTarget === null ? "Resolving push target" : pushTarget.ok ? pushTarget.label : "No push target";
-}
-
-function pushTargetTitle(pushTarget: GitPushTargetResult | null): string {
-  return pushTarget === null ? "Resolving push target" : pushTarget.ok ? `Pushes to ${pushTarget.label}` : pushTarget.message;
 }
 
 const ChangesPaneFrame = styled.div`

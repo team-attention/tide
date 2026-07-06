@@ -151,6 +151,33 @@ test("opencode uncommitted review prompt carries unstaged staged and untracked c
   }
 });
 
+test("opencode uncommitted review prompt truncates large untracked file sets", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-review-many-untracked-"));
+  try {
+    initRepo(dir);
+    writeFileSync(join(dir, "app.txt"), "base\n", "utf8");
+    git(dir, ["add", "app.txt"]);
+    git(dir, ["commit", "-m", "initial"]);
+    for (let index = 0; index < 55; index += 1) {
+      writeFileSync(join(dir, `untracked-${String(index).padStart(2, "0")}.txt`), `untracked ${index}\n`, "utf8");
+    }
+
+    const command = await buildReviewCommand({
+      cwd: dir,
+      provider: "opencode",
+      target: { kind: "uncommitted" },
+    });
+    const prompt = command?.args.at(-1) ?? "";
+
+    assert.match(prompt, /untracked-00\.txt/);
+    assert.match(prompt, /untracked-49\.txt/);
+    assert.doesNotMatch(prompt, /untracked-50\.txt/);
+    assert.match(prompt, /Truncated 5 untracked files from diff/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("claude commit review prompt carries a scratch repo commit patch", async () => {
   const dir = mkdtempSync(join(tmpdir(), "tide-review-commit-diff-"));
   try {

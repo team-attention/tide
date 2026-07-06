@@ -120,12 +120,19 @@ function parseSkillFrontmatter(contents: string): { name?: string; description?:
   const frontmatter = contents.slice(3, end);
   const result: { name?: string; description?: string } = {};
   for (const line of frontmatter.split(/\r?\n/)) {
-    const match = /^([A-Za-z0-9_-]+):\s*"?([^"]+?)"?\s*$/.exec(line.trim());
-    if (match?.[1] === "name") {
-      result.name = match[2];
+    const colonIndex = line.indexOf(":");
+    if (colonIndex === -1) {
+      continue;
     }
-    if (match?.[1] === "description") {
-      result.description = match[2];
+    const key = line.slice(0, colonIndex).trim();
+    let value = line.slice(colonIndex + 1).trim();
+    if (value.startsWith("\"") && value.endsWith("\"")) {
+      value = value.slice(1, -1);
+    }
+    if (key === "name") {
+      result.name = value;
+    } else if (key === "description") {
+      result.description = value;
     }
   }
   return result;

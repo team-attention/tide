@@ -180,9 +180,12 @@ Current branch status: Tide's provider-method plumbing is covered with a fake ap
 Keep review output independent from provider transcript format:
 
 ```ts
+import type { ProviderCliAgentId } from "../../src/shared/contracts/agent";
+import type { AgentRuntimeStateDto } from "../../src/shared/contracts/agent-runtime";
+
 interface ReviewRun {
   reviewRunId: string;
-  provider: "codex" | "claude" | "opencode";
+  agentId: ProviderCliAgentId;
   target: ReviewTarget;
   cwd: string;
   startedAt: string;
@@ -302,13 +305,13 @@ Add a Tide-owned runtime snapshot model, derived from existing events first:
 ```ts
 interface AgentMonitorSession {
   threadId: string;
-  agentId: "codex" | "claude" | "opencode";
+  agentId: ProviderCliAgentId;
   title: string;
   cwd?: string;
   projectName?: string;
   branch?: string;
   worktree?: string;
-  state: "running" | "waiting_for_input" | "waiting_for_approval" | "idle" | "stopped" | "failed";
+  state: AgentRuntimeStateDto;
   startedAt?: string;
   changedAt?: string;
   elapsedMs?: number;

@@ -43,6 +43,7 @@ export interface ReviewCommand {
 const REVIEW_MAX_BUFFER = 12 * 1024 * 1024;
 const REVIEW_TIMEOUT_MS = 10 * 60 * 1000;
 const PROMPT_DIFF_LIMIT = 180 * 1024;
+const MAX_UNTRACKED_DIFF_FILES = 50;
 
 export async function runProviderReview(input: {
   cwd: unknown;
@@ -226,22 +227,30 @@ async function uncommittedDiff(cwd: string): Promise<string> {
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
   const chunks = [tracked];
-  for (const file of untracked) {
-    const result = await execGitArgs([
-      "-c",
-      "core.quotepath=false",
-      "-C",
-      root,
-      "diff",
-      "--no-color",
-      "--no-index",
-      "--",
-      "/dev/null",
-      file,
-    ]);
+  const filesToDiff = untracked.slice(0, MAX_UNTRACKED_DIFF_FILES);
+  const results = await Promise.all(
+    filesToDiff.map((file) =>
+      execGitArgs([
+        "-c",
+        "core.quotepath=false",
+        "-C",
+        root,
+        "diff",
+        "--no-color",
+        "--no-index",
+        "--",
+        "/dev/null",
+        file,
+      ]),
+    ),
+  );
+  for (const result of results) {
     if (result.stdout.trim().length > 0) {
       chunks.push(result.stdout);
     }
+  }
+  if (untracked.length > MAX_UNTRACKED_DIFF_FILES) {
+    chunks.push(`[Truncated ${untracked.length - MAX_UNTRACKED_DIFF_FILES} untracked files from diff]`);
   }
   return chunks.filter((chunk) => chunk.trim().length > 0).join("\n");
 }

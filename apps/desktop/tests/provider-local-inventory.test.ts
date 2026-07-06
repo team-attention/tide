@@ -16,7 +16,7 @@ test("local provider inventory reads Codex skills, plugins, and MCP servers", ()
     );
     writeFile(
       join(home, ".codex", "skills", "impeccable", "SKILL.md"),
-      "---\nname: impeccable\ndescription: Polish UI\n---\n",
+      "---\nname: \"impeccable:ui\"\ndescription: Write \"quoted\": UI polish notes\n---\n",
     );
     writeFile(
       join(home, ".codex", "config.toml"),
@@ -31,7 +31,11 @@ test("local provider inventory reads Codex skills, plugins, and MCP servers", ()
         .filter((item) => item.agentId === "codex")
         .map((item) => `${item.kind}:${item.label}`)
         .sort(),
-      ["mcp:paper", "plugin:codex-apps", "skill:impeccable"],
+      ["mcp:paper", "plugin:codex-apps", "skill:impeccable:ui"],
+    );
+    assert.equal(
+      inventory.find((item) => item.kind === "skill" && item.id === "impeccable")?.description,
+      'Write "quoted": UI polish notes',
     );
     assert.deepEqual(
       codexCapabilities.map((capability) => ({
@@ -60,7 +64,7 @@ test("local provider inventory reads Codex skills, plugins, and MCP servers", ()
           id: "codex:local:skill:impeccable",
           source: "tide_local",
           group: "setup",
-          label: "Skill: impeccable",
+          label: "Skill: impeccable:ui",
           invoke: "unsupported",
         },
       ],
