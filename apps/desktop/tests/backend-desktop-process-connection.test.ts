@@ -236,6 +236,16 @@ test("provider_catalog_get_returns_requested_snapshot_outside_thread_list", asyn
       vendors: [
         { id: "openai", label: "OpenAI", connected: true, method: "oauth", popular: true },
       ],
+      providerOptions: [
+        {
+          id: "abacus",
+          label: "Abacus",
+          source: "custom",
+          env: ["ABACUS_API_KEY"],
+          modelCount: 65,
+          connected: false,
+        },
+      ],
       environment: { version: "1.17.3", testedWith: "1.17", executablePath: "/bin/opencode" },
       defaultModel: "opencode default",
     }),
@@ -264,6 +274,7 @@ test("provider_catalog_get_returns_requested_snapshot_outside_thread_list", asyn
   assert.equal(events[1].payload.catalog.status, "ready");
   assert.deepEqual(events[1].payload.catalog.models.map((model) => model.value), ["openai/gpt-5.5"]);
   assert.equal(events[1].payload.catalog.vendors?.[0]?.id, "openai");
+  assert.equal(events[1].payload.catalog.providerOptions?.[0]?.id, "abacus");
 });
 
 test("provider_inventory_get_returns_provider_state_independent_of_thread_list", async () => {

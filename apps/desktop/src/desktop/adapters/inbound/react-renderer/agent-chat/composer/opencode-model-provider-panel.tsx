@@ -1,7 +1,7 @@
 import type { AgentChatChoiceSurfaceView } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
-import { ChevronLeft, ExternalLink, KeyRound, Wrench } from "lucide-react";
+import { ChevronLeft, ExternalLink, KeyRound, Search, Wrench } from "lucide-react";
 import { styled } from "styled-components";
 
 export function OpencodeModelProviderPanel(props: {
@@ -11,10 +11,14 @@ export function OpencodeModelProviderPanel(props: {
 }): ReactElement {
   const data = props.surface.opencodeModelProvider;
   const [keyDraft, setKeyDraft] = useState("");
+  const [searchDraft, setSearchDraft] = useState("");
   const select = (rowId: string) => props.onRowSelect?.("opencode_model_provider", rowId);
 
   useEffect(() => {
     setKeyDraft("");
+    if (data?.step !== "provider_search") {
+      setSearchDraft("");
+    }
   }, [data?.step, data?.providerId]);
 
   if (data === undefined) {
@@ -30,6 +34,10 @@ export function OpencodeModelProviderPanel(props: {
 
   const providerLabel = data.providerLabel ?? "Provider";
   const apiKeySubmitLabel = submitLabelForProviderStatus(data.providerStatus);
+  const visibleSearchProviders =
+    data.step === "provider_search"
+      ? filteredSearchProviders(data.searchProviders ?? [], searchDraft)
+      : [];
   return (
     <OpencodeModelProviderSurface
       aria-label="opencode model provider"
@@ -67,6 +75,54 @@ export function OpencodeModelProviderPanel(props: {
               {props.surface.rows[0]?.detail ? ` · ${props.surface.rows[0].detail}` : ""}
             </OpencodeProviderEmpty>
           )}
+          <OpencodeProviderRowButton
+            type="button"
+            $subtle
+            onClick={() => select("opencode-provider-search")}
+          >
+            <OpencodeProviderMark aria-hidden><Search size={13} strokeWidth={1.9} /></OpencodeProviderMark>
+            <OpencodeProviderBody>
+              <OpencodeProviderName $subtle>Search providers</OpencodeProviderName>
+              <OpencodeProviderDetail>opencode provider catalog</OpencodeProviderDetail>
+            </OpencodeProviderBody>
+            <OpencodeProviderMeta>&gt;</OpencodeProviderMeta>
+          </OpencodeProviderRowButton>
+        </OpencodeProviderRows>
+      ) : null}
+
+      {data.step === "provider_search" ? (
+        <OpencodeProviderRows>
+          <BackRow label="Back to providers" detail="opencode" onClick={() => select("opencode-back")} />
+          <OpencodeProviderSearchBox>
+            <Search size={14} strokeWidth={1.9} aria-hidden />
+            <OpencodeProviderSearchInput
+              autoFocus
+              value={searchDraft}
+              placeholder="Search providers"
+              aria-label="Search opencode providers"
+              spellCheck={false}
+              onChange={(event) => setSearchDraft(event.currentTarget.value)}
+            />
+          </OpencodeProviderSearchBox>
+          {visibleSearchProviders.map((provider) => (
+            <OpencodeProviderRowButton
+              key={provider.rowId}
+              type="button"
+              onClick={() => select(provider.rowId)}
+            >
+              <OpencodeProviderMark aria-hidden>{provider.monogram}</OpencodeProviderMark>
+              <OpencodeProviderBody>
+                <OpencodeProviderName>{provider.label}</OpencodeProviderName>
+                <OpencodeProviderDetail>{provider.detailForDisplay}</OpencodeProviderDetail>
+              </OpencodeProviderBody>
+              <OpencodeProviderMeta>
+                {provider.needsReconnect ? "Reconnect" : provider.connected ? ">" : "Connect"}
+              </OpencodeProviderMeta>
+            </OpencodeProviderRowButton>
+          ))}
+          {visibleSearchProviders.length === 0 ? (
+            <OpencodeProviderEmpty>No providers found.</OpencodeProviderEmpty>
+          ) : null}
         </OpencodeProviderRows>
       ) : null}
 
@@ -124,26 +180,30 @@ export function OpencodeModelProviderPanel(props: {
       {data.step === "vendor_method" ? (
         <OpencodeProviderRows>
           <BackRow label="Back" detail={providerLabel} onClick={() => select("opencode-back")} />
-          <OpencodeProviderMethodButton
-            type="button"
-            onClick={() => data.method && select(data.method.browserRowId)}
-          >
-            <ExternalLink size={15} strokeWidth={1.9} aria-hidden />
-            <OpencodeProviderBody>
-              <OpencodeProviderName>Sign in with browser</OpencodeProviderName>
-              <OpencodeProviderDetail>opens opencode auth in a readiness terminal</OpencodeProviderDetail>
-            </OpencodeProviderBody>
-          </OpencodeProviderMethodButton>
-          <OpencodeProviderMethodButton
-            type="button"
-            onClick={() => data.method && select(data.method.apiKeyRowId)}
-          >
-            <KeyRound size={15} strokeWidth={1.9} aria-hidden />
-            <OpencodeProviderBody>
-              <OpencodeProviderName>Paste API key</OpencodeProviderName>
-              <OpencodeProviderDetail>stored by opencode, not Tide</OpencodeProviderDetail>
-            </OpencodeProviderBody>
-          </OpencodeProviderMethodButton>
+          {data.method?.browserRowId ? (
+            <OpencodeProviderMethodButton
+              type="button"
+              onClick={() => data.method?.browserRowId && select(data.method.browserRowId)}
+            >
+              <ExternalLink size={15} strokeWidth={1.9} aria-hidden />
+              <OpencodeProviderBody>
+                <OpencodeProviderName>{data.method.browserLabel ?? "Open opencode sign-in"}</OpencodeProviderName>
+                <OpencodeProviderDetail>{data.method.browserDetail ?? "handles browser auth and provider prompts"}</OpencodeProviderDetail>
+              </OpencodeProviderBody>
+            </OpencodeProviderMethodButton>
+          ) : null}
+          {data.method?.apiKeyRowId ? (
+            <OpencodeProviderMethodButton
+              type="button"
+              onClick={() => data.method?.apiKeyRowId && select(data.method.apiKeyRowId)}
+            >
+              <KeyRound size={15} strokeWidth={1.9} aria-hidden />
+              <OpencodeProviderBody>
+                <OpencodeProviderName>{data.method.apiKeyLabel ?? "Paste API key"}</OpencodeProviderName>
+                <OpencodeProviderDetail>{data.method.apiKeyDetail ?? "stored by opencode, not Tide"}</OpencodeProviderDetail>
+              </OpencodeProviderBody>
+            </OpencodeProviderMethodButton>
+          ) : null}
         </OpencodeProviderRows>
       ) : null}
 
@@ -179,6 +239,36 @@ export function OpencodeModelProviderPanel(props: {
       ) : null}
     </OpencodeModelProviderSurface>
   );
+}
+
+function filteredSearchProviders(
+  providers: NonNullable<NonNullable<AgentChatChoiceSurfaceView["opencodeModelProvider"]>["searchProviders"]>,
+  query: string,
+) {
+  const normalized = query.trim().toLowerCase();
+  const filtered =
+    normalized.length === 0
+      ? providers
+      : providers.filter((provider) => {
+          const env = provider.env ?? [];
+          return [
+            provider.label,
+            provider.id,
+            provider.detail,
+            String(provider.modelCount),
+            ...env,
+          ].some((value) => value.toLowerCase().includes(normalized));
+        });
+  return filtered.slice(0, 80).map((provider) => {
+    const env = provider.env ?? [];
+    return {
+      ...provider,
+      detailForDisplay:
+        env.length > 0
+          ? `${provider.detail} · ${env[0]}`
+          : provider.detail,
+    };
+  });
 }
 
 function submitLabelForProviderStatus(status: string | undefined): "Connect" | "Reconnect" | "Update" {
@@ -256,6 +346,37 @@ const OpencodeProviderRows = styled.div`
   display: grid;
   gap: 0;
   overflow-y: auto;
+`;
+
+const OpencodeProviderSearchBox = styled.label`
+  height: 32px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  margin: 2px 4px 5px;
+  padding: 0 8px;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-surface);
+  color: var(--tide-muted);
+`;
+
+const OpencodeProviderSearchInput = styled.input`
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tide-text);
+  font: inherit;
+  font-size: 13px;
+
+  &:focus {
+    outline: none;
+  }
+
+  &::placeholder {
+    color: var(--tide-muted);
+  }
 `;
 
 const OpencodeProviderRowButton = styled.button<{

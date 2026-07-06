@@ -2,6 +2,7 @@ import { executableForAgent } from "../../../adapters/outbound/agent-integration
 import { PROVIDER_CLI_AGENT_IDS } from "../../../../shared/agent-descriptors.ts";
 import type {
   OpencodeEnvironmentDto,
+  OpencodeProviderOptionDto,
   OpencodeVendorDto,
   ProviderCatalogSnapshotDto,
   ProviderCliAgentId,
@@ -96,10 +97,11 @@ export function createProviderDetection(input: {
       };
     }
     try {
-      const [models, vendors, environment] = await Promise.all([
+      const [models, vendors, environment, providerOptions] = await Promise.all([
         opencodeCatalog.get(),
         opencodeVendorCatalog.get(),
         opencodeVendorCatalog.environment(),
+        bestEffortOpencodeProviderOptions(() => opencodeAuthServer.listProviderOptions()),
       ]);
       return {
         agentId: "opencode",
@@ -107,6 +109,7 @@ export function createProviderDetection(input: {
         scope,
         models,
         vendors: reconcileVendorUsability(vendors, models),
+        providerOptions,
         environment,
         defaultModel: DEFAULT_PROVIDER_MODEL.opencode,
       };
@@ -169,6 +172,16 @@ async function bestEffortOpencodeEnvironment(
     return await readEnvironment();
   } catch {
     return undefined;
+  }
+}
+
+async function bestEffortOpencodeProviderOptions(
+  readProviderOptions: () => Promise<OpencodeProviderOptionDto[]>,
+): Promise<OpencodeProviderOptionDto[]> {
+  try {
+    return await readProviderOptions();
+  } catch {
+    return [];
   }
 }
 

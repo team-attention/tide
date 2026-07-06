@@ -4,7 +4,11 @@
 // where it cannot (claude/codex curated lists). See
 // docs_v2/specs/cross-provider-model-catalog-and-hub.md.
 import type { ProviderCliAgentId } from "./agent.ts";
-import type { OpencodeEnvironmentDto, OpencodeVendorDto } from "./opencode-vendor.ts";
+import type {
+  OpencodeEnvironmentDto,
+  OpencodeProviderOptionDto,
+  OpencodeVendorDto,
+} from "./opencode-vendor.ts";
 
 export interface ProviderModelDto {
   // Provider-native model id: claude `--model` alias / codex
@@ -52,6 +56,7 @@ export interface ProviderCatalogSnapshotDto {
   scope?: ProviderCatalogScopeDto;
   models: ProviderModelDto[];
   vendors?: OpencodeVendorDto[];
+  providerOptions?: OpencodeProviderOptionDto[];
   environment?: OpencodeEnvironmentDto;
   currentModel?: string;
   defaultModel: string;

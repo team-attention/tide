@@ -1,5 +1,7 @@
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
-import type { AgentChatOpencodeModelProviderFlowState, AgentChatOpencodeModelProviderStep } from "./opencode-model-provider-types.ts";
+import type { AgentChatChoiceSurfaceRowView } from "./choice-surface-row-types.ts";
+import type { AgentChatOpencodeModelProviderView } from "./opencode-model-provider-view-types.ts";
+import type { AgentChatOpencodeModelProviderFlowState } from "./opencode-model-provider-types.ts";
 import type {
   AgentChatCommandOption,
   AgentChatProviderCapabilityOption,
@@ -7,6 +9,15 @@ import type {
   AgentChatProviderCliAgentId,
   AgentChatProviderInventory,
 } from "./provider-state-types.ts";
+export type { AgentChatChoiceSurfaceRowView } from "./choice-surface-row-types.ts";
+export type {
+  AgentChatOpencodeModelProviderConnectionView,
+  AgentChatOpencodeModelProviderMethodView,
+  AgentChatOpencodeModelProviderModelView,
+  AgentChatOpencodeModelProviderProviderView,
+  AgentChatOpencodeModelProviderSearchProviderView,
+  AgentChatOpencodeModelProviderView,
+} from "./opencode-model-provider-view-types.ts";
 export type { AgentChatOpencodeModelProviderFlowState, AgentChatOpencodeModelProviderMethodReturnStep, AgentChatOpencodeModelProviderStep } from "./opencode-model-provider-types.ts";
 export type {
   AgentChatCommandOption,
@@ -17,9 +28,11 @@ export type {
   AgentChatProviderCatalogStatus,
   AgentChatProviderCatalogVendor,
   AgentChatProviderCliAgentId,
+  AgentChatProviderAuthMethodOption,
   AgentChatProviderInventory,
   AgentChatProviderInventoryAgent,
   AgentChatProviderModelOption,
+  AgentChatProviderOption,
 } from "./provider-state-types.ts";
 
 export type AgentChatState =
@@ -697,56 +710,6 @@ export interface AgentChatChoiceSurfaceView {
   opencodeModelProvider?: AgentChatOpencodeModelProviderView;
 }
 
-export interface AgentChatOpencodeModelProviderProviderView {
-  rowId: string;
-  id: string;
-  label: string;
-  detail: string;
-  monogram: string;
-  connected: boolean;
-  needsReconnect: boolean;
-  selected: boolean;
-}
-
-export interface AgentChatOpencodeModelProviderModelView {
-  rowId: string;
-  value: string;
-  label: string;
-  detail?: string;
-  monogram: string;
-  selected: boolean;
-  meta?: string;
-}
-
-export interface AgentChatOpencodeModelProviderConnectionView {
-  rowId: string;
-  label: string;
-  detail: string;
-}
-
-export interface AgentChatOpencodeModelProviderMethodView {
-  browserRowId: string;
-  apiKeyRowId: string;
-}
-
-export interface AgentChatOpencodeModelProviderView {
-  step: AgentChatOpencodeModelProviderStep;
-  version?: string;
-  zenFreeCount: number;
-  connectedCount: number;
-  providerId?: string;
-  providerLabel?: string;
-  providerMonogram?: string;
-  providerStatus?: string;
-  currentModel?: string;
-  currentEffort?: string;
-  providers: AgentChatOpencodeModelProviderProviderView[];
-  models: AgentChatOpencodeModelProviderModelView[];
-  effortRows: AgentChatChoiceSurfaceRowView[];
-  connection?: AgentChatOpencodeModelProviderConnectionView;
-  method?: AgentChatOpencodeModelProviderMethodView;
-}
-
 // One vendor tile in the opencode on-ramp grid (view shape).
 export interface AgentChatOpencodeConnectVendorView {
   // rowId the panel dispatches on click ("connect-vendor:<id>").
@@ -772,24 +735,6 @@ export interface AgentChatOpencodeConnectView {
   // True when opencode is already usable (≥1 vendor / model) — the panel is being
   // shown to ADD a vendor, so it offers a "back to models" affordance.
   manageMode: boolean;
-}
-
-export interface AgentChatChoiceSurfaceRowView {
-  rowId: string;
-  label: string;
-  detail?: string;
-  meta?: string;
-  icon?: string;
-  selected?: boolean;
-  danger?: boolean;
-  // A row for a real feature that is not wired up yet: shown greyed and
-  // non-interactive instead of silently doing nothing when clicked.
-  disabled?: boolean;
-  // An optional trailing affordance (e.g. a trash button) rendered beside the
-  // row. Clicking it routes through the same row-select callback with this
-  // `rowId`, so no extra handler plumbing is needed. See
-  // docs_v2/specs/worktree-branch-deletion.md.
-  action?: { rowId: string; label: string; icon?: string };
 }
 
 export interface AgentChatBackendEvent {

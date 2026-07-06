@@ -28,6 +28,16 @@ test("providerCatalog.changed folds into Product Shell providerCatalogs, not thr
         status: "ready",
         models: [{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }],
         vendors: [{ id: "openai", label: "OpenAI", connected: true, popular: true }],
+        providerOptions: [
+          {
+            id: "abacus",
+            label: "Abacus",
+            source: "custom",
+            env: ["ABACUS_API_KEY"],
+            modelCount: 65,
+            connected: false,
+          },
+        ],
         environment: { version: "1.17.3", executablePath: "/bin/opencode" },
         defaultModel: "opencode default",
       },
@@ -42,6 +52,7 @@ test("providerCatalog.changed folds into Product Shell providerCatalogs, not thr
     withCatalog.providerCatalogs.opencode?.models.map((model) => model.value),
     ["openai/gpt-5.5"],
   );
+  assert.equal(withCatalog.providerCatalogs.opencode?.providerOptions?.[0]?.id, "abacus");
 
   const afterThreadList = applyProductShellBackendEvent(withCatalog, {
     kind: "thread.listed",
