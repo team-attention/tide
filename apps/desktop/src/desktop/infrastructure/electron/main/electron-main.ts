@@ -12,6 +12,18 @@ import { readInitialThreadListSnapshot } from "./thread-list-snapshot.ts";
 import { registerProviderCommandIpc } from "./provider-command-ipc.ts";
 import { browserRuntimeHost } from "./browser-runtime-host.ts";
 import { registerBrowserRuntimeIpc } from "./browser-runtime-ipc.ts";
+import { runProviderReview } from "./review-runner.ts";
+import { applyGitHunk } from "./git-hunk-actions.ts";
+import {
+  commitGitChanges,
+  discardGitFile,
+  generateGitCommitMessage,
+  getGitPushTarget,
+  pushGitTarget,
+  stageGitFile,
+  unstageGitFile,
+  type GitActionResult,
+} from "./git-handoff-actions.ts";
 import {
   app,
   BrowserWindow,
@@ -430,6 +442,42 @@ ipcMain.handle("tide:git-file-diff", async (_event, cwd: unknown, relPath: unkno
   ]);
   return untracked.stdout;
 });
+
+ipcMain.handle("tide:git-stage-file", async (_event, cwd: unknown, relPath: unknown): Promise<GitActionResult> =>
+  stageGitFile({ cwd, relPath }),
+);
+
+ipcMain.handle("tide:git-unstage-file", async (_event, cwd: unknown, relPath: unknown): Promise<GitActionResult> =>
+  unstageGitFile({ cwd, relPath }),
+);
+
+ipcMain.handle("tide:git-discard-file", async (_event, cwd: unknown, relPath: unknown): Promise<GitActionResult> =>
+  discardGitFile({ cwd, relPath }, (path) => shell.trashItem(path)),
+);
+
+ipcMain.handle("tide:git-apply-hunk", async (_event, cwd: unknown, relPath: unknown, patch: unknown, action: unknown) =>
+  applyGitHunk({ cwd, relPath, patch, action }),
+);
+
+ipcMain.handle("tide:git-generate-commit-message", async (_event, cwd: unknown) =>
+  generateGitCommitMessage(cwd),
+);
+
+ipcMain.handle("tide:git-commit", async (_event, cwd: unknown, message: unknown): Promise<GitActionResult> =>
+  commitGitChanges({ cwd, message }),
+);
+
+ipcMain.handle("tide:git-push-target", async (_event, cwd: unknown) => getGitPushTarget(cwd));
+
+ipcMain.handle(
+  "tide:git-push",
+  async (_event, cwd: unknown, remote: unknown, branch: unknown): Promise<GitActionResult> =>
+    pushGitTarget({ cwd, remote, branch }),
+);
+
+ipcMain.handle("tide:run-review", async (_event, cwd: unknown, provider: unknown, target: unknown) =>
+  runProviderReview({ cwd, provider, target }),
+);
 
 // Read-only facts for the worktree delete dialog (branch + whether it's merged).
 // See docs_v2/specs/worktree-branch-deletion.md.

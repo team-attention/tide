@@ -27,6 +27,68 @@ export interface GitChanges {
   files: { path: string; status: GitChangeStatus; additions?: number; deletions?: number }[];
 }
 
+export type GitActionResult =
+  | { ok: true; message: string }
+  | { ok: false; message: string };
+
+export type GitHunkAction = "stage" | "unstage" | "discard";
+
+export type GitGeneratedCommitMessageResult =
+  | { ok: true; message: string; source: "staged" | "working_tree"; files: string[] }
+  | { ok: false; message: string };
+
+export type GitPushTargetResult =
+  | {
+      ok: true;
+      currentBranch: string;
+      remote: string;
+      branch: string;
+      upstream: string | null;
+      label: string;
+    }
+  | { ok: false; message: string };
+
+export type ReviewProvider = "codex" | "claude" | "opencode";
+
+export type ReviewTarget =
+  | { kind: "uncommitted" }
+  | { kind: "base_branch"; baseBranch: string }
+  | { kind: "commit"; sha: string; title?: string }
+  | { kind: "custom"; instructions: string; diff?: string };
+
+export type ReviewRunSource =
+  | "codex_cli"
+  | "claude_ultrareview"
+  | "claude_prompt"
+  | "opencode_prompt";
+
+export interface ReviewFinding {
+  findingId: string;
+  severity?: "critical" | "high" | "medium" | "low" | "info";
+  file?: string;
+  line?: number;
+  title: string;
+  body: string;
+  confidence?: "high" | "medium" | "low";
+}
+
+export interface ReviewRunResult {
+  ok: boolean;
+  provider: ReviewProvider;
+  source: ReviewRunSource;
+  target: ReviewTarget;
+  cwd: string;
+  command: string;
+  startedAt: string;
+  completedAt: string;
+  rawText: string;
+  findings: ReviewFinding[];
+  stderr?: string;
+  exitCode?: number | null;
+  signal?: string | null;
+  message?: string;
+}
+
 // Result of a structural FileTree mutation (new file/folder, rename/move, trash),
 // performed by Main. Mirrors WorkspaceFsResult in main/workspace-fs.ts (kept
 // process-local per the preload convention). Spec: workbench-filetree-file-operations.
@@ -199,6 +261,15 @@ export interface TidePreloadSurface {
   // Read-only uncommitted changes + a single file's diff, for the Changes view.
   gitChanges(cwd: string): Promise<GitChanges>;
   gitFileDiff(cwd: string, relPath: string): Promise<string>;
+  gitStageFile(cwd: string, relPath: string): Promise<GitActionResult>;
+  gitUnstageFile(cwd: string, relPath: string): Promise<GitActionResult>;
+  gitDiscardFile(cwd: string, relPath: string): Promise<GitActionResult>;
+  gitApplyHunk(cwd: string, relPath: string, patch: string, action: GitHunkAction): Promise<GitActionResult>;
+  gitGenerateCommitMessage(cwd: string): Promise<GitGeneratedCommitMessageResult>;
+  gitCommit(cwd: string, message: string): Promise<GitActionResult>;
+  gitPushTarget(cwd: string): Promise<GitPushTargetResult>;
+  gitPush(cwd: string, remote: string, branch: string): Promise<GitActionResult>;
+  runReview(cwd: string, provider: ReviewProvider, target: ReviewTarget): Promise<ReviewRunResult>;
   listCommands(cwd: string, agentId: string): Promise<ProviderCommandSuggestion[]>;
 }
 
@@ -393,6 +464,33 @@ export const tidePreloadSurface: TidePreloadSurface = {
   },
   gitFileDiff(cwd, relPath) {
     return ipcRenderer.invoke("tide:git-file-diff", cwd, relPath) as Promise<string>;
+  },
+  gitStageFile(cwd, relPath) {
+    return ipcRenderer.invoke("tide:git-stage-file", cwd, relPath) as Promise<GitActionResult>;
+  },
+  gitUnstageFile(cwd, relPath) {
+    return ipcRenderer.invoke("tide:git-unstage-file", cwd, relPath) as Promise<GitActionResult>;
+  },
+  gitDiscardFile(cwd, relPath) {
+    return ipcRenderer.invoke("tide:git-discard-file", cwd, relPath) as Promise<GitActionResult>;
+  },
+  gitApplyHunk(cwd, relPath, patch, action) {
+    return ipcRenderer.invoke("tide:git-apply-hunk", cwd, relPath, patch, action) as Promise<GitActionResult>;
+  },
+  gitGenerateCommitMessage(cwd) {
+    return ipcRenderer.invoke("tide:git-generate-commit-message", cwd) as Promise<GitGeneratedCommitMessageResult>;
+  },
+  gitCommit(cwd, message) {
+    return ipcRenderer.invoke("tide:git-commit", cwd, message) as Promise<GitActionResult>;
+  },
+  gitPushTarget(cwd) {
+    return ipcRenderer.invoke("tide:git-push-target", cwd) as Promise<GitPushTargetResult>;
+  },
+  gitPush(cwd, remote, branch) {
+    return ipcRenderer.invoke("tide:git-push", cwd, remote, branch) as Promise<GitActionResult>;
+  },
+  runReview(cwd, provider, target) {
+    return ipcRenderer.invoke("tide:run-review", cwd, provider, target) as Promise<ReviewRunResult>;
   },
   listCommands(cwd, agentId) {
     return ipcRenderer.invoke("tide:list-commands", cwd, agentId) as Promise<ProviderCommandSuggestion[]>;

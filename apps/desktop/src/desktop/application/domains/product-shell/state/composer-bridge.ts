@@ -1,4 +1,4 @@
-import type { ProductShellState, ProductShellUpdateResult } from "./types.ts";
+import type { ProductShellAgentMonitorPromptChoice, ProductShellState, ProductShellUpdateResult } from "./types.ts";
 import { addComposerAttachment, addComposerContextChip, answerPromptSteps, answerPromptText, applyAgentChatBackendEvent, editQueuedInput, interruptComposer, removeComposerAttachment, removeComposerContextChip, resolveComposerNewWorktreeIntent, selectAgentChatChoiceSurfaceRow, setComposerActiveSurface, setComposerContextChipComment, setComposerFolderScope, setComposerNewWorktreeIntent, submitComposer, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
 import type { AgentChatChoiceSurfaceView, AgentChatCommandOption, AgentChatComposerAttachment, AgentChatComposerSurfaceKind, AgentChatContextChip, AgentChatPromptState, AgentChatPromptStepAnswer } from "../../agent-chat/agent-chat.ts";
 import { agentChatWithProjects, projectsFromThreads } from "./view-model.ts";
@@ -91,6 +91,9 @@ export function selectProductShellChoiceSurfaceRow(
     state: {
       ...state,
       agentChat: result.state,
+      ...(result.command?.kind === "workbench.command" && result.command.payload.command === "open_review"
+        ? { workbenchOpen: true }
+        : {}),
     },
     command: result.command,
   };
@@ -113,6 +116,35 @@ export function answerProductShellPromptSteps(
   return { state: { ...state, agentChat: result.state }, command: result.command };
 }
 
+export function answerProductShellMonitorPromptChoice(
+  state: ProductShellState,
+  input: {
+    threadId: string;
+    promptId: string;
+    choice: ProductShellAgentMonitorPromptChoice;
+  },
+): ProductShellUpdateResult {
+  const snapshot = state.runtimeSnapshotsByThreadId[input.threadId];
+  const choice = snapshot?.prompt?.promptId === input.promptId
+    ? snapshot.prompt.choices.find((candidate) => candidate.choiceId === input.choice.choiceId)
+    : input.choice;
+  if (choice === undefined) {
+    return { state, command: null };
+  }
+  return {
+    state: clearMonitorPrompt(state, input.threadId, input.promptId),
+    command: {
+      kind: "prompt.answer",
+      payload: {
+        threadId: input.threadId,
+        promptId: input.promptId,
+        choiceId: choice.choiceId,
+        value: choice.providerValue,
+      },
+    },
+  };
+}
+
 export function applyProductShellPromptState(
   state: ProductShellState,
   prompt: AgentChatPromptState | null,
@@ -128,6 +160,42 @@ export function applyProductShellPromptState(
       payload: { prompt },
     }),
   };
+}
+
+function clearMonitorPrompt(
+  state: ProductShellState,
+  threadId: string,
+  promptId: string,
+): ProductShellState {
+  const clearChatPrompt = <T extends { promptState: AgentChatPromptState | null }>(chat: T): T =>
+    chat.promptState?.promptId === promptId ? { ...chat, promptState: null } : chat;
+  const snapshot = state.runtimeSnapshotsByThreadId[threadId];
+  const runtimeSnapshotsByThreadId = snapshot === undefined || snapshot.prompt?.promptId !== promptId
+    ? state.runtimeSnapshotsByThreadId
+    : {
+        ...state.runtimeSnapshotsByThreadId,
+        [threadId]: clearSnapshotPrompt(snapshot),
+      };
+  return {
+    ...state,
+    agentChat: state.agentChat.thread?.threadId === threadId ? clearChatPrompt(state.agentChat) : state.agentChat,
+    agentChatByThreadId: state.agentChatByThreadId[threadId] === undefined
+      ? state.agentChatByThreadId
+      : {
+          ...state.agentChatByThreadId,
+          [threadId]: clearChatPrompt(state.agentChatByThreadId[threadId]),
+        },
+    runtimeSnapshotsByThreadId,
+  };
+}
+
+function clearSnapshotPrompt<T extends { state: string; pendingPromptKind?: unknown; prompt?: unknown }>(
+  snapshot: T,
+): T & { state: "running" } {
+  const next = { ...snapshot, state: "running" as const };
+  delete next.pendingPromptKind;
+  delete next.prompt;
+  return next;
 }
 
 export function updateProductShellComposerDraft(

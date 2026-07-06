@@ -511,8 +511,8 @@ export type AgentChatBackendCommand =
       kind: "workbench.command";
       payload: {
         threadId: string;
-        command: "open_terminal";
-        data: {
+        command: "open_terminal" | "open_review";
+        data?: {
           blockerKind: string;
           command: string;
           args: string[];

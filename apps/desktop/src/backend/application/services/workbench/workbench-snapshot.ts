@@ -212,6 +212,9 @@ export function workbenchSnapshotPaneRef(
   if (pane.kind === "changes") {
     return { ...workbenchPaneRef(pane), kind: "changes", cwd: pane.cwd };
   }
+  if (pane.kind === "review") {
+    return { ...workbenchPaneRef(pane), kind: "review", cwd: pane.cwd, agentId: pane.agentId };
+  }
   return terminalPaneRef(pane);
 }
 

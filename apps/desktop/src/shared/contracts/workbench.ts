@@ -7,7 +7,7 @@ export type WorkbenchLayoutModeDto = "stacked" | "split";
 
 export interface BaseWorkbenchPaneRefDto {
   paneId: WorkbenchPaneId;
-  kind: "browser" | "diff" | "editor" | "image" | "terminal" | "launcher" | "changes";
+  kind: "browser" | "diff" | "editor" | "image" | "terminal" | "launcher" | "changes" | "review";
   title: string;
   revision: string;
   updatedAt: string;
@@ -104,7 +104,7 @@ export interface BrowserPaneActionResultDto extends BrowserPaneActionDto {
 }
 
 export interface NonBrowserWorkbenchPaneRefDto extends BaseWorkbenchPaneRefDto {
-  kind: "diff" | "editor" | "image" | "terminal" | "changes";
+  kind: "diff" | "editor" | "image" | "terminal" | "changes" | "review";
   root?: string;
   filePath?: string;
   relativePath?: string;
@@ -123,6 +123,7 @@ export interface NonBrowserWorkbenchPaneRefDto extends BaseWorkbenchPaneRefDto {
   args?: string[];
   env?: Record<string, string>;
   cwd?: string;
+  agentId?: "codex" | "claude" | "opencode";
   terminalRole?: "session" | "command_result" | "provider_readiness";
   status?: "ready" | "running" | "completed" | "failed";
   expectedCompletion?: "process_exit" | "retry_preflight";

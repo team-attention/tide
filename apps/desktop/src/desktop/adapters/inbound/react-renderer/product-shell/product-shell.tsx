@@ -16,6 +16,7 @@ import { fitColumnsToWidth, useColumnPresence } from "./support/layout.ts";
 import { useActivateThreadFromMain, useCloseIntentFromMenu, useComposerFileMentionRefresh, useGitState, useGlobalSearchShortcuts, useOpenBrowserPaneFromMain, usePanelToggleFromMenu, useProductShellEscape, useProviderCatalogRequests, useRightmostColumnWidth } from "./support/use-shell-effects.ts";
 import { useMultitaskNavigation } from "./multitask/use-multitask-navigation.tsx";
 import { RailPeek } from "./left-rail/rail-peek.tsx";
+import { AgentMonitorPanel } from "./agent-monitor-panel.tsx";
 import { QuickOpenPalette } from "./search/quick-open.tsx";
 import type { QuickOpenFile } from "./search/quick-open.tsx";
 import { createWindowChromeToggles } from "./chrome/chrome.tsx";
@@ -741,6 +742,9 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
               handlers,
             )
           : null}
+        {viewModel.agentMonitorOpen ? (
+          <AgentMonitorPanel sessions={viewModel.agentMonitorSessions} handlers={stableHandlers} />
+        ) : null}
         {quickOpenVisible ? (
           <QuickOpenPalette
             files={quickOpenFiles}

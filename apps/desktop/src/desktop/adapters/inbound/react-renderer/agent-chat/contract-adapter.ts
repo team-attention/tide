@@ -112,20 +112,39 @@ export function toBackendCommandDraft(
         payload: command.payload,
       };
     case "workbench.command": {
+      if (command.payload.command === "open_review") {
+        return {
+          kind: "workbench.command",
+          payload: {
+            threadId: command.payload.threadId,
+            command: command.payload.command,
+          },
+        };
+      }
+      const data = command.payload.data;
+      if (data === undefined) {
+        return {
+          kind: "workbench.command",
+          payload: {
+            threadId: command.payload.threadId,
+            command: command.payload.command,
+          },
+        };
+      }
       const dataPayload: JsonObject = {
-        blockerKind: command.payload.data.blockerKind,
-        command: command.payload.data.command,
-        args: [...(command.payload.data.args ?? [])],
-        cwd: command.payload.data.cwd,
+        blockerKind: data.blockerKind,
+        command: data.command,
+        args: [...(data.args ?? [])],
+        cwd: data.cwd,
       };
-      if (command.payload.data.terminalRole !== undefined) {
-        dataPayload.terminalRole = command.payload.data.terminalRole;
+      if (data.terminalRole !== undefined) {
+        dataPayload.terminalRole = data.terminalRole;
       }
-      if (command.payload.data.expectedCompletion !== undefined) {
-        dataPayload.expectedCompletion = command.payload.data.expectedCompletion;
+      if (data.expectedCompletion !== undefined) {
+        dataPayload.expectedCompletion = data.expectedCompletion;
       }
-      if (command.payload.data.env !== undefined) {
-        dataPayload.env = { ...command.payload.data.env };
+      if (data.env !== undefined) {
+        dataPayload.env = { ...data.env };
       }
       return {
         kind: "workbench.command",

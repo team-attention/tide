@@ -827,6 +827,7 @@ Expected commands:
 
 ```bash
 node apps/desktop/scripts/native-agent-evidence/capture-codex-app-server.mjs --codex /path/to/codex --out apps/desktop/docs_v2/evidence/native-agent-runtime/codex/0.142.5
+node apps/desktop/scripts/native-agent-evidence/capture-codex-app-server.mjs --codex /path/to/codex --out /tmp/tide-codex-review-evidence --review-start --allow-provider-review --cwd /path/to/scratch/repo --target base --base-branch main --delivery detached
 node apps/desktop/scripts/native-agent-evidence/capture-claude-stream-json.mjs --claude /path/to/claude --out apps/desktop/docs_v2/evidence/native-agent-runtime/claude/2.1.191
 node apps/desktop/scripts/native-agent-evidence/capture-acp-provider.mjs --provider opencode --command opencode --args acp --out apps/desktop/docs_v2/evidence/native-agent-runtime/opencode/1.17.3
 node apps/desktop/scripts/native-agent-evidence/capture-acp-provider.mjs --provider qwen --command qwen --args --acp --out apps/desktop/docs_v2/evidence/native-agent-runtime/qwen/0.19.4

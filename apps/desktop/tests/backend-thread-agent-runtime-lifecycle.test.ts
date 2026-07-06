@@ -1203,6 +1203,33 @@ test("provider_capability_invocation_routes_provider_method_to_live_runtime", as
   });
 });
 
+test("provider_capability_invocation_surfaces_unsupported_capability_without_runtime_start", async () => {
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [threadSeed("thread-unsupported", { agentBinding: { agentId: "codex" } })],
+  });
+
+  const result = await service.invokeProviderCapability({
+    threadId: "thread-unsupported",
+    capabilityId: "codex:skill:review",
+    invoke: {
+      kind: "unsupported",
+      reason: "Skill selection send path requires runtime fixture evidence.",
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(!result.ok && result.error.code, "provider_capability_unsupported");
+  assert.equal(
+    !result.ok && result.error.message,
+    "Skill selection send path requires runtime fixture evidence.",
+  );
+  assert.deepEqual(fakes.runtime.events, []);
+});
+
 test("provider_invoke_capability_contract_round_trips_to_runtime_method", async () => {
   class CapabilityRuntimePort extends FakeAgentRuntimePort {
     invocations: Array<{ handle: AgentRuntimeHandle; method?: string }> = [];

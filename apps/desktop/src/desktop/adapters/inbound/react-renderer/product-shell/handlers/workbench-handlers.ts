@@ -1,10 +1,10 @@
-import { applyProductShellWorkbenchDrop, closeProductShellWorkbenchPane, ensureComposerDraftThreadActive, focusProductShellWorkbenchPane, openProductShellBrowserAtUrl, openProductShellWorkbenchLauncher, releaseProductShellAgentBrowserControl, resizeProductShellTerminal, selectProductShellLauncherAction, setProductShellWorkbenchLayout, setProductShellWorkbenchSplitRatio, toggleProductShellWorkbenchFullscreen, toggleProductShellWorkbenchWithLauncher, writeProductShellTerminalInput } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { applyProductShellWorkbenchDrop, closeProductShellWorkbenchPane, ensureComposerDraftThreadActive, focusProductShellWorkbenchPane, openProductShellBrowserAtUrl, openProductShellThreadFromLeftRail, openProductShellWorkbenchLauncher, releaseProductShellAgentBrowserControl, resizeProductShellTerminal, selectProductShellLauncherAction, setProductShellWorkbenchLayout, setProductShellWorkbenchSplitRatio, toggleProductShellWorkbenchFullscreen, toggleProductShellWorkbenchWithLauncher, writeProductShellTerminalInput } from "../../../../../application/domains/product-shell/product-shell.ts";
 // Extracted from product-shell.ts (entry-module rule follow-up).
 
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ProductShellHandlerContext } from "./context.ts";
 
-export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onWorkbenchToggle" | "onWorkbenchFullscreenToggle" | "onWorkbenchSetLayout" | "onWorkbenchMaximizePane" | "onWorkbenchPaneDrop" | "onWorkbenchSplitRatio" | "onNewWorkbenchPane" | "onLauncherAction" | "onFocusWorkbenchPane" | "onCloseWorkbenchPane" | "onReleaseAgentBrowserControl" | "onTerminalInput" | "onTerminalResize" | "onOpenBrowserPane" | "onOpenChanges" | "onGitChanges" | "onGitFileDiff" | "onLoadWorkbenchImage"> {
+export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onWorkbenchToggle" | "onWorkbenchFullscreenToggle" | "onWorkbenchSetLayout" | "onWorkbenchMaximizePane" | "onWorkbenchPaneDrop" | "onWorkbenchSplitRatio" | "onNewWorkbenchPane" | "onLauncherAction" | "onFocusWorkbenchPane" | "onCloseWorkbenchPane" | "onReleaseAgentBrowserControl" | "onTerminalInput" | "onTerminalResize" | "onOpenBrowserPane" | "onOpenChanges" | "onOpenThreadChanges" | "onOpenReview" | "onOpenThreadReview" | "onGitChanges" | "onGitFileDiff" | "onGitStageFile" | "onGitUnstageFile" | "onGitDiscardFile" | "onGitApplyHunk" | "onGitGenerateCommitMessage" | "onGitCommit" | "onGitPushTarget" | "onGitPush" | "onRunReview" | "onLoadWorkbenchImage"> {
   const { props, shellState, getShellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
   return {
     onWorkbenchToggle: () =>
@@ -43,6 +43,23 @@ export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<P
         return state.workbenchOpen ? state : { ...state, workbenchOpen: true };
       });
     },
+    onOpenThreadChanges: (threadId) => {
+      setShellState((state) => {
+        const result = openProductShellThreadFromLeftRail(state, threadId, {
+          backendTransportAvailable: props.onBackendCommand !== undefined,
+        });
+        dispatchBackendCommand(result.command);
+        dispatchBackendCommand({
+          kind: "workbench.command",
+          payload: { threadId, command: "open_diff" },
+        });
+        return {
+          ...result.state,
+          workbenchOpen: true,
+          workbenchOpenByThreadId: { ...result.state.workbenchOpenByThreadId, [threadId]: true },
+        };
+      });
+    },
     onGitChanges: async (cwd) => {
       const bridge = props.projectBridge;
       if (bridge === undefined) {
@@ -52,6 +69,84 @@ export function createWorkbenchHandlers(ctx: ProductShellHandlerContext): Pick<P
       return { isGitRepo: context.isGitRepo, branch: context.currentBranch, files: changes.files };
     },
     onGitFileDiff: (cwd, relPath) => props.projectBridge?.gitFileDiff(cwd, relPath) ?? Promise.resolve(""),
+    onGitStageFile: (cwd, relPath) =>
+      props.projectBridge?.gitStageFile(cwd, relPath) ?? Promise.resolve({ ok: false, message: "Git is unavailable." }),
+    onGitUnstageFile: (cwd, relPath) =>
+      props.projectBridge?.gitUnstageFile(cwd, relPath) ?? Promise.resolve({ ok: false, message: "Git is unavailable." }),
+    onGitDiscardFile: (cwd, relPath) =>
+      props.projectBridge?.gitDiscardFile(cwd, relPath) ?? Promise.resolve({ ok: false, message: "Git is unavailable." }),
+    onGitApplyHunk: (cwd, relPath, patch, action) =>
+      props.projectBridge?.gitApplyHunk(cwd, relPath, patch, action) ??
+      Promise.resolve({ ok: false, message: "Git is unavailable." }),
+    onGitGenerateCommitMessage: (cwd) =>
+      props.projectBridge?.gitGenerateCommitMessage(cwd) ??
+      Promise.resolve({ ok: false, message: "Git is unavailable." }),
+    onGitCommit: (cwd, message) =>
+      props.projectBridge?.gitCommit(cwd, message) ?? Promise.resolve({ ok: false, message: "Git is unavailable." }),
+    onGitPushTarget: (cwd) =>
+      props.projectBridge?.gitPushTarget(cwd) ?? Promise.resolve({ ok: false, message: "Git is unavailable." }),
+    onGitPush: (cwd, remote, branch) =>
+      props.projectBridge?.gitPush(cwd, remote, branch) ??
+      Promise.resolve({ ok: false, message: "Git is unavailable." }),
+    onOpenReview: (cwd) => {
+      const currentState = getShellState();
+      if (currentState.activeThreadId === null) {
+        if (cwd === undefined) {
+          return;
+        }
+        const ensured = ensureComposerDraftThreadActive(currentState);
+        const openReviewCommand = {
+          kind: "workbench.command" as const,
+          payload: { threadId: ensured.state.activeThreadId as string, command: "open_review" as const },
+        };
+        setShellState({ ...ensured.state, workbenchOpen: true });
+        if (ensured.command !== null) dispatchBackendCommand(ensured.command);
+        dispatchBackendCommand(openReviewCommand);
+        return;
+      }
+      setShellState((state) => {
+        if (state.activeThreadId === null) {
+          return state;
+        }
+        dispatchBackendCommand({
+          kind: "workbench.command",
+          payload: { threadId: state.activeThreadId, command: "open_review" },
+        });
+        return state.workbenchOpen ? state : { ...state, workbenchOpen: true };
+      });
+    },
+    onOpenThreadReview: (threadId) => {
+      setShellState((state) => {
+        const result = openProductShellThreadFromLeftRail(state, threadId, {
+          backendTransportAvailable: props.onBackendCommand !== undefined,
+        });
+        dispatchBackendCommand(result.command);
+        dispatchBackendCommand({
+          kind: "workbench.command",
+          payload: { threadId, command: "open_review" },
+        });
+        return {
+          ...result.state,
+          workbenchOpen: true,
+          workbenchOpenByThreadId: { ...result.state.workbenchOpenByThreadId, [threadId]: true },
+        };
+      });
+    },
+    onRunReview: (cwd, provider, target) =>
+      props.projectBridge?.runReview(cwd, provider, target) ??
+      Promise.resolve({
+        ok: false,
+        provider,
+        source: provider === "codex" ? "codex_cli" : provider === "claude" ? "claude_prompt" : "opencode_prompt",
+        target,
+        cwd,
+        command: "",
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        rawText: "",
+        findings: [],
+        message: "Review runner is unavailable outside the desktop app.",
+      }),
     onLoadWorkbenchImage: async (cwd, relativePath) => {
       const events = await props.onBackendCommand?.({
         kind: "workspace.readImageFile",

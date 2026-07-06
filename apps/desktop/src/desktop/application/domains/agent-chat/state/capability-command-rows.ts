@@ -36,7 +36,9 @@ function capabilityRow(
   agentLabel: string,
 ): AgentChatChoiceSurfaceRowView {
   const token = tokenForCapability(capability);
-  const invokable = token !== undefined || capability.invoke.kind === "provider_method";
+  const invokable = token !== undefined ||
+    capability.invoke.kind === "provider_method" ||
+    isReviewSurfaceCapability(capability);
   const disabled = !capability.available || !invokable;
   return row(
     token === undefined ? `capability:${capability.capabilityId}` : `command:${token}`,
@@ -48,6 +50,10 @@ function capabilityRow(
     false,
     disabled,
   );
+}
+
+function isReviewSurfaceCapability(capability: AgentChatProviderCapabilityOption): boolean {
+  return capability.invoke.kind === "tide_surface" && capability.invoke.surface === "review";
 }
 
 function tokenForCapability(capability: AgentChatProviderCapabilityOption): string | undefined {

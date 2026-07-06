@@ -1,4 +1,4 @@
-import type { ChangesPaneState } from "../../domains/workbench/workbench.ts";
+import type { ChangesPaneState, ReviewPaneState } from "../../domains/workbench/workbench.ts";
 import type { WorkspaceCodeIntelligencePort } from "../../ports/outbound/workspace-code-intelligence-port.ts";
 import type { WorkspaceCommandPort } from "../../ports/outbound/workspace-command-port.ts";
 import type { WorkspaceFilePort } from "../../ports/outbound/workspace-file-port.ts";
@@ -344,6 +344,44 @@ export class WorkbenchCommandHandler {
           thread.workbench.panes.push(pane);
         }
         pane.cwd = root;
+        pane.updatedAt = this.clock();
+        thread.workbench.activePaneId = pane.paneId;
+        removeLauncherPane(thread, launcherToReplace);
+        thread.workbench.focusOwner = "workbench";
+        thread.updatedAt = this.clock();
+        return {
+          ok: true,
+          handled: true,
+          thread: snapshotThread(thread),
+          workbench: snapshotWorkbench(thread.workbench),
+        };
+      }
+      case "open_review": {
+        const root = threadRoot(thread);
+        if (root === undefined) {
+          return failure(
+            "workspace_command_unavailable",
+            "Thread does not have an Execution Context root for the Review pane.",
+          );
+        }
+        const launcherToReplace = launcherPaneIdForCommand(thread, input.targetPaneId);
+        let pane = thread.workbench.panes.find(
+          (candidate): candidate is ReviewPaneState => candidate.kind === "review",
+        );
+        if (pane === undefined) {
+          pane = {
+            paneId: this.idGenerator(),
+            kind: "review",
+            title: "Review",
+            revision: this.idGenerator(),
+            updatedAt: this.clock(),
+            cwd: root,
+            agentId: thread.agentBinding.agentId,
+          };
+          thread.workbench.panes.push(pane);
+        }
+        pane.cwd = root;
+        pane.agentId = thread.agentBinding.agentId;
         pane.updatedAt = this.clock();
         thread.workbench.activePaneId = pane.paneId;
         removeLauncherPane(thread, launcherToReplace);

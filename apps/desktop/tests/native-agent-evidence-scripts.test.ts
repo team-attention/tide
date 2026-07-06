@@ -10,6 +10,7 @@ import { replayNativeFixtureText } from "../src/backend/adapters/outbound/agent-
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const captureScript = path.join(desktopRoot, "scripts/native-agent-evidence/capture-acp-provider.mjs");
+const codexCaptureScript = path.join(desktopRoot, "scripts/native-agent-evidence/capture-codex-app-server.mjs");
 
 test("capture-acp-provider records a reduced ACP handshake fixture", () => {
   const fixture = createFakeAcpFixture();
@@ -82,6 +83,82 @@ test("capture-acp-provider supports --args values that start with dashes", () =>
   assert.equal(replay.semanticKinds.session_event, 1);
 });
 
+test("capture-codex-app-server refuses review/start without explicit approval", () => {
+  const fixture = createFakeCodexFixture();
+  const out = path.join(fixture.root, "refused");
+  const result = spawnSync(process.execPath, [
+    codexCaptureScript,
+    "--codex",
+    fixture.codex,
+    "--out",
+    out,
+    "--review-start",
+    "--cwd",
+    fixture.root,
+  ], {
+    cwd: desktopRoot,
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /refusing to run review\/start/);
+});
+
+test("capture-codex-app-server records a reduced review/start protocol fixture", () => {
+  const fixture = createFakeCodexFixture();
+  const out = path.join(fixture.root, "review-start");
+  const result = spawnSync(process.execPath, [
+    codexCaptureScript,
+    "--codex",
+    fixture.codex,
+    "--out",
+    out,
+    "--review-start",
+    "--allow-provider-review",
+    "--cwd",
+    fixture.root,
+    "--target",
+    "base",
+    "--base-branch",
+    "secret-feature-branch",
+    "--delivery",
+    "detached",
+    "--timeout-ms",
+    "2000",
+    "--post-review-wait-ms",
+    "50",
+  ], {
+    cwd: desktopRoot,
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const provider = readJson(path.join(out, "provider.json"));
+  assert.equal(provider.redaction, "reduced_review_start");
+  assert.equal(provider.reviewStartStatus, "review_started");
+
+  const summary = readJson(path.join(out, "codex-review-start-summary.json"));
+  assert.equal(summary.status, "review_started");
+  assert.equal(summary.targetType, "baseBranch");
+  assert.equal(summary.delivery, "detached");
+  assert.equal(summary.threadIdRedacted, true);
+  assert.equal(summary.reviewThreadIdRedacted, true);
+  assert.equal(summary.turnIdRedacted, true);
+  assert.deepEqual(summary.notificationMethods, ["turn/started"]);
+
+  const protocolText = fs.readFileSync(path.join(out, "app-server-review-start.protocol.jsonl"), "utf8");
+  assert.equal(protocolText.includes(fixture.root), false);
+  assert.equal(protocolText.includes("secret-thread-123"), false);
+  assert.equal(protocolText.includes("secret-feature-branch"), false);
+  const protocol = parseJsonl(protocolText);
+  const reviewStart = protocol.find((frame) => frame.direction === "out" && frame.method === "review/start");
+  assert.deepEqual(reviewStart?.params, {
+    threadId: "[REDACTED_ID]",
+    target: { type: "baseBranch", branch: "[REDACTED_BRANCH]" },
+    delivery: "detached",
+  });
+});
+
 function runCapture(input: {
   provider: string;
   command: string;
@@ -116,6 +193,14 @@ function createFakeAcpFixture(): { root: string; provider: string } {
   fs.writeFileSync(provider, fakeAcpProviderSource());
   fs.chmodSync(provider, 0o755);
   return { root, provider };
+}
+
+function createFakeCodexFixture(): { root: string; codex: string } {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tide-codex-evidence-"));
+  const codex = path.join(root, "fake-codex.mjs");
+  fs.writeFileSync(codex, fakeCodexProviderSource());
+  fs.chmodSync(codex, 0o755);
+  return { root, codex };
 }
 
 function fakeAcpProviderSource(): string {
@@ -192,6 +277,56 @@ function handle(message) {
         },
       },
     }), 10);
+  }
+}
+
+function write(message) {
+  process.stdout.write(JSON.stringify(message) + "\\n");
+}
+`;
+}
+
+function fakeCodexProviderSource(): string {
+  return `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args.includes("--version")) {
+  console.log("codex-cli 9.9.9");
+  process.exit(0);
+}
+if (args[0] === "app-server" && args.includes("--help")) {
+  console.log("Fake Codex app-server help");
+  process.exit(0);
+}
+if (args[0] !== "app-server") {
+  process.stderr.write("unexpected fake codex args: " + args.join(" ") + "\\n");
+  process.exit(2);
+}
+
+let buffer = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => {
+  buffer += chunk;
+  let index = buffer.indexOf("\\n");
+  while (index >= 0) {
+    const line = buffer.slice(0, index).trim();
+    buffer = buffer.slice(index + 1);
+    index = buffer.indexOf("\\n");
+    if (line.length > 0) handle(JSON.parse(line));
+  }
+});
+
+function handle(message) {
+  if (message.method === "initialize") {
+    write({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "thread/start") {
+    write({ id: message.id, result: { thread: { id: "secret-thread-123", path: "/secret/codex/rollout.jsonl" } } });
+    return;
+  }
+  if (message.method === "review/start") {
+    write({ id: message.id, result: { reviewThreadId: "secret-review-thread-456", turn: { id: "secret-turn-789" } } });
+    setTimeout(() => write({ method: "turn/started", params: { turn: { id: "secret-turn-789" } } }), 10);
   }
 }
 

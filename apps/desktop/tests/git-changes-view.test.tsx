@@ -9,6 +9,7 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { ChangesPanel } from "../src/desktop/adapters/inbound/react-renderer/product-shell/workbench/changes-panel.tsx";
+import { extractGitDiffHunks } from "../src/desktop/adapters/inbound/react-renderer/product-shell/workbench/git-diff-hunks.ts";
 import { GIT_STATE_REFRESH_MS, useGitState } from "../src/desktop/adapters/inbound/react-renderer/product-shell/support/use-shell-effects.ts";
 import type { GitChangesView, GitChangesViewResult, ProjectRegistryBridge } from "../src/desktop/adapters/inbound/react-renderer/product-shell/support/types.ts";
 import { createFileTreeColumn } from "../src/desktop/adapters/inbound/react-renderer/product-shell/file-tree/file-tree.tsx";
@@ -22,7 +23,9 @@ const dom = new JSDOM("<!doctype html><html><body></body></html>");
 (globalThis as unknown as { document: unknown }).document = dom.window.document;
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-async function renderPane(changes: GitChangesViewResult): Promise<string> {
+type ChangesPanelProps = Parameters<typeof ChangesPanel>[0];
+
+async function renderPane(changes: GitChangesViewResult, diff = ""): Promise<string> {
   const { createRoot } = await import("react-dom/client");
   const container = dom.window.document.createElement("div");
   dom.window.document.body.appendChild(container);
@@ -32,7 +35,16 @@ async function renderPane(changes: GitChangesViewResult): Promise<string> {
       <ChangesPanel
         cwd="/repo"
         onGitChanges={() => Promise.resolve(changes)}
-        onGitFileDiff={() => Promise.resolve("")}
+        onGitFileDiff={() => Promise.resolve(diff)}
+        onOpenReview={() => undefined}
+        onGitStageFile={() => Promise.resolve({ ok: true, message: "staged" })}
+        onGitUnstageFile={() => Promise.resolve({ ok: true, message: "unstaged" })}
+        onGitDiscardFile={() => Promise.resolve({ ok: true, message: "discarded" })}
+        onGitApplyHunk={() => Promise.resolve({ ok: true, message: "hunk applied" })}
+        onGitGenerateCommitMessage={() => Promise.resolve({ ok: true, message: "Update app.ts", source: "staged", files: ["src/app.ts"] })}
+        onGitCommit={() => Promise.resolve({ ok: true, message: "committed" })}
+        onGitPushTarget={() => Promise.resolve({ ok: true, currentBranch: "main", remote: "origin", branch: "main", upstream: "origin/main", label: "origin/main" })}
+        onGitPush={() => Promise.resolve({ ok: true, message: "pushed" })}
       />,
     );
   });
@@ -46,6 +58,71 @@ async function renderPane(changes: GitChangesViewResult): Promise<string> {
     root.unmount();
   });
   return html;
+}
+
+async function mountChangesPanel(
+  overrides: Partial<ChangesPanelProps> = {},
+): Promise<{
+  container: HTMLDivElement;
+  root: { unmount(): void };
+}> {
+  const { createRoot } = await import("react-dom/client");
+  const container = dom.window.document.createElement("div");
+  dom.window.document.body.appendChild(container);
+  const root = createRoot(container);
+  const props: ChangesPanelProps = {
+    cwd: "/repo",
+    onGitChanges: () => Promise.resolve({
+      isGitRepo: true,
+      branch: "main",
+      files: [{ path: "src/app.ts", status: "modified", additions: 1, deletions: 1 }],
+    }),
+    onGitFileDiff: () => Promise.resolve([
+      "diff --git a/src/app.ts b/src/app.ts",
+      "index 111..222 100644",
+      "--- a/src/app.ts",
+      "+++ b/src/app.ts",
+      "@@ -1,1 +1,1 @@",
+      "-old",
+      "+new",
+    ].join("\n")),
+    onOpenReview: () => undefined,
+    onGitStageFile: () => Promise.resolve({ ok: true, message: "staged" }),
+    onGitUnstageFile: () => Promise.resolve({ ok: true, message: "unstaged" }),
+    onGitDiscardFile: () => Promise.resolve({ ok: true, message: "discarded" }),
+    onGitApplyHunk: () => Promise.resolve({ ok: true, message: "hunk applied" }),
+    onGitGenerateCommitMessage: () => Promise.resolve({ ok: true, message: "Update app.ts", source: "staged", files: ["src/app.ts"] }),
+    onGitCommit: () => Promise.resolve({ ok: true, message: "committed" }),
+    onGitPushTarget: () => Promise.resolve({ ok: true, currentBranch: "main", remote: "origin", branch: "main", upstream: "origin/main", label: "origin/main" }),
+    onGitPush: () => Promise.resolve({ ok: true, message: "pushed" }),
+    ...overrides,
+  };
+  await act(async () => {
+    root.render(<ChangesPanel {...props} />);
+  });
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  return { container, root };
+}
+
+function buttonByText(container: Element, label: string): HTMLButtonElement {
+  const button = Array.from(container.querySelectorAll("button")).find((candidate) =>
+    candidate.textContent?.includes(label),
+  ) as HTMLButtonElement | undefined;
+  assert.notEqual(button, undefined);
+  return button;
+}
+
+async function typeCommitMessage(container: Element, value: string): Promise<void> {
+  const input = container.querySelector('input[aria-label="Commit message"]') as HTMLInputElement | null;
+  assert.notEqual(input, null);
+  const valueSetter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")?.set;
+  await act(async () => {
+    valueSetter?.call(input, value);
+    input!.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  });
 }
 
 test("changes_pane_lists_files_with_status_branch_and_plus_minus_totals", async () => {
@@ -82,6 +159,314 @@ test("changes_pane_renders_a_resizable_collapsible_file_list", async () => {
   // GitHub-style file tree controls: a collapse toggle + a resize divider.
   assert.match(html, /Hide file list/);
   assert.match(html, /Resize file list/);
+});
+
+test("extract_git_diff_hunks_builds_single_hunk_patches_with_headers", () => {
+  const hunks = extractGitDiffHunks(
+    [
+      "diff --git a/src/app.ts b/src/app.ts",
+      "index 111..222 100644",
+      "--- a/src/app.ts",
+      "+++ b/src/app.ts",
+      "@@ -1,2 +1,2 @@",
+      " const a = 1;",
+      "-old",
+      "+new",
+      "@@ -10,1 +10,2 @@",
+      " keep",
+      "+more",
+    ].join("\n"),
+  );
+
+  assert.equal(hunks.length, 2);
+  assert.equal(hunks[0].title, "@@ -1,2 +1,2 @@");
+  assert.match(hunks[0].patch, /diff --git a\/src\/app\.ts b\/src\/app\.ts/);
+  assert.match(hunks[0].patch, /@@ -1,2 \+1,2 @@/);
+  assert.doesNotMatch(hunks[0].patch, /@@ -10,1 \+10,2 @@/);
+  assert.equal(hunks[0].additions, 1);
+  assert.equal(hunks[0].deletions, 1);
+});
+
+test("changes_pane_stage_hunk_sends_selected_hunk_patch", async () => {
+  const { createRoot } = await import("react-dom/client");
+  const container = dom.window.document.createElement("div");
+  dom.window.document.body.appendChild(container);
+  const root = createRoot(container);
+  let applied: { path: string; patch: string; action: string } | null = null;
+  await act(async () => {
+    root.render(
+      <ChangesPanel
+        cwd="/repo"
+        onGitChanges={() => Promise.resolve({
+          isGitRepo: true,
+          branch: "main",
+          files: [{ path: "src/app.ts", status: "modified", additions: 1, deletions: 1 }],
+        })}
+        onGitFileDiff={() => Promise.resolve([
+          "diff --git a/src/app.ts b/src/app.ts",
+          "index 111..222 100644",
+          "--- a/src/app.ts",
+          "+++ b/src/app.ts",
+          "@@ -1,1 +1,1 @@",
+          "-old",
+          "+new",
+        ].join("\n"))}
+        onOpenReview={() => undefined}
+        onGitStageFile={() => Promise.resolve({ ok: true, message: "staged" })}
+        onGitUnstageFile={() => Promise.resolve({ ok: true, message: "unstaged" })}
+        onGitDiscardFile={() => Promise.resolve({ ok: true, message: "discarded" })}
+        onGitApplyHunk={(_cwd, path, patch, action) => {
+          applied = { path, patch, action };
+          return Promise.resolve({ ok: true, message: "hunk staged" });
+        }}
+        onGitGenerateCommitMessage={() => Promise.resolve({ ok: true, message: "Update app.ts", source: "staged", files: ["src/app.ts"] })}
+        onGitCommit={() => Promise.resolve({ ok: true, message: "committed" })}
+        onGitPushTarget={() => Promise.resolve({ ok: true, currentBranch: "main", remote: "origin", branch: "main", upstream: "origin/main", label: "origin/main" })}
+        onGitPush={() => Promise.resolve({ ok: true, message: "pushed" })}
+      />,
+    );
+  });
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  const button = container.querySelector('button[aria-label="Stage hunk 1"]') as HTMLButtonElement | null;
+  assert.notEqual(button, null);
+
+  await act(async () => {
+    button?.click();
+  });
+  await act(async () => {
+    root.unmount();
+  });
+
+  assert.equal(applied?.path, "src/app.ts");
+  assert.equal(applied?.action, "stage");
+  assert.match(applied?.patch ?? "", /@@ -1,1 \+1,1 @@/);
+});
+
+test("changes_pane_file_action_rejection_clears_busy_state", async () => {
+  const { container, root } = await mountChangesPanel({
+    onGitStageFile: () => Promise.reject(new Error("stage exploded")),
+  });
+  const stageButton = buttonByText(container, "Stage");
+
+  await act(async () => {
+    stageButton.click();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  assert.match(container.innerHTML, /stage exploded/);
+  assert.equal(buttonByText(container, "Stage").disabled, false);
+  await act(async () => {
+    root.unmount();
+  });
+});
+
+test("changes_pane_hunk_action_rejection_clears_busy_state", async () => {
+  const { container, root } = await mountChangesPanel({
+    onGitApplyHunk: () => Promise.reject(new Error("hunk exploded")),
+  });
+  const hunkButton = container.querySelector('button[aria-label="Stage hunk 1"]') as HTMLButtonElement | null;
+  assert.notEqual(hunkButton, null);
+
+  await act(async () => {
+    hunkButton!.click();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  assert.match(container.innerHTML, /hunk exploded/);
+  assert.equal((container.querySelector('button[aria-label="Stage hunk 1"]') as HTMLButtonElement | null)?.disabled, false);
+  await act(async () => {
+    root.unmount();
+  });
+});
+
+test("changes_pane_commit_rejection_clears_busy_state", async () => {
+  const { container, root } = await mountChangesPanel({
+    onGitCommit: () => Promise.reject(new Error("commit exploded")),
+  });
+  await typeCommitMessage(container, "Update app");
+  const commitButton = buttonByText(container, "Commit");
+  assert.equal(commitButton.disabled, false);
+
+  await act(async () => {
+    commitButton.click();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  assert.match(container.innerHTML, /commit exploded/);
+  assert.equal(buttonByText(container, "Commit").disabled, false);
+  await act(async () => {
+    root.unmount();
+  });
+});
+
+test("changes_pane_push_rejection_clears_busy_state", async () => {
+  const originalConfirm = dom.window.confirm;
+  dom.window.confirm = (() => true) as typeof dom.window.confirm;
+  const { container, root } = await mountChangesPanel({
+    onGitPush: () => Promise.reject(new Error("push exploded")),
+  });
+  try {
+    const pushButton = buttonByText(container, "Push");
+    assert.equal(pushButton.disabled, false);
+
+    await act(async () => {
+      pushButton.click();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    assert.match(container.innerHTML, /push exploded/);
+    assert.equal(buttonByText(container, "Push").disabled, false);
+  } finally {
+    dom.window.confirm = originalConfirm;
+    await act(async () => {
+      root.unmount();
+    });
+  }
+});
+
+test("changes_pane_generate_commit_message_populates_input", async () => {
+  const { createRoot } = await import("react-dom/client");
+  const container = dom.window.document.createElement("div");
+  dom.window.document.body.appendChild(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(
+      <ChangesPanel
+        cwd="/repo"
+        onGitChanges={() => Promise.resolve({
+          isGitRepo: true,
+          branch: "main",
+          files: [{ path: "src/app.ts", status: "modified", additions: 1, deletions: 0 }],
+        })}
+        onGitFileDiff={() => Promise.resolve("")}
+        onOpenReview={() => undefined}
+        onGitStageFile={() => Promise.resolve({ ok: true, message: "staged" })}
+        onGitUnstageFile={() => Promise.resolve({ ok: true, message: "unstaged" })}
+        onGitDiscardFile={() => Promise.resolve({ ok: true, message: "discarded" })}
+        onGitApplyHunk={() => Promise.resolve({ ok: true, message: "hunk applied" })}
+        onGitGenerateCommitMessage={() => Promise.resolve({
+          ok: true,
+          message: "Update src/app.ts",
+          source: "staged",
+          files: ["src/app.ts"],
+        })}
+        onGitCommit={() => Promise.resolve({ ok: true, message: "committed" })}
+        onGitPushTarget={() => Promise.resolve({
+          ok: true,
+          currentBranch: "main",
+          remote: "origin",
+          branch: "main",
+          upstream: "origin/main",
+          label: "origin/main",
+        })}
+        onGitPush={() => Promise.resolve({ ok: true, message: "pushed" })}
+      />,
+    );
+  });
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  const generateButton = Array.from(container.querySelectorAll("button")).find((button) =>
+    button.textContent?.includes("Generate"),
+  ) as HTMLButtonElement | undefined;
+  assert.notEqual(generateButton, undefined);
+  await act(async () => {
+    generateButton?.click();
+  });
+
+  const input = container.querySelector('input[aria-label="Commit message"]') as HTMLInputElement | null;
+  assert.equal(input?.value, "Update src/app.ts");
+  assert.match(container.innerHTML, /Generated commit message from staged changes/);
+  await act(async () => {
+    root.unmount();
+  });
+});
+
+test("changes_pane_push_uses_resolved_remote_branch_target", async () => {
+  const { createRoot } = await import("react-dom/client");
+  const container = dom.window.document.createElement("div");
+  dom.window.document.body.appendChild(container);
+  const root = createRoot(container);
+  const originalConfirm = dom.window.confirm;
+  let confirmMessage = "";
+  let pushed: { cwd: string; remote: string; branch: string } | null = null;
+  dom.window.confirm = ((message?: string) => {
+    confirmMessage = String(message ?? "");
+    return true;
+  }) as typeof dom.window.confirm;
+
+  try {
+    await act(async () => {
+      root.render(
+        <ChangesPanel
+          cwd="/repo"
+          onGitChanges={() => Promise.resolve({
+            isGitRepo: true,
+            branch: "feature-x",
+            files: [{ path: "src/app.ts", status: "modified", additions: 1, deletions: 0 }],
+          })}
+          onGitFileDiff={() => Promise.resolve("")}
+          onOpenReview={() => undefined}
+          onGitStageFile={() => Promise.resolve({ ok: true, message: "staged" })}
+          onGitUnstageFile={() => Promise.resolve({ ok: true, message: "unstaged" })}
+          onGitDiscardFile={() => Promise.resolve({ ok: true, message: "discarded" })}
+          onGitApplyHunk={() => Promise.resolve({ ok: true, message: "hunk applied" })}
+          onGitGenerateCommitMessage={() => Promise.resolve({
+            ok: true,
+            message: "Update src/app.ts",
+            source: "staged",
+            files: ["src/app.ts"],
+          })}
+          onGitCommit={() => Promise.resolve({ ok: true, message: "committed" })}
+          onGitPushTarget={() => Promise.resolve({
+            ok: true,
+            currentBranch: "feature-x",
+            remote: "origin",
+            branch: "feature-x",
+            upstream: null,
+            label: "origin/feature-x",
+          })}
+          onGitPush={(cwd, remote, branch) => {
+            pushed = { cwd, remote, branch };
+            return Promise.resolve({ ok: true, message: "pushed" });
+          }}
+        />,
+      );
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const pushButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Push"),
+    ) as HTMLButtonElement | undefined;
+    assert.notEqual(pushButton, undefined);
+    await act(async () => {
+      pushButton?.click();
+    });
+
+    assert.match(confirmMessage, /Push feature-x to origin\/feature-x/);
+    assert.deepEqual(pushed, { cwd: "/repo", remote: "origin", branch: "feature-x" });
+  } finally {
+    dom.window.confirm = originalConfirm;
+    await act(async () => {
+      root.unmount();
+    });
+  }
 });
 
 test("file_tree_renders_git_status_badges_and_deleted_rows", () => {
