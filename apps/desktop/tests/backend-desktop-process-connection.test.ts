@@ -945,6 +945,7 @@ test("live_backend_shutdown_removes_owner_scoped_bootstrap_and_socket_artifacts"
       startMcpSocket: false,
       tideCommand: "/Applications/Tide.app/Contents/MacOS/Tide",
       tideMcpEntrypoint: path.join(root, "backend-entrypoint.js"),
+      preloadProviderCatalog: false,
     });
     const bootstrapParent = path.join(root, "agent-bootstrap");
     const scopeDirs = fs.readdirSync(bootstrapParent);
@@ -1207,20 +1208,26 @@ test("live_backend_restores_persisted_threads_before_thread_list", async () => {
       TIDE_MCP_ENTRYPOINT: path.join(root, "backend-entrypoint.js"),
     },
     startMcpSocket: false,
+    preloadProviderCatalog: false,
   });
 
-  const events = await adapter.handleMessage(commandEnvelope("thread.list", {}));
+  try {
+    const events = await adapter.handleMessage(commandEnvelope("thread.list", {}));
 
-  assert.deepEqual(
-    events.map((event) => event.kind),
-    ["command.accepted", "thread.listed", "command.completed"],
-  );
-  assert.equal(events[1].payload.threads[0]?.threadId, "thread-persisted-live");
-  assert.equal(events[1].payload.threads[0]?.scope.kind, "project");
-  assert.deepEqual(events[1].payload.threads[0]?.launchOptions, {
-    model: "GPT-5.5 High",
-    permission: "workspace-write",
-  });
+    assert.deepEqual(
+      events.map((event) => event.kind),
+      ["command.accepted", "thread.listed", "command.completed"],
+    );
+    assert.equal(events[1].payload.threads[0]?.threadId, "thread-persisted-live");
+    assert.equal(events[1].payload.threads[0]?.scope.kind, "project");
+    assert.deepEqual(events[1].payload.threads[0]?.launchOptions, {
+      model: "GPT-5.5 High",
+      permission: "workspace-write",
+    });
+  } finally {
+    await adapter.shutdown();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("live_backend_rebuilds_thread_blocks_lazily_on_open_not_at_boot", async () => {
@@ -1276,23 +1283,29 @@ test("live_backend_rebuilds_thread_blocks_lazily_on_open_not_at_boot", async () 
       TIDE_MCP_ENTRYPOINT: path.join(root, "backend-entrypoint.js"),
     },
     startMcpSocket: false,
+    preloadProviderCatalog: false,
   });
 
-  // The rail list arrives metadata-first: the thread is present, and thread.listed
-  // never carries blocks (so no transcript parse gated the rail).
-  const listed = await adapter.handleMessage(commandEnvelope("thread.list", {}));
-  const listedEvent = listed.find((event) => event.kind === "thread.listed");
-  assert.equal(listedEvent?.payload.threads[0]?.threadId, "thread-lazy");
+  try {
+    // The rail list arrives metadata-first: the thread is present, and thread.listed
+    // never carries blocks (so no transcript parse gated the rail).
+    const listed = await adapter.handleMessage(commandEnvelope("thread.list", {}));
+    const listedEvent = listed.find((event) => event.kind === "thread.listed");
+    assert.equal(listedEvent?.payload.threads[0]?.threadId, "thread-lazy");
 
-  // Opening the thread rebuilds its conversation from the rollout, lazily.
-  const hydrated = await adapter.handleMessage(
-    commandEnvelope("thread.hydrate", { threadId: "thread-lazy" }),
-  );
-  const hydratedEvent = hydrated.find((event) => event.kind === "thread.hydrated");
-  assert.deepEqual(
-    hydratedEvent?.payload.blocks?.map((block) => block.body),
-    ["Tighten the rail.", "Done."],
-  );
+    // Opening the thread rebuilds its conversation from the rollout, lazily.
+    const hydrated = await adapter.handleMessage(
+      commandEnvelope("thread.hydrate", { threadId: "thread-lazy" }),
+    );
+    const hydratedEvent = hydrated.find((event) => event.kind === "thread.hydrated");
+    assert.deepEqual(
+      hydratedEvent?.payload.blocks?.map((block) => block.body),
+      ["Tighten the rail.", "Done."],
+    );
+  } finally {
+    await adapter.shutdown();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("electron_main_and_preload_expose_backend_event_push_channel", () => {

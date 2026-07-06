@@ -196,6 +196,7 @@ export interface CreateLiveBackendContractMessageAdapterInput {
   backendInstanceId?: string;
   tideCommand?: string;
   tideMcpEntrypoint?: string;
+  preloadProviderCatalog?: boolean;
 }
 
 export function processBoundTideMcpSocketPath(input: {
@@ -487,13 +488,15 @@ export function createLiveBackendContractMessageAdapter(
   // Preload opencode's catalog OUT OF BAND so Thread list delivery is never blocked
   // behind opencode's slower subprocesses. Renderer requests via provider.catalog.get
   // remain the correctness path; this push is only an opportunistic warm update.
-  setImmediate(() => {
-    // Enumerate asynchronously: opencode's CLI spawns can take seconds, and doing them
-    // synchronously here froze the backend event loop — delaying the already-computed
-    // thread.list reply (and so the cold-boot rail skeleton) by ~2.5s. Off the loop, the
-    // catalog simply arrives a moment later without blocking anything.
-    emitOpencodeProviderCatalogChanged();
-  });
+  if (input.preloadProviderCatalog !== false) {
+    setImmediate(() => {
+      // Enumerate asynchronously: opencode's CLI spawns can take seconds, and doing them
+      // synchronously here froze the backend event loop — delaying the already-computed
+      // thread.list reply (and so the cold-boot rail skeleton) by ~2.5s. Off the loop, the
+      // catalog simply arrives a moment later without blocking anything.
+      emitOpencodeProviderCatalogChanged();
+    });
+  }
 
   const persistentAdapter = createPersistentLiveBackendAdapter({
     flushPendingPersists: () => projector.flushPendingPersists(),
