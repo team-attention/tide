@@ -249,22 +249,26 @@ function filteredSearchProviders(
   const filtered =
     normalized.length === 0
       ? providers
-      : providers.filter((provider) =>
-          [
+      : providers.filter((provider) => {
+          const env = provider.env ?? [];
+          return [
             provider.label,
             provider.id,
             provider.detail,
             String(provider.modelCount),
-            ...provider.env,
-          ].some((value) => value.toLowerCase().includes(normalized)),
-        );
-  return filtered.slice(0, 80).map((provider) => ({
-    ...provider,
-    detailForDisplay:
-      provider.env.length > 0
-        ? `${provider.detail} · ${provider.env[0]}`
-        : provider.detail,
-  }));
+            ...env,
+          ].some((value) => value.toLowerCase().includes(normalized));
+        });
+  return filtered.slice(0, 80).map((provider) => {
+    const env = provider.env ?? [];
+    return {
+      ...provider,
+      detailForDisplay:
+        env.length > 0
+          ? `${provider.detail} · ${env[0]}`
+          : provider.detail,
+    };
+  });
 }
 
 function submitLabelForProviderStatus(status: string | undefined): "Connect" | "Reconnect" | "Update" {
