@@ -4341,6 +4341,74 @@ test("opening_browser_returns_pane_snapshot_without_waiting_for_browser_runtime_
   assert.equal(typeof opened === "object" && opened.ok && opened.thread.workbench.panes[0]?.kind, "browser");
 });
 
+test("opening_browser_command_emits_runtime_observation_update_without_blocking", async () => {
+  // Spec: docs_v2/specs/workbench-browser-pane-evidence-loop.md
+  let resolveEnsure: (() => void) | undefined;
+  const browserRuntime: BrowserRuntimePort = {
+    ensure: (input) =>
+      new Promise((resolve) => {
+        resolveEnsure = () =>
+          resolve({
+            ok: true,
+            value: {
+              observation: {
+                url: input.url,
+                title: input.title ?? "Runtime Browser",
+                pageTitle: "Runtime Browser",
+                bodyTextPreview: "Loaded body",
+                interactiveElements: [],
+                loading: false,
+              },
+            },
+          });
+      }),
+    observe: async () => ({
+      ok: false,
+      error: { code: "unavailable", message: "not used" },
+    }),
+    act: async () => ({
+      ok: false,
+      error: { code: "unavailable", message: "not used" },
+    }),
+    close: async () => ({ ok: true, value: undefined }),
+  };
+  const asyncEvents: ThreadRuntimeAsyncEvent[] = [];
+  const service = createThreadRuntimeService({
+    ...createFakes().ports,
+    browserRuntimePort: browserRuntime,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [threadSeed("thread-browser-command")],
+    onAsyncEvent: (event) => {
+      asyncEvents.push(event);
+    },
+  });
+
+  const opened = await service.handleWorkbenchCommand({
+    threadId: "thread-browser-command",
+    command: "open_browser",
+    data: { url: "https://example.test" },
+  });
+
+  assert.equal(opened.ok, true);
+  assert.equal(opened.ok && opened.thread.workbench.panes[0]?.kind, "browser");
+  assert.equal(opened.ok && opened.thread.workbench.panes[0]?.kind === "browser"
+    ? opened.thread.workbench.panes[0].loading
+    : undefined, true);
+  assert.equal(asyncEvents.length, 0);
+
+  resolveEnsure?.();
+  await Promise.resolve();
+  await Promise.resolve();
+
+  const event = asyncEvents.find((candidate) => candidate.kind === "workbench_changed");
+  const pane = event?.kind === "workbench_changed" ? event.thread.workbench.panes[0] : undefined;
+  assert.equal(pane?.kind, "browser");
+  assert.equal(pane?.kind === "browser" ? pane.loading : undefined, false);
+  assert.equal(pane?.kind === "browser" ? pane.pageTitle : undefined, "Runtime Browser");
+  assert.equal(pane?.kind === "browser" ? pane.bodyTextPreview : undefined, "Loaded body");
+});
+
 test("opening_browser_with_launcher_target_consumes_non_active_launcher", async () => {
   // Spec: docs_v2/specs/workbench-launcher-terminal-usability.md
   const service = createThreadRuntimeService({

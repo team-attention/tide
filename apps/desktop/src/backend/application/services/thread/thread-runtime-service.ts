@@ -437,6 +437,7 @@ constructor(input: CreateThreadRuntimeServiceInput) {
       workspaceCommandPort: this.workspaceCommandPort,
       workspaceCodeIntelligencePort: this.workspaceCodeIntelligencePort,
       browserRuntimePort: this.browserRuntimePort,
+      emitAsyncEvent: (event) => this.emitAsyncEvent(event),
     });
     this.workspaceQuery = new WorkspaceQueryHandler({
       workspaceFilePort: this.workspaceFilePort,

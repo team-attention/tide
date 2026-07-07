@@ -17,7 +17,9 @@ import {
 import { cloneFileTreeView } from "../thread/thread-runtime-clone.ts";
 import { snapshotThread, threadRoot } from "../thread/thread-snapshot.ts";
 import type { ThreadStore } from "../thread/thread-store.ts";
+import type { ThreadRuntimeAsyncEvent } from "../thread/thread-runtime-events.ts";
 import {
+  applyBrowserRuntimeObservation,
   openBrowserOutput,
   releaseAgentBrowserControl,
 } from "./workbench-browser-operations.ts";
@@ -62,6 +64,7 @@ export class WorkbenchCommandHandler {
   private readonly workspaceCommandPort: WorkspaceCommandPort;
   private readonly workspaceCodeIntelligencePort: WorkspaceCodeIntelligencePort;
   private readonly browserRuntimePort?: BrowserRuntimePort;
+  private readonly emitAsyncEvent: (event: ThreadRuntimeAsyncEvent) => void;
 
   constructor(deps: WorkbenchCommandHandlerDeps) {
     this.threads = deps.threads;
@@ -75,6 +78,7 @@ export class WorkbenchCommandHandler {
     this.workspaceCommandPort = deps.workspaceCommandPort;
     this.workspaceCodeIntelligencePort = deps.workspaceCodeIntelligencePort;
     this.browserRuntimePort = deps.browserRuntimePort;
+    this.emitAsyncEvent = deps.emitAsyncEvent;
   }
 
   async handleWorkbenchCommand(
@@ -115,14 +119,7 @@ export class WorkbenchCommandHandler {
         if (pane !== undefined) {
           thread.workbench.activePaneId = pane.paneId;
           if (pane.kind === "browser" && this.browserRuntimePort !== undefined) {
-            void this.browserRuntimePort
-              .ensure({
-                threadId: thread.threadId,
-                paneId: pane.paneId,
-                url: pane.url,
-                title: pane.title,
-              })
-              .catch(() => {});
+            this.ensureBrowserRuntimeInBackground(thread.threadId, pane.paneId, pane.revision);
           }
         }
         removeLauncherPane(thread, launcherToReplace);
@@ -724,5 +721,60 @@ export class WorkbenchCommandHandler {
           "Workbench command is not supported.",
         );
     }
+  }
+
+  private ensureBrowserRuntimeInBackground(
+    threadId: string,
+    paneId: string,
+    expectedRevision: string,
+  ): void {
+    const browserRuntimePort = this.browserRuntimePort;
+    if (browserRuntimePort === undefined) {
+      return;
+    }
+    const thread = this.threads.get(threadId);
+    const pane = thread === undefined ? undefined : workbenchPaneById(thread.workbench, paneId);
+    if (thread === undefined || pane === undefined || pane.kind !== "browser") {
+      return;
+    }
+
+    void browserRuntimePort
+      .ensure({
+        threadId,
+        paneId,
+        url: pane.url,
+        title: pane.title,
+      })
+      .then((ensured) => {
+        const currentThread = this.threads.get(threadId);
+        const currentPane =
+          currentThread === undefined ? undefined : workbenchPaneById(currentThread.workbench, paneId);
+        if (
+          currentThread === undefined ||
+          currentPane === undefined ||
+          currentPane.kind !== "browser" ||
+          currentPane.revision !== expectedRevision
+        ) {
+          return;
+        }
+
+        const observedAt = this.clock();
+        if (ensured.ok) {
+          applyBrowserRuntimeObservation(currentPane, ensured.value.observation, {
+            idGenerator: this.idGenerator,
+            observedAt,
+            remint: "on_url_change",
+          });
+        } else {
+          currentPane.loading = false;
+          currentPane.updatedAt = observedAt;
+        }
+        currentThread.updatedAt = observedAt;
+        this.emitAsyncEvent({
+          kind: "workbench_changed",
+          thread: snapshotThread(currentThread),
+        });
+      })
+      .catch(() => {});
   }
 }

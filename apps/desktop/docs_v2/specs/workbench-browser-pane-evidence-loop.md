@@ -9,6 +9,7 @@ It covers:
 
 - A `workbench.command` named `update_browser_snapshot`.
 - Desktop emitting a Browser Pane snapshot after the Electron WebView loads.
+- BrowserRuntime returning post-load observation for `open_browser` commands.
 - Backend validating Browser Pane ownership and revision before storing page
   title, URL, loading state, and bounded body text preview.
 - `tide_observe_browser` returning the latest stored Browser Pane evidence.
@@ -47,6 +48,14 @@ snapshot writes so a late WebView load cannot overwrite a newer navigation.
 The first loop stores page title, URL, loading state, and bounded body text
 preview. Full page maps and action targets need a later Browser automation
 spec.
+
+### D4. Runtime observation clears command-open loading
+
+`open_browser` commands must return immediately so the Workbench pane becomes
+visible without waiting for Electron BrowserRuntime. The follow-up
+BrowserRuntime `ensure` still has to write its observation back through an async
+`workbench_changed` event. If the pane revision changed while the ensure was in
+flight, the observation is stale and must be dropped.
 
 ## Contracts
 
@@ -87,6 +96,14 @@ No new BackendCommand kind is required. Use `workbench.command`:
 3. Backend returns `workbench_stale_reference`.
 4. The newer Browser Pane evidence stays unchanged.
 
+### UC-3: Command-open BrowserRuntime observation settles loading
+
+1. User opens a Browser Pane from Workbench.
+2. Backend returns the Browser Pane snapshot immediately with `loading:true`.
+3. BrowserRuntime finishes `ensure` in the background.
+4. Backend applies the observation only if the pane still has the same revision.
+5. Backend emits async `workbench_changed` so Desktop receives `loading:false`.
+
 ## Invariants
 
 1. Desktop does not expose Browser evidence directly to MCP.
@@ -94,6 +111,8 @@ No new BackendCommand kind is required. Use `workbench.command`:
 3. Snapshot update must not create a new Browser Pane.
 4. Stale snapshots cannot overwrite newer Browser Pane state.
 5. Body text preview is bounded.
+6. A BrowserRuntime observation for a command-open Browser Pane must not leave
+   the pane in `loading:true` forever.
 
 ## Tests
 
@@ -102,6 +121,7 @@ No new BackendCommand kind is required. Use `workbench.command`:
 | Backend stores Browser evidence | `browser_snapshot_command_updates_observable_browser_preview` |
 | Stale snapshot is rejected | `browser_snapshot_with_stale_revision_does_not_mutate_browser_pane` |
 | Product Shell emits snapshot command | `product_shell_browser_webview_snapshot_emits_update_command` |
+| Command-open BrowserRuntime observation settles loading | `opening_browser_command_emits_runtime_observation_update_without_blocking` |
 
 ## Implementation Notes
 

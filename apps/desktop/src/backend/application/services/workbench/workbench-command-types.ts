@@ -8,6 +8,7 @@ import type { WorkspaceCommandPort } from "../../ports/outbound/workspace-comman
 import type { WorkspaceFilePort } from "../../ports/outbound/workspace-file-port.ts";
 import type { BrowserRuntimePort } from "../../ports/outbound/browser-runtime-port.ts";
 import type { ThreadStore } from "../thread/thread-store.ts";
+import type { ThreadRuntimeAsyncEvent } from "../thread/thread-runtime-events.ts";
 import type { WorkbenchFileOperations } from "./workbench-file-operations.ts";
 import type { WorkbenchRuntime } from "./workbench-runtime.ts";
 
@@ -36,4 +37,5 @@ export interface WorkbenchCommandHandlerDeps {
   workspaceCommandPort: WorkspaceCommandPort;
   workspaceCodeIntelligencePort: WorkspaceCodeIntelligencePort;
   browserRuntimePort?: BrowserRuntimePort;
+  emitAsyncEvent: (event: ThreadRuntimeAsyncEvent) => void;
 }
