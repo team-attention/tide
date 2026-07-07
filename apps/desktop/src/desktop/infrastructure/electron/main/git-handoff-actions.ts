@@ -79,6 +79,19 @@ export async function commitGitChanges(input: { cwd: unknown; message: unknown }
   return gitActionMessage(result, "Committed changes.");
 }
 
+export async function amendGitChanges(input: { cwd: unknown; message: unknown }): Promise<GitActionResult> {
+  const root = await gitActionRoot(input.cwd);
+  const commitMessage = typeof input.message === "string" ? input.message.trim() : "";
+  if (root === null) {
+    return invalidGitAction;
+  }
+  const args = commitMessage.length > 0
+    ? ["-C", root, "commit", "--amend", "-m", commitMessage]
+    : ["-C", root, "commit", "--amend", "--no-edit"];
+  const result = await execGitArgs(args);
+  return gitActionMessage(result, "Amended last commit.");
+}
+
 export async function generateGitCommitMessage(cwd: unknown): Promise<GitGeneratedCommitMessageResult> {
   const root = await gitActionRoot(cwd);
   if (root === null) {
@@ -159,6 +172,25 @@ export async function pushGitTarget(input: {
   return gitActionMessage(result, fallback);
 }
 
+export async function createGitPullRequest(cwd: unknown): Promise<GitActionResult> {
+  const root = await gitActionRoot(cwd);
+  if (root === null) {
+    return invalidGitAction;
+  }
+  const currentBranch = (await runGit(root, ["branch", "--show-current"])).trim();
+  if (currentBranch.length === 0) {
+    return { ok: false, message: "Cannot create a pull request from detached HEAD." };
+  }
+  const result = await execGhArgs(root, ["pr", "create", "--fill"]);
+  if (result.ok) {
+    return { ok: true, message: gitPullRequestCreatedMessage(result.stdout) };
+  }
+  return {
+    ok: false,
+    message: result.stderr.trim() || "GitHub CLI failed. Install and authenticate gh to create a pull request.",
+  };
+}
+
 async function gitActionRoot(cwd: unknown): Promise<string | null> {
   if (typeof cwd !== "string" || cwd.length === 0) {
     return null;
@@ -183,6 +215,23 @@ function execGitArgs(args: string[]): Promise<{ ok: boolean; stdout: string; std
     execFile("git", args, { maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
       resolve({ ok: !error, stdout: stdout ?? "", stderr: stderr ?? "" });
     });
+  });
+}
+
+function execGhArgs(cwd: string, args: string[]): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    execFile(
+      "gh",
+      args,
+      {
+        cwd,
+        env: { ...process.env, GH_PROMPT_DISABLED: "1" },
+        maxBuffer: 4 * 1024 * 1024,
+      },
+      (error, stdout, stderr) => {
+        resolve({ ok: !error, stdout: stdout ?? "", stderr: stderr ?? "" });
+      },
+    );
   });
 }
 
@@ -273,6 +322,13 @@ function commitVerb(status: string): "Add" | "Remove" | "Rename" | "Update" {
 
 function commitMessagePath(path: string): string {
   return path.length <= 48 ? path : basename(path);
+}
+
+export function gitPullRequestCreatedMessage(stdout: string): string {
+  const url = stdout
+    .split(/\s+/)
+    .find((part) => /^https:\/\/[^/]+\/.+\/pull\/\d+/.test(part));
+  return url === undefined ? "Created pull request." : `Created pull request: ${url}`;
 }
 
 function parseUpstream(upstream: string): { remote: string; branch: string } | null {

@@ -81,8 +81,10 @@ export function createInitialRendererElement() {
                 window.tide!.gitApplyHunk(cwd, relPath, patch, action),
               gitGenerateCommitMessage: (cwd: string) => window.tide!.gitGenerateCommitMessage(cwd),
               gitCommit: (cwd: string, message: string) => window.tide!.gitCommit(cwd, message),
+              gitAmend: (cwd: string, message: string) => window.tide!.gitAmend(cwd, message),
               gitPushTarget: (cwd: string) => window.tide!.gitPushTarget(cwd),
               gitPush: (cwd: string, remote: string, branch: string) => window.tide!.gitPush(cwd, remote, branch),
+              gitCreatePullRequest: (cwd: string) => window.tide!.gitCreatePullRequest(cwd),
               runReview: (cwd, provider, target) => window.tide!.runReview(cwd, provider, target),
               listCommands: (cwd: string, agentId: string) => window.tide!.listCommands(cwd, agentId),
               fsCreateFile: (root: string, relativePath: string, content: string) =>
@@ -203,6 +205,7 @@ declare global {
         | { ok: false; message: string }
       >;
       gitCommit(cwd: string, message: string): Promise<{ ok: boolean; message: string }>;
+      gitAmend(cwd: string, message: string): Promise<{ ok: boolean; message: string }>;
       gitPushTarget(cwd: string): Promise<
         | {
             ok: true;
@@ -215,6 +218,7 @@ declare global {
         | { ok: false; message: string }
       >;
       gitPush(cwd: string, remote: string, branch: string): Promise<{ ok: boolean; message: string }>;
+      gitCreatePullRequest(cwd: string): Promise<{ ok: boolean; message: string }>;
       runReview(
         cwd: string,
         provider: "codex" | "claude" | "opencode",

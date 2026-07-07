@@ -3,7 +3,7 @@ import type { MenuAnchorRect, ProductShellHandlers } from "../support/types.ts";
 import { useState } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { styled } from "styled-components";
-import { Activity, Columns2, FolderOpen, Maximize2, Minimize2, MoreHorizontal, PanelRightClose, PanelRightOpen, Plus, Square } from "lucide-react";
+import { Columns2, FolderOpen, Maximize2, Minimize2, MoreHorizontal, PanelRightClose, PanelRightOpen, Plus, Square } from "lucide-react";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
 // Fixed top-right window controls. The right group is the window-level Workbench/FileTree
@@ -85,12 +85,6 @@ export function createWindowChromeToggles(
         </>
       ) : null}
       {toggle(
-        viewModel.agentMonitorOpen ? "Close Agent Monitor" : "Open Agent Monitor",
-        <Activity size={15} strokeWidth={1.9} />,
-        viewModel.agentMonitorOpen || viewModel.agentMonitorSessions.length > 0,
-        handlers.onAgentMonitorToggle,
-      )}
-      {toggle(
         viewModel.workbenchOpen ? "Close Workbench" : "Open Workbench",
         viewModel.workbenchOpen ? (
           <PanelRightClose size={15} strokeWidth={1.9} />
@@ -170,11 +164,6 @@ function WorkbenchControlsMenu(props: {
             {/* In the fully-collapsed (narrow split) cluster the panel toggles live here
                 too, so closing the Workbench / toggling the FileTree stays reachable. */}
             <WorkbenchControlsSeparator aria-hidden />
-            {action(
-              viewModel.agentMonitorOpen ? "Close Agent Monitor" : "Open Agent Monitor",
-              <Activity size={15} strokeWidth={1.9} />,
-              handlers.onAgentMonitorToggle,
-            )}
             {action(
               viewModel.workbenchOpen ? "Close Workbench" : "Open Workbench",
               viewModel.workbenchOpen ? (

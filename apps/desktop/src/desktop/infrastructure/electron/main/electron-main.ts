@@ -15,7 +15,9 @@ import { registerBrowserRuntimeIpc } from "./browser-runtime-ipc.ts";
 import { runProviderReview } from "./review-runner.ts";
 import { applyGitHunk } from "./git-hunk-actions.ts";
 import {
+  amendGitChanges,
   commitGitChanges,
+  createGitPullRequest,
   discardGitFile,
   generateGitCommitMessage,
   getGitPushTarget,
@@ -467,12 +469,20 @@ ipcMain.handle("tide:git-commit", async (_event, cwd: unknown, message: unknown)
   commitGitChanges({ cwd, message }),
 );
 
+ipcMain.handle("tide:git-amend", async (_event, cwd: unknown, message: unknown): Promise<GitActionResult> =>
+  amendGitChanges({ cwd, message }),
+);
+
 ipcMain.handle("tide:git-push-target", async (_event, cwd: unknown) => getGitPushTarget(cwd));
 
 ipcMain.handle(
   "tide:git-push",
   async (_event, cwd: unknown, remote: unknown, branch: unknown): Promise<GitActionResult> =>
     pushGitTarget({ cwd, remote, branch }),
+);
+
+ipcMain.handle("tide:git-create-pull-request", async (_event, cwd: unknown): Promise<GitActionResult> =>
+  createGitPullRequest(cwd),
 );
 
 ipcMain.handle("tide:run-review", async (_event, cwd: unknown, provider: unknown, target: unknown) =>

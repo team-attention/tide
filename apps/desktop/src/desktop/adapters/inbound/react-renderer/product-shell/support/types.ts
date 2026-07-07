@@ -1,5 +1,5 @@
 import type { AgentChatBackendEvent, AgentChatChoiceSurfaceView, AgentChatCommandOption, AgentChatComposerSurfaceKind, AgentChatPromptStepAnswer, AgentChatThreadSummary } from "../../../../../application/domains/agent-chat/agent-chat.ts";
-import type { DropZone, ProductShellAgentMonitorPromptChoice, ProductShellBackendCommand, ProductShellFileTreeMenu, ProductShellLeftRailMenu, ProductShellListSettings, ProductShellState, ProductShellWorktreeSettings, ReviewFinding } from "../../../../../application/domains/product-shell/product-shell.ts";
+import type { DropZone, ProductShellBackendCommand, ProductShellFileTreeMenu, ProductShellLeftRailMenu, ProductShellListSettings, ProductShellState, ProductShellWorktreeSettings, ReviewFinding } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { TideThemePreference } from "../../support/theme.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 
@@ -149,8 +149,10 @@ export interface ProjectRegistryBridge {
   gitApplyHunk(cwd: string, relPath: string, patch: string, action: GitHunkAction): Promise<GitActionResult>;
   gitGenerateCommitMessage(cwd: string): Promise<GitGeneratedCommitMessageResult>;
   gitCommit(cwd: string, message: string): Promise<GitActionResult>;
+  gitAmend(cwd: string, message: string): Promise<GitActionResult>;
   gitPushTarget(cwd: string): Promise<GitPushTargetResult>;
   gitPush(cwd: string, remote: string, branch: string): Promise<GitActionResult>;
+  gitCreatePullRequest(cwd: string): Promise<GitActionResult>;
   runReview(cwd: string, provider: ReviewProvider, target: ReviewTarget): Promise<ReviewRunResult>;
   listCommands(cwd: string, agentId: string): Promise<AgentChatCommandOption[]>;
   // Structural FileTree mutations (Main-owned). `root` is the absolute workspace
@@ -213,11 +215,6 @@ export interface ProductShellHandlers {
   onRemoveContextChip: (id: string) => void;
   onSetContextChipComment: (id: string, comment: string) => void;
   onAnswerPromptText: (value: string, notes?: string) => void;
-  onAnswerMonitorPromptChoice: (
-    threadId: string,
-    promptId: string,
-    choice: ProductShellAgentMonitorPromptChoice,
-  ) => void;
   // Submit a multi-step prompt (wizard): one answer per step, all at once.
   onAnswerPromptSteps: (stepAnswers: AgentChatPromptStepAnswer[]) => void;
   onSubmit: () => void;
@@ -274,8 +271,10 @@ export interface ProductShellHandlers {
   onGitApplyHunk: (cwd: string, relPath: string, patch: string, action: GitHunkAction) => Promise<GitActionResult>;
   onGitGenerateCommitMessage: (cwd: string) => Promise<GitGeneratedCommitMessageResult>;
   onGitCommit: (cwd: string, message: string) => Promise<GitActionResult>;
+  onGitAmend: (cwd: string, message: string) => Promise<GitActionResult>;
   onGitPushTarget: (cwd: string) => Promise<GitPushTargetResult>;
   onGitPush: (cwd: string, remote: string, branch: string) => Promise<GitActionResult>;
+  onGitCreatePullRequest: (cwd: string) => Promise<GitActionResult>;
   onRunReview: (cwd: string, provider: ReviewProvider, target: ReviewTarget) => Promise<ReviewRunResult>;
   onLoadWorkbenchImage: (cwd: string, relativePath: string) => Promise<WorkbenchImageLoadResult | null>;
   onEditorPickerFilter: (filter: string) => void;
@@ -306,7 +305,6 @@ export interface ProductShellHandlers {
   onProjectCreateWorktreeCancel: () => void;
   onOpenSettings: () => void;
   onCloseSettings: () => void;
-  onAgentMonitorToggle: () => void;
   onWorktreeSettingsChange: (patch: Partial<ProductShellWorktreeSettings>) => void;
   onThemeChange: (pref: TideThemePreference) => void;
   onPinnedProjectSelect: (projectId: string) => void;
