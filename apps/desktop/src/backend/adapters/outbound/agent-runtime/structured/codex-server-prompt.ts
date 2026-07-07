@@ -4,6 +4,18 @@ import { bounded, isRecord, stringField } from "./codex-app-server-shared.ts";
 export const CODEX_ACCEPT_TOKEN = "structured:accept";
 export const CODEX_DECLINE_TOKEN = "structured:decline";
 const CODEX_OPTION_PREFIX = "structured:codex-option:";
+const CODEX_MCP_ACTION_ACCEPT = "accept";
+const CODEX_MCP_ACTION_DECLINE = "decline";
+const CODEX_MCP_ACTION_CANCEL = "cancel";
+const CODEX_MCP_APPROVAL_KIND_KEY = "codex_approval_kind";
+const CODEX_MCP_APPROVAL_KIND_TOOL_CALL = "mcp_tool_call";
+const CODEX_MCP_PERSIST_KEY = "persist";
+const CODEX_MCP_PERSIST_SESSION = "session";
+const CODEX_MCP_PERSIST_ALWAYS = "always";
+const CODEX_MCP_TOOL_ALLOW = "Allow";
+const CODEX_MCP_TOOL_ALLOW_SESSION = "Allow for this session";
+const CODEX_MCP_TOOL_ALLOW_ALWAYS = "Allow and don't ask me again";
+const CODEX_MCP_TOOL_CANCEL = "Cancel";
 // "Allow for this session": codex's native session-scoped approval - the same command/files
 // are not re-prompted for the rest of the session (decision: "acceptForSession").
 // See docs_v2/specs/codex-permission-allow-for-session.md.
@@ -28,13 +40,12 @@ export function codexServerPromptResult(
 ): Record<string, unknown> {
   const value = typeof input === "string" ? input : input.value;
   if (pending.kind === "mcp_elicitation") {
-    const action = value === CODEX_ACCEPT_TOKEN || value === CODEX_ACCEPT_FOR_SESSION_TOKEN
-      ? "accept"
-      : "decline";
+    const action = codexMcpElicitationAction(value);
+    const meta = codexMcpElicitationResponseMeta(value);
     return {
       action,
       content: action === "accept" ? pending.acceptContent : null,
-      _meta: null,
+      _meta: meta,
     };
   }
   if (pending.kind === "request_user_input") {
@@ -137,6 +148,7 @@ export function codexMcpElicitationPrompt(input: {
 }): { promptState: PromptState; pending: PendingServerPrompt } {
   const promptId = `codex-mcp-elicit-${String(input.serverRequestId)}`;
   const mode = stringField(input.params, "mode");
+  const meta = isRecord(input.params._meta) ? input.params._meta : undefined;
   const detail = mcpElicitationDetail(input.params);
   return {
     pending: {
@@ -152,11 +164,8 @@ export function codexMcpElicitationPrompt(input: {
       message: stringField(input.params, "message") ?? "Allow MCP request",
       ...(detail !== undefined ? { detail } : {}),
       ...(input.nativeIds !== undefined ? { nativeIds: input.nativeIds } : {}),
-      choices: [
-        { choiceId: "allow", label: "Allow", providerValue: CODEX_ACCEPT_TOKEN },
-        { choiceId: "deny", label: "Deny", providerValue: CODEX_DECLINE_TOKEN },
-      ],
-      defaultChoiceId: "allow",
+      choices: codexMcpElicitationChoices(meta),
+      defaultChoiceId: "accept",
       source: "provider_hook",
     },
   };
@@ -217,13 +226,17 @@ function mcpElicitationDetail(params: Record<string, unknown>): PromptDetail | u
   if (serverName !== undefined) {
     lines.push(`server: ${serverName}`);
   }
+  const connectorName = meta !== undefined ? stringField(meta, "connector_name") : undefined;
+  if (connectorName !== undefined) {
+    lines.push(`connector: ${connectorName}`);
+  }
   const toolTitle = meta !== undefined
     ? stringField(meta, "tool_title") ?? stringField(meta, "tool_name") ?? stringField(meta, "tool")
     : undefined;
   if (toolTitle !== undefined) {
     lines.push(`tool: ${toolTitle}`);
   }
-  const toolArguments = meta !== undefined ? meta.tool_arguments : undefined;
+  const toolArguments = meta !== undefined ? meta.tool_params ?? meta.tool_arguments : undefined;
   if (toolArguments !== undefined) {
     lines.push(`arguments: ${bounded(jsonDetail(toolArguments))}`);
   }
@@ -231,6 +244,73 @@ function mcpElicitationDetail(params: Record<string, unknown>): PromptDetail | u
     return undefined;
   }
   return { format: "text", body: lines.join("\n") };
+}
+
+function codexMcpElicitationChoices(meta: Record<string, unknown> | undefined): PromptChoice[] {
+  if (meta !== undefined && stringField(meta, CODEX_MCP_APPROVAL_KIND_KEY) === CODEX_MCP_APPROVAL_KIND_TOOL_CALL) {
+    const persist = codexMcpPersistOptions(meta);
+    return [
+      { choiceId: "accept", label: CODEX_MCP_TOOL_ALLOW, providerValue: CODEX_MCP_TOOL_ALLOW },
+      ...(persist.session
+        ? [{
+          choiceId: "accept_session",
+          label: CODEX_MCP_TOOL_ALLOW_SESSION,
+          providerValue: CODEX_MCP_TOOL_ALLOW_SESSION,
+          description: "Run the tool and remember this choice for this session.",
+          kind: "allow_always" as const,
+        }]
+        : []),
+      ...(persist.always
+        ? [{
+          choiceId: "accept_always",
+          label: CODEX_MCP_TOOL_ALLOW_ALWAYS,
+          providerValue: CODEX_MCP_TOOL_ALLOW_ALWAYS,
+          description: "Run the tool and remember this choice for future tool calls.",
+          kind: "allow_always" as const,
+        }]
+        : []),
+      { choiceId: "cancel", label: CODEX_MCP_TOOL_CANCEL, providerValue: CODEX_MCP_TOOL_CANCEL },
+    ];
+  }
+  return [
+    { choiceId: "accept", label: "Accept", providerValue: CODEX_MCP_ACTION_ACCEPT },
+    { choiceId: "decline", label: "Decline", providerValue: CODEX_MCP_ACTION_DECLINE },
+    { choiceId: "cancel", label: "Cancel", providerValue: CODEX_MCP_ACTION_CANCEL },
+  ];
+}
+
+function codexMcpElicitationAction(value: string): string {
+  if (
+    value === CODEX_MCP_ACTION_ACCEPT ||
+    value === CODEX_MCP_TOOL_ALLOW ||
+    value === CODEX_MCP_TOOL_ALLOW_SESSION ||
+    value === CODEX_MCP_TOOL_ALLOW_ALWAYS
+  ) {
+    return CODEX_MCP_ACTION_ACCEPT;
+  }
+  if (value === CODEX_MCP_ACTION_CANCEL || value === CODEX_MCP_TOOL_CANCEL) {
+    return CODEX_MCP_ACTION_CANCEL;
+  }
+  return CODEX_MCP_ACTION_DECLINE;
+}
+
+function codexMcpElicitationResponseMeta(value: string): Record<string, string> | null {
+  if (value === CODEX_MCP_TOOL_ALLOW_SESSION) {
+    return { [CODEX_MCP_PERSIST_KEY]: CODEX_MCP_PERSIST_SESSION };
+  }
+  if (value === CODEX_MCP_TOOL_ALLOW_ALWAYS) {
+    return { [CODEX_MCP_PERSIST_KEY]: CODEX_MCP_PERSIST_ALWAYS };
+  }
+  return null;
+}
+
+function codexMcpPersistOptions(meta: Record<string, unknown> | undefined): { session: boolean; always: boolean } {
+  const value = meta?.[CODEX_MCP_PERSIST_KEY];
+  const values = Array.isArray(value) ? value : [value];
+  return {
+    session: values.includes(CODEX_MCP_PERSIST_SESSION),
+    always: values.includes(CODEX_MCP_PERSIST_ALWAYS),
+  };
 }
 
 function jsonDetail(value: unknown): string {

@@ -7,7 +7,6 @@ import type {
 import {
   createLocalUserMessageBlock,
 } from "../../domains/agent-session/agent-session-block.ts";
-
 import type {
   RawAgentFrame,
   RawAgentFramePayloadKind,

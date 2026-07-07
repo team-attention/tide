@@ -51,13 +51,32 @@ const MCP_ELICITATION = {
   message: 'Allow Notion to run tool "notion.notion-update-page"?',
   _meta: {
     codex_approval_kind: "mcp_tool_call",
+    codex_request_type: "approval_request",
     tool_title: "notion-update-page",
-    tool_arguments: {
+    tool_name: "notion.notion-update-page",
+    connector_id: "notion",
+    connector_name: "Notion",
+    tool_params: {
       page_id: "page-1",
       command: "update_properties",
       properties: { Status: "Waiting" },
     },
   },
+  requestedSchema: { type: "object", properties: {} },
+};
+const MCP_ELICITATION_WITH_PERSIST = {
+  ...MCP_ELICITATION,
+  _meta: {
+    ...MCP_ELICITATION._meta,
+    persist: ["session", "always"],
+  },
+};
+const MCP_GENERIC_ELICITATION = {
+  threadId: "codex-thread-1",
+  turnId: "codex-turn-1",
+  serverName: "codex_apps",
+  mode: "form",
+  message: "Continue with this MCP request?",
   requestedSchema: { type: "object", properties: {} },
 };
 
@@ -235,7 +254,7 @@ test("Skip (empty answer) on a codex approval DECLINES — never silently accept
   }
 });
 
-test("codex MCP elicitation surfaces an approval prompt and Allow sends action accept", async () => {
+test("codex MCP tool approval uses native choices and Allow sends action accept", async () => {
   const dir = mkdtempSync(join(tmpdir(), "tide-codex-mcp-elicit-"));
   const receivedFile = join(dir, "received.jsonl");
   const { events, onEvent } = promptCollector();
@@ -245,20 +264,109 @@ test("codex MCP elicitation surfaces an approval prompt and Allow sends action a
     assert.equal(prompt.kind, "approval");
     assert.equal(prompt.message, 'Allow Notion to run tool "notion.notion-update-page"?');
     assert.equal(prompt.choices?.length, 2);
-    assert.equal(prompt.choices?.[0]?.choiceId, "allow");
-    assert.equal(prompt.choices?.[1]?.choiceId, "deny");
+    assert.deepEqual(
+      prompt.choices?.map((choice) => [choice.choiceId, choice.label, choice.providerValue]),
+      [
+        ["accept", "Allow", "Allow"],
+        ["cancel", "Cancel", "Cancel"],
+      ],
+    );
     assert.equal(prompt.detail?.format, "text");
     assert.match(prompt.detail?.body ?? "", /server: codex_apps/);
+    assert.match(prompt.detail?.body ?? "", /connector: Notion/);
     assert.match(prompt.detail?.body ?? "", /tool: notion-update-page/);
     assert.match(prompt.detail?.body ?? "", /"Status": "Waiting"/);
+    assert.deepEqual(prompt.nativeIds, {
+      connectorId: "notion",
+      toolName: "notion.notion-update-page",
+    });
 
-    const allow = prompt.choices?.find((choice) => choice.choiceId === "allow");
+    const allow = prompt.choices?.find((choice) => choice.choiceId === "accept");
     await client.write({ kind: "prompt_answer", promptId: prompt.promptId, value: allow?.providerValue ?? "" });
     const result = await waitFor(() => resultFromResponse(receivedFile), "MCP elicitation response");
     assert.deepEqual(result, {
       action: "accept",
       content: {},
       _meta: null,
+    });
+  } finally {
+    await client.stop();
+  }
+});
+
+test("codex generic MCP elicitation shows readable labels but sends protocol actions", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-codex-mcp-elicit-"));
+  const receivedFile = join(dir, "received.jsonl");
+  const { events, onEvent } = promptCollector();
+  const client = makeClient(fakeApprovalPlan(receivedFile, "mcpServer/elicitation/request", MCP_GENERIC_ELICITATION), onEvent);
+  try {
+    const prompt = await waitFor(() => events[0], "MCP elicitation prompt");
+    assert.deepEqual(
+      prompt.choices?.map((choice) => [choice.choiceId, choice.label, choice.providerValue]),
+      [
+        ["accept", "Accept", "accept"],
+        ["decline", "Decline", "decline"],
+        ["cancel", "Cancel", "cancel"],
+      ],
+    );
+
+    const decline = prompt.choices?.find((choice) => choice.choiceId === "decline");
+    await client.write({ kind: "prompt_answer", promptId: prompt.promptId, value: decline?.providerValue ?? "" });
+    const result = await waitFor(() => resultFromResponse(receivedFile), "MCP elicitation response");
+    assert.deepEqual(result, {
+      action: "decline",
+      content: null,
+      _meta: null,
+    });
+  } finally {
+    await client.stop();
+  }
+});
+
+test("codex MCP tool approval only offers session/persistent choices when Codex advertises persist", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-codex-mcp-elicit-"));
+  const receivedFile = join(dir, "received.jsonl");
+  const { events, onEvent } = promptCollector();
+  const client = makeClient(fakeApprovalPlan(receivedFile, "mcpServer/elicitation/request", MCP_ELICITATION_WITH_PERSIST), onEvent);
+  try {
+    const prompt = await waitFor(() => events[0], "MCP elicitation prompt");
+    assert.deepEqual(
+      prompt.choices?.map((choice) => [choice.choiceId, choice.label, choice.providerValue]),
+      [
+        ["accept", "Allow", "Allow"],
+        ["accept_session", "Allow for this session", "Allow for this session"],
+        ["accept_always", "Allow and don't ask me again", "Allow and don't ask me again"],
+        ["cancel", "Cancel", "Cancel"],
+      ],
+    );
+
+    const always = prompt.choices?.find((choice) => choice.choiceId === "accept_always");
+    await client.write({ kind: "prompt_answer", promptId: prompt.promptId, value: always?.providerValue ?? "" });
+    const result = await waitFor(() => resultFromResponse(receivedFile), "MCP elicitation response");
+    assert.deepEqual(result, {
+      action: "accept",
+      content: {},
+      _meta: { persist: "always" },
+    });
+  } finally {
+    await client.stop();
+  }
+});
+
+test("codex MCP tool approval session choice returns Codex persist session metadata", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-codex-mcp-elicit-"));
+  const receivedFile = join(dir, "received.jsonl");
+  const { events, onEvent } = promptCollector();
+  const client = makeClient(fakeApprovalPlan(receivedFile, "mcpServer/elicitation/request", MCP_ELICITATION_WITH_PERSIST), onEvent);
+  try {
+    const prompt = await waitFor(() => events[0], "MCP elicitation prompt");
+    const session = prompt.choices?.find((choice) => choice.choiceId === "accept_session");
+    await client.write({ kind: "prompt_answer", promptId: prompt.promptId, value: session?.providerValue ?? "" });
+    const result = await waitFor(() => resultFromResponse(receivedFile), "MCP elicitation response");
+    assert.deepEqual(result, {
+      action: "accept",
+      content: {},
+      _meta: { persist: "session" },
     });
   } finally {
     await client.stop();

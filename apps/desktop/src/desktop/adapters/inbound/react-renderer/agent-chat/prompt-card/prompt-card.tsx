@@ -103,6 +103,7 @@ function SinglePromptCard(props: {
 }): ReactElement {
   const choices = props.prompt.choices ?? [];
   const hasChoices = choices.length > 0;
+  const allowOther = props.prompt.kind === "choice" || props.prompt.kind === "question";
   // A multi-select question (e.g. claude AskUserQuestion multiSelect): the user toggles
   // several options and submits them together, instead of one pick finalizing.
   const multiSelect = props.prompt.multiSelect === true && hasChoices;
@@ -110,7 +111,7 @@ function SinglePromptCard(props: {
     props.prompt.defaultChoiceId ?? null,
   );
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  const [otherActive, setOtherActive] = useState(!hasChoices && !multiSelect);
+  const [otherActive, setOtherActive] = useState(allowOther && !hasChoices && !multiSelect);
   const [otherText, setOtherText] = useState("");
   // AskUserQuestion (kind:"choice") is the only prompt with a per-answer note channel
   // (claude annotations). Approval/permission cards have no native notes sink → no field.
@@ -183,7 +184,7 @@ function SinglePromptCard(props: {
         const digit = /^Digit([1-9])$/.exec(event.code);
         if (digit !== null) {
           const choiceIds = choices.map((choice) => choice.choiceId);
-          const ids = multiSelect ? choiceIds : [...choiceIds, ...(hasChoices ? ["__other"] : [])];
+          const ids = multiSelect ? choiceIds : [...choiceIds, ...(allowOther && hasChoices ? ["__other"] : [])];
           const target = ids[Number(digit[1]) - 1];
           if (target !== undefined) {
             event.preventDefault();
@@ -207,7 +208,7 @@ function SinglePromptCard(props: {
       const inEditable =
         target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement;
       if (!multiSelect && (event.key === "ArrowDown" || event.key === "ArrowUp") && !inEditable) {
-        const ids = [...choices.map((choice) => choice.choiceId), ...(hasChoices ? ["__other"] : [])];
+        const ids = [...choices.map((choice) => choice.choiceId), ...(allowOther && hasChoices ? ["__other"] : [])];
         if (ids.length === 0) {
           return;
         }
@@ -235,7 +236,7 @@ function SinglePromptCard(props: {
     // `notes` is read by submit() (it rides on an AskUserQuestion answer), so it must be a
     // dependency — otherwise the ⌘Enter listener keeps a stale closure and a note typed
     // before ⌘Enter is dropped. (`otherText` is here for the same reason.)
-  }, [choices, hasChoices, multiSelect, otherActive, selectedId, selectedIds, otherText, notes, props]);
+  }, [choices, hasChoices, allowOther, multiSelect, otherActive, selectedId, selectedIds, otherText, notes, props]);
   const kindLabel =
     props.prompt.kind === "approval"
       ? "Approval needed"
@@ -267,6 +268,7 @@ function SinglePromptCard(props: {
           otherActive,
           otherText,
           hasChoices,
+          allowOther,
           onPickChoice: (choiceId) => {
             setOtherActive(false);
             setSelectedId(choiceId);
@@ -492,6 +494,7 @@ function WizardPromptCard(props: {
           otherActive: answer.otherActive,
           otherText: answer.otherText,
           hasChoices,
+          allowOther: true,
           onPickChoice: (choiceId) =>
             setCurrent((prev) => ({ ...prev, otherActive: false, selectedId: choiceId })),
           onToggleMulti: (choiceId) =>
@@ -552,6 +555,7 @@ function renderOptions(input: {
   otherActive: boolean;
   otherText: string;
   hasChoices: boolean;
+  allowOther: boolean;
   onPickChoice: (choiceId: string) => void;
   onToggleMulti: (choiceId: string) => void;
   onPickOther: () => void;
@@ -617,7 +621,7 @@ function renderOptions(input: {
           index < 9 ? index + 1 : undefined,
         ),
       )}
-      {input.hasChoices && !input.multiSelect
+      {input.allowOther && input.hasChoices && !input.multiSelect
         ? option(
             "__other",
             "Other…",

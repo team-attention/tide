@@ -135,6 +135,9 @@ function codexServerRequestNativeIds(params: Record<string, unknown>): Record<st
   const itemId = firstStringField(params, ["itemId", "item_id", "itemID", "id"]);
   const callId = firstStringField(params, ["callId", "toolCallId", "tool_call_id", "itemId", "item_id", "itemID", "id"]);
   const blockId = firstStringField(params, ["blockId", "block_id"]);
+  const meta = isRecord(params._meta) ? params._meta : undefined;
+  const connectorId = meta !== undefined ? firstStringField(meta, ["connector_id"]) : undefined;
+  const toolName = meta !== undefined ? firstStringField(meta, ["tool_name"]) : undefined;
   if (itemId !== undefined) {
     ids.itemId = itemId;
   }
@@ -143,6 +146,12 @@ function codexServerRequestNativeIds(params: Record<string, unknown>): Record<st
   }
   if (blockId !== undefined) {
     ids.blockId = blockId;
+  }
+  if (connectorId !== undefined) {
+    ids.connectorId = connectorId;
+  }
+  if (toolName !== undefined) {
+    ids.toolName = toolName;
   }
   return Object.keys(ids).length === 0 ? undefined : ids;
 }
