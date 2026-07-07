@@ -192,3 +192,36 @@ than a false dirty signal.
 - `parse_unified_diff_line_markers_maps_added_changed_and_deleted_lines`
 - `workbench_editor_pane_renders_git_diff_line_decorations`
 - `workbench_editor_pane_keeps_existing_git_diff_while_refreshing`
+
+## Default handoff actions
+
+> Slice: the Changes pane should read as a normal developer handoff flow first,
+> not as a low-level patch editor. Partial staging remains available, but it is
+> not the primary mental model.
+
+### Scope
+
+- Put the primary flow in the toolbar: generate a commit message, commit, amend
+  the previous commit, push, and create a pull request.
+- Keep file-level stage/unstage/discard available.
+- Move hunk-level actions behind a compact "partial changes" disclosure and do
+  not expose the word "hunk" in the UI.
+
+### Decisions
+
+- `Amend` runs `git commit --amend`. If the commit message input is empty it
+  uses `--no-edit`; otherwise it replaces the previous commit message with the
+  input value.
+- `Create PR` runs through Main-process IPC and shells out to `gh pr create
+  --fill` with prompts disabled. It expects the user to have GitHub CLI
+  installed and authenticated; failures surface as normal Git action notices.
+- Partial staging remains implemented internally as diff hunks, because git
+  patch application needs those boundaries. The user-facing label is "change
+  block" / "partial changes".
+
+### Invariants
+
+- The default toolbar never requires the user to understand hunk terminology.
+- `Create PR` is local Main-process infrastructure, not an Agent Runtime action.
+- Amend and PR creation return structured action results so the Changes pane can
+  clear busy state and show failures without blocking the rest of the pane.

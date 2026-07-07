@@ -154,8 +154,10 @@ function WorkbenchPaneContent(props: {
           onGitApplyHunk={handlers.onGitApplyHunk}
           onGitGenerateCommitMessage={handlers.onGitGenerateCommitMessage}
           onGitCommit={handlers.onGitCommit}
+          onGitAmend={handlers.onGitAmend}
           onGitPushTarget={handlers.onGitPushTarget}
           onGitPush={handlers.onGitPush}
+          onGitCreatePullRequest={handlers.onGitCreatePullRequest}
         />
       );
     case "review":

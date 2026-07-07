@@ -34,8 +34,10 @@ export function ChangesPanel(props: {
   onGitApplyHunk: (cwd: string, relPath: string, patch: string, action: GitHunkAction) => Promise<GitActionResult>;
   onGitGenerateCommitMessage: (cwd: string) => Promise<GitGeneratedCommitMessageResult>;
   onGitCommit: (cwd: string, message: string) => Promise<GitActionResult>;
+  onGitAmend: (cwd: string, message: string) => Promise<GitActionResult>;
   onGitPushTarget: (cwd: string) => Promise<GitPushTargetResult>;
   onGitPush: (cwd: string, remote: string, branch: string) => Promise<GitActionResult>;
+  onGitCreatePullRequest: (cwd: string) => Promise<GitActionResult>;
 }): ReactElement {
   const {
     cwd,
@@ -48,8 +50,10 @@ export function ChangesPanel(props: {
     onGitApplyHunk,
     onGitGenerateCommitMessage,
     onGitCommit,
+    onGitAmend,
     onGitPushTarget,
     onGitPush,
+    onGitCreatePullRequest,
   } = props;
   const [data, setData] = useState<GitChangesViewResult>({ isGitRepo: true, branch: null, files: [] });
   const [nonce, setNonce] = useState(0);
@@ -62,6 +66,7 @@ export function ChangesPanel(props: {
   const [commitMessage, setCommitMessage] = useState("");
   const [generatingCommitMessage, setGeneratingCommitMessage] = useState(false);
   const [pushTarget, setPushTarget] = useState<GitPushTargetResult | null>(null);
+  const [showPartialChanges, setShowPartialChanges] = useState(false);
   // GitHub-style file tree: drag the divider to resize it, or collapse it so the diff
   // takes the full pane width. Renderer-local view state (not persisted).
   const [listWidth, setListWidth] = useState(DEFAULT_LIST_WIDTH);
@@ -237,6 +242,20 @@ export function ChangesPanel(props: {
     }
   }
 
+  async function amendChanges(): Promise<void> {
+    if (
+      gitBusy ||
+      (files.length === 0 && commitMessage.trim().length === 0) ||
+      !window.confirm("Amend the last commit? This rewrites the previous commit.")
+    ) {
+      return;
+    }
+    const result = await runGitMutation(() => onGitAmend(cwd, commitMessage.trim()), "Amend failed.");
+    if (result?.ok) {
+      setCommitMessage("");
+    }
+  }
+
   async function generateCommitMessage(): Promise<void> {
     if (gitBusy || generatingCommitMessage) {
       return;
@@ -272,6 +291,17 @@ export function ChangesPanel(props: {
       return;
     }
     await runGitMutation(() => onGitPush(cwd, pushTarget.remote, pushTarget.branch), "Push failed.", false);
+  }
+
+  async function createPullRequest(): Promise<void> {
+    if (
+      gitBusy ||
+      pushTarget?.ok !== true ||
+      !window.confirm(`Create a pull request for ${pushTarget.currentBranch}?`)
+    ) {
+      return;
+    }
+    await runGitMutation(() => onGitCreatePullRequest(cwd), "Create PR failed.", false);
   }
 
   return (
@@ -372,6 +402,13 @@ export function ChangesPanel(props: {
         >
           <span>Commit</span>
         </ChangesActionButton>
+        <ChangesActionButton
+          type="button"
+          disabled={!isGitRepo || gitBusy || (files.length === 0 && commitMessage.trim().length === 0)}
+          onClick={() => void amendChanges()}
+        >
+          <span>Amend</span>
+        </ChangesActionButton>
         <ChangesPushTarget title={pushTargetTitle(pushTarget)}>{pushTargetLabel(pushTarget)}</ChangesPushTarget>
         <ChangesActionButton
           type="button"
@@ -379,6 +416,13 @@ export function ChangesPanel(props: {
           onClick={() => void pushBranch()}
         >
           <span>Push</span>
+        </ChangesActionButton>
+        <ChangesActionButton
+          type="button"
+          disabled={!isGitRepo || gitBusy || pushTarget?.ok !== true}
+          onClick={() => void createPullRequest()}
+        >
+          <span>Create PR</span>
         </ChangesActionButton>
       </ChangesHandoffBar>
       {gitNotice !== null ? (
@@ -457,6 +501,20 @@ export function ChangesPanel(props: {
           ) : (
             <ChangesDiffStack>
               {diffHunks.length > 0 ? (
+                <ChangesPartialBar>
+                  <ChangesActionButton
+                    type="button"
+                    aria-expanded={showPartialChanges}
+                    onClick={() => setShowPartialChanges((value) => !value)}
+                  >
+                    <span>{showPartialChanges ? "Hide partial changes" : "Partial changes"}</span>
+                  </ChangesActionButton>
+                  <ChangesCount>
+                    {`${diffHunks.length} change block${diffHunks.length === 1 ? "" : "s"}`}
+                  </ChangesCount>
+                </ChangesPartialBar>
+              ) : null}
+              {showPartialChanges && diffHunks.length > 0 ? (
                 <ChangesHunkActionList
                   hunks={diffHunks}
                   gitBusy={gitBusy}
@@ -781,6 +839,14 @@ const ChangesDiffStack = styled.div`
   display: flex;
   flex-direction: column;
   gap: 8px;
+`;
+
+const ChangesPartialBar = styled.div`
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px;
 `;
 
 const ChangesDiffEmpty = styled.div`

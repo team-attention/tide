@@ -43,8 +43,10 @@ async function renderPane(changes: GitChangesViewResult, diff = ""): Promise<str
         onGitApplyHunk={() => Promise.resolve({ ok: true, message: "hunk applied" })}
         onGitGenerateCommitMessage={() => Promise.resolve({ ok: true, message: "Update app.ts", source: "staged", files: ["src/app.ts"] })}
         onGitCommit={() => Promise.resolve({ ok: true, message: "committed" })}
+        onGitAmend={() => Promise.resolve({ ok: true, message: "amended" })}
         onGitPushTarget={() => Promise.resolve({ ok: true, currentBranch: "main", remote: "origin", branch: "main", upstream: "origin/main", label: "origin/main" })}
         onGitPush={() => Promise.resolve({ ok: true, message: "pushed" })}
+        onGitCreatePullRequest={() => Promise.resolve({ ok: true, message: "Created pull request: https://github.com/acme/repo/pull/1" })}
       />,
     );
   });
@@ -93,8 +95,10 @@ async function mountChangesPanel(
     onGitApplyHunk: () => Promise.resolve({ ok: true, message: "hunk applied" }),
     onGitGenerateCommitMessage: () => Promise.resolve({ ok: true, message: "Update app.ts", source: "staged", files: ["src/app.ts"] }),
     onGitCommit: () => Promise.resolve({ ok: true, message: "committed" }),
+    onGitAmend: () => Promise.resolve({ ok: true, message: "amended" }),
     onGitPushTarget: () => Promise.resolve({ ok: true, currentBranch: "main", remote: "origin", branch: "main", upstream: "origin/main", label: "origin/main" }),
     onGitPush: () => Promise.resolve({ ok: true, message: "pushed" }),
+    onGitCreatePullRequest: () => Promise.resolve({ ok: true, message: "Created pull request: https://github.com/acme/repo/pull/1" }),
     ...overrides,
   };
   await act(async () => {
@@ -161,6 +165,30 @@ test("changes_pane_renders_a_resizable_collapsible_file_list", async () => {
   assert.match(html, /Resize file list/);
 });
 
+test("changes_pane_prioritizes_commit_amend_push_pr_actions", async () => {
+  const html = await renderPane({
+    isGitRepo: true,
+    branch: "feature-x",
+    files: [{ path: "src/a.ts", status: "modified", additions: 1, deletions: 0 }],
+  }, [
+    "diff --git a/src/a.ts b/src/a.ts",
+    "index 111..222 100644",
+    "--- a/src/a.ts",
+    "+++ b/src/a.ts",
+    "@@ -1,1 +1,1 @@",
+    "-old",
+    "+new",
+  ].join("\n"));
+
+  assert.match(html, /Generate/);
+  assert.match(html, /Commit/);
+  assert.match(html, /Amend/);
+  assert.match(html, /Push/);
+  assert.match(html, /Create PR/);
+  assert.match(html, /Partial changes/);
+  assert.doesNotMatch(html, /Stage hunk|Hunk 1/);
+});
+
 test("extract_git_diff_hunks_builds_single_hunk_patches_with_headers", () => {
   const hunks = extractGitDiffHunks(
     [
@@ -221,8 +249,10 @@ test("changes_pane_stage_hunk_sends_selected_hunk_patch", async () => {
         }}
         onGitGenerateCommitMessage={() => Promise.resolve({ ok: true, message: "Update app.ts", source: "staged", files: ["src/app.ts"] })}
         onGitCommit={() => Promise.resolve({ ok: true, message: "committed" })}
+        onGitAmend={() => Promise.resolve({ ok: true, message: "amended" })}
         onGitPushTarget={() => Promise.resolve({ ok: true, currentBranch: "main", remote: "origin", branch: "main", upstream: "origin/main", label: "origin/main" })}
         onGitPush={() => Promise.resolve({ ok: true, message: "pushed" })}
+        onGitCreatePullRequest={() => Promise.resolve({ ok: true, message: "Created pull request: https://github.com/acme/repo/pull/1" })}
       />,
     );
   });
@@ -230,7 +260,11 @@ test("changes_pane_stage_hunk_sends_selected_hunk_patch", async () => {
     await Promise.resolve();
     await Promise.resolve();
   });
-  const button = container.querySelector('button[aria-label="Stage hunk 1"]') as HTMLButtonElement | null;
+  const partialButton = buttonByText(container, "Partial changes");
+  await act(async () => {
+    partialButton.click();
+  });
+  const button = container.querySelector('button[aria-label="Stage change 1"]') as HTMLButtonElement | null;
   assert.notEqual(button, null);
 
   await act(async () => {
@@ -269,7 +303,11 @@ test("changes_pane_hunk_action_rejection_clears_busy_state", async () => {
   const { container, root } = await mountChangesPanel({
     onGitApplyHunk: () => Promise.reject(new Error("hunk exploded")),
   });
-  const hunkButton = container.querySelector('button[aria-label="Stage hunk 1"]') as HTMLButtonElement | null;
+  const partialButton = buttonByText(container, "Partial changes");
+  await act(async () => {
+    partialButton.click();
+  });
+  const hunkButton = container.querySelector('button[aria-label="Stage change 1"]') as HTMLButtonElement | null;
   assert.notEqual(hunkButton, null);
 
   await act(async () => {
@@ -280,7 +318,7 @@ test("changes_pane_hunk_action_rejection_clears_busy_state", async () => {
   });
 
   assert.match(container.innerHTML, /hunk exploded/);
-  assert.equal((container.querySelector('button[aria-label="Stage hunk 1"]') as HTMLButtonElement | null)?.disabled, false);
+  assert.equal((container.querySelector('button[aria-label="Stage change 1"]') as HTMLButtonElement | null)?.disabled, false);
   await act(async () => {
     root.unmount();
   });
@@ -308,6 +346,35 @@ test("changes_pane_commit_rejection_clears_busy_state", async () => {
   });
 });
 
+test("changes_pane_amend_uses_optional_message", async () => {
+  const originalConfirm = dom.window.confirm;
+  dom.window.confirm = (() => true) as typeof dom.window.confirm;
+  let amended: { cwd: string; message: string } | null = null;
+  const { container, root } = await mountChangesPanel({
+    onGitAmend: (cwd, message) => {
+      amended = { cwd, message };
+      return Promise.resolve({ ok: true, message: "amended" });
+    },
+  });
+  try {
+    await typeCommitMessage(container, "Tighten monitor UX");
+    const amendButton = buttonByText(container, "Amend");
+    assert.equal(amendButton.disabled, false);
+
+    await act(async () => {
+      amendButton.click();
+    });
+
+    assert.deepEqual(amended, { cwd: "/repo", message: "Tighten monitor UX" });
+    assert.match(container.innerHTML, /amended/);
+  } finally {
+    dom.window.confirm = originalConfirm;
+    await act(async () => {
+      root.unmount();
+    });
+  }
+});
+
 test("changes_pane_push_rejection_clears_busy_state", async () => {
   const originalConfirm = dom.window.confirm;
   dom.window.confirm = (() => true) as typeof dom.window.confirm;
@@ -327,6 +394,34 @@ test("changes_pane_push_rejection_clears_busy_state", async () => {
 
     assert.match(container.innerHTML, /push exploded/);
     assert.equal(buttonByText(container, "Push").disabled, false);
+  } finally {
+    dom.window.confirm = originalConfirm;
+    await act(async () => {
+      root.unmount();
+    });
+  }
+});
+
+test("changes_pane_create_pr_uses_main_git_bridge", async () => {
+  const originalConfirm = dom.window.confirm;
+  dom.window.confirm = (() => true) as typeof dom.window.confirm;
+  let prCwd: string | null = null;
+  const { container, root } = await mountChangesPanel({
+    onGitCreatePullRequest: (cwd) => {
+      prCwd = cwd;
+      return Promise.resolve({ ok: true, message: "Created pull request: https://github.com/acme/repo/pull/12" });
+    },
+  });
+  try {
+    const button = buttonByText(container, "Create PR");
+    assert.equal(button.disabled, false);
+
+    await act(async () => {
+      button.click();
+    });
+
+    assert.equal(prCwd, "/repo");
+    assert.match(container.innerHTML, /Created pull request/);
   } finally {
     dom.window.confirm = originalConfirm;
     await act(async () => {
@@ -362,6 +457,7 @@ test("changes_pane_generate_commit_message_populates_input", async () => {
           files: ["src/app.ts"],
         })}
         onGitCommit={() => Promise.resolve({ ok: true, message: "committed" })}
+        onGitAmend={() => Promise.resolve({ ok: true, message: "amended" })}
         onGitPushTarget={() => Promise.resolve({
           ok: true,
           currentBranch: "main",
@@ -371,6 +467,7 @@ test("changes_pane_generate_commit_message_populates_input", async () => {
           label: "origin/main",
         })}
         onGitPush={() => Promise.resolve({ ok: true, message: "pushed" })}
+        onGitCreatePullRequest={() => Promise.resolve({ ok: true, message: "Created pull request: https://github.com/acme/repo/pull/1" })}
       />,
     );
   });
@@ -431,6 +528,7 @@ test("changes_pane_push_uses_resolved_remote_branch_target", async () => {
             files: ["src/app.ts"],
           })}
           onGitCommit={() => Promise.resolve({ ok: true, message: "committed" })}
+          onGitAmend={() => Promise.resolve({ ok: true, message: "amended" })}
           onGitPushTarget={() => Promise.resolve({
             ok: true,
             currentBranch: "feature-x",
@@ -443,6 +541,7 @@ test("changes_pane_push_uses_resolved_remote_branch_target", async () => {
             pushed = { cwd, remote, branch };
             return Promise.resolve({ ok: true, message: "pushed" });
           }}
+          onGitCreatePullRequest={() => Promise.resolve({ ok: true, message: "Created pull request: https://github.com/acme/repo/pull/1" })}
         />,
       );
     });

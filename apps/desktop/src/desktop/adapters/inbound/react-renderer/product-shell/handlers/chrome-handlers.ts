@@ -6,7 +6,7 @@ import { applyThemePreference, saveThemePreference } from "../../support/theme.t
 import type { ProductShellHandlers } from "../support/types.ts";
 import type { ProductShellHandlerContext } from "./context.ts";
 
-export function createChromeHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onResizeStart" | "onSearchQueryChange" | "onSearchToggle" | "onOpenSettings" | "onCloseSettings" | "onAgentMonitorToggle" | "onWorktreeSettingsChange" | "onThemeChange"> {
+export function createChromeHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onResizeStart" | "onSearchQueryChange" | "onSearchToggle" | "onOpenSettings" | "onCloseSettings" | "onWorktreeSettingsChange" | "onThemeChange"> {
   const { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
   return {
     onResizeStart: startColumnResize,
@@ -19,8 +19,6 @@ export function createChromeHandlers(ctx: ProductShellHandlerContext): Pick<Prod
       dispatchBackendCommand({ kind: "provider.refreshUsage", payload: {} });
     },
     onCloseSettings: () => setShellState((state) => setProductShellSettingsOpen(state, false)),
-    onAgentMonitorToggle: () =>
-      setShellState((state) => ({ ...state, agentMonitorOpen: !state.agentMonitorOpen })),
     onWorktreeSettingsChange: (patch) =>
       setShellState((state) => {
         const next = setProductShellWorktreeSettings(state, patch);

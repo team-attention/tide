@@ -9,11 +9,11 @@ export function ChangesHunkActionList(props: {
   onAction: (action: GitHunkAction, hunk: GitDiffHunk) => void;
 }): ReactElement {
   return (
-    <HunkList aria-label="Hunk actions">
+    <HunkList aria-label="Partial change actions">
       {props.hunks.map((hunk, index) => (
         <HunkItem key={hunk.hunkId}>
           <HunkMeta>
-            <span>{`Hunk ${index + 1}`}</span>
+            <span>{`Change ${index + 1}`}</span>
             <code>{hunk.title}</code>
             <HunkStat>
               {hunk.additions > 0 ? <StatAdd>{`+${hunk.additions}`}</StatAdd> : null}
@@ -24,15 +24,15 @@ export function ChangesHunkActionList(props: {
             <MiniButton
               type="button"
               disabled={props.gitBusy}
-              aria-label={`Stage hunk ${index + 1}`}
+              aria-label={`Stage change ${index + 1}`}
               onClick={() => props.onAction("stage", hunk)}
             >
-              Stage hunk
+              Stage change
             </MiniButton>
             <MiniButton
               type="button"
               disabled={props.gitBusy}
-              aria-label={`Unstage hunk ${index + 1}`}
+              aria-label={`Unstage change ${index + 1}`}
               onClick={() => props.onAction("unstage", hunk)}
             >
               Unstage
@@ -41,7 +41,7 @@ export function ChangesHunkActionList(props: {
               type="button"
               data-danger="true"
               disabled={props.gitBusy}
-              aria-label={`Discard hunk ${index + 1}`}
+              aria-label={`Discard change ${index + 1}`}
               onClick={() => props.onAction("discard", hunk)}
             >
               Discard
