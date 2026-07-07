@@ -71,6 +71,14 @@ const MCP_ELICITATION_WITH_PERSIST = {
     persist: ["session", "always"],
   },
 };
+const MCP_GENERIC_ELICITATION = {
+  threadId: "codex-thread-1",
+  turnId: "codex-turn-1",
+  serverName: "codex_apps",
+  mode: "form",
+  message: "Continue with this MCP request?",
+  requestedSchema: { type: "object", properties: {} },
+};
 
 async function waitFor<T>(probe: () => T | undefined, label: string): Promise<T> {
   const deadline = Date.now() + 15_000;
@@ -279,6 +287,35 @@ test("codex MCP tool approval uses native choices and Allow sends action accept"
     assert.deepEqual(result, {
       action: "accept",
       content: {},
+      _meta: null,
+    });
+  } finally {
+    await client.stop();
+  }
+});
+
+test("codex generic MCP elicitation shows readable labels but sends protocol actions", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tide-codex-mcp-elicit-"));
+  const receivedFile = join(dir, "received.jsonl");
+  const { events, onEvent } = promptCollector();
+  const client = makeClient(fakeApprovalPlan(receivedFile, "mcpServer/elicitation/request", MCP_GENERIC_ELICITATION), onEvent);
+  try {
+    const prompt = await waitFor(() => events[0], "MCP elicitation prompt");
+    assert.deepEqual(
+      prompt.choices?.map((choice) => [choice.choiceId, choice.label, choice.providerValue]),
+      [
+        ["accept", "Accept", "accept"],
+        ["decline", "Decline", "decline"],
+        ["cancel", "Cancel", "cancel"],
+      ],
+    );
+
+    const decline = prompt.choices?.find((choice) => choice.choiceId === "decline");
+    await client.write({ kind: "prompt_answer", promptId: prompt.promptId, value: decline?.providerValue ?? "" });
+    const result = await waitFor(() => resultFromResponse(receivedFile), "MCP elicitation response");
+    assert.deepEqual(result, {
+      action: "decline",
+      content: null,
       _meta: null,
     });
   } finally {

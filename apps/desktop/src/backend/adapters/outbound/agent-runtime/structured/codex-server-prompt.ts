@@ -273,9 +273,9 @@ function codexMcpElicitationChoices(meta: Record<string, unknown> | undefined): 
     ];
   }
   return [
-    { choiceId: "accept", label: CODEX_MCP_ACTION_ACCEPT, providerValue: CODEX_MCP_ACTION_ACCEPT },
-    { choiceId: "decline", label: CODEX_MCP_ACTION_DECLINE, providerValue: CODEX_MCP_ACTION_DECLINE },
-    { choiceId: "cancel", label: CODEX_MCP_ACTION_CANCEL, providerValue: CODEX_MCP_ACTION_CANCEL },
+    { choiceId: "accept", label: "Accept", providerValue: CODEX_MCP_ACTION_ACCEPT },
+    { choiceId: "decline", label: "Decline", providerValue: CODEX_MCP_ACTION_DECLINE },
+    { choiceId: "cancel", label: "Cancel", providerValue: CODEX_MCP_ACTION_CANCEL },
   ];
 }
 
