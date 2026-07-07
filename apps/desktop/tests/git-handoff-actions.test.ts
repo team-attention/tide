@@ -9,6 +9,7 @@ import {
   commitGitChanges,
   discardGitFile,
   generateGitCommitMessage,
+  gitPullRequestCreatedMessage,
   getGitPushTarget,
   pushGitTarget,
   stageGitFile,
@@ -116,6 +117,17 @@ test("file-level git handoff actions mutate a scratch repo", async () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("gitPullRequestCreatedMessage accepts GitHub Enterprise pull request URLs", () => {
+  assert.equal(
+    gitPullRequestCreatedMessage("https://github.enterprise.test/team/repo/pull/42\n"),
+    "Created pull request: https://github.enterprise.test/team/repo/pull/42",
+  );
+  assert.equal(
+    gitPullRequestCreatedMessage("no url in output"),
+    "Created pull request.",
+  );
 });
 
 function initRepo(cwd: string): void {

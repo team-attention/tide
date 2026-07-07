@@ -183,7 +183,7 @@ export async function createGitPullRequest(cwd: unknown): Promise<GitActionResul
   }
   const result = await execGhArgs(root, ["pr", "create", "--fill"]);
   if (result.ok) {
-    return { ok: true, message: prCreateFallback(result.stdout) };
+    return { ok: true, message: gitPullRequestCreatedMessage(result.stdout) };
   }
   return {
     ok: false,
@@ -324,10 +324,10 @@ function commitMessagePath(path: string): string {
   return path.length <= 48 ? path : basename(path);
 }
 
-function prCreateFallback(stdout: string): string {
+export function gitPullRequestCreatedMessage(stdout: string): string {
   const url = stdout
     .split(/\s+/)
-    .find((part) => /^https:\/\/github\.com\/.+\/pull\/\d+/.test(part));
+    .find((part) => /^https:\/\/[^/]+\/.+\/pull\/\d+/.test(part));
   return url === undefined ? "Created pull request." : `Created pull request: ${url}`;
 }
 
