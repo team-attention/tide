@@ -60,11 +60,32 @@ claude's `setMode` suggestions.
 
 ## Out Of Scope
 
-- Persistent codex approvals (execpolicy amendment / network-policy decision variants) — they
-  carry structured amendment params; a separate slice.
+- Persistent command/file approvals (execpolicy amendment / network-policy decision variants) —
+  they carry structured amendment params; a separate slice.
 - claude / gemini / opencode (covered: claude sibling spec; ACP native).
 - `cancel` (deny-and-interrupt) as a distinct choice — today's `decline` (deny, continue) is
   the single Deny; unchanged.
+
+## Follow-up: Codex MCP tool approval elicitations
+
+Codex app-server also has a separate MCP elicitation path:
+`mcpServer/elicitation/request` → response `{ action, content, _meta }`, where action is
+only `"accept" | "decline" | "cancel"`. This is not the command/file
+`acceptForSession` enum.
+
+For MCP tool approvals, Codex source advertises remember scopes in request `_meta.persist`:
+
+- no `persist` → choices are native Codex `Allow` / `Cancel`
+- `"session"` → add `Allow for this session`, answer
+  `{ action:"accept", _meta:{ persist:"session" } }`
+- `"always"` → add `Allow and don't ask me again`, answer
+  `{ action:"accept", _meta:{ persist:"always" } }`
+- `["session","always"]` → offer both, in Codex source order
+
+Tide must not create its own approval cache or infer connector/tool ids from prompt text.
+When Codex includes `_meta.connector_id` and `_meta.tool_name`, Tide may carry those as
+`nativeIds` for correlation only; persistence is still performed by Codex after the
+provider-native elicitation response.
 
 ## Domain Model
 

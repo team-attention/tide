@@ -315,13 +315,25 @@ test("⌘N selects the N-th option without submitting; ⌘Enter then confirms it
 });
 
 test("⌘N on the trailing number activates the 'Other…' field without submitting", async () => {
-  const { container, root, spies } = await mountWithSpies(singlePrompt());
+  const { container, root, spies } = await mountWithSpies(singleAuqPrompt());
   try {
     // 2 choices → "Other…" is option 3.
     await pressMeta("Digit3");
     assert.ok(container.querySelector("[data-prompt-custom-reply]") !== null, "custom-reply field opened");
     assert.equal(spies.onSelectChoice.calls.length, 0);
     assert.equal(spies.onAnswerText.calls.length, 0);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+test("approval single card does not invent an 'Other…' option", async () => {
+  const { container, root } = await mountWithSpies(singlePrompt());
+  try {
+    assert.equal(optionByLabel(container, "Approve").getAttribute("data-selected"), "true");
+    assert.throws(() => optionByLabel(container, "Other…"));
+    await pressMeta("Digit3");
+    assert.ok(container.querySelector("[data-prompt-custom-reply]") === null, "no custom-reply field for approval");
   } finally {
     await act(async () => root.unmount());
   }
@@ -389,7 +401,7 @@ test("AUQ note typed before ⌘Enter rides along (no stale-closure drop)", async
 test("each shortcut-bearing option shows a ⌘N keycap", () => {
   // 2 choices + "Other…" → ⌘1, ⌘2, ⌘3.
   const markup = renderToStaticMarkup(
-    <PromptCard prompt={singlePrompt()} onSelectChoice={() => {}} onAnswerText={() => {}} onAnswerSteps={() => {}} />,
+    <PromptCard prompt={singleAuqPrompt()} onSelectChoice={() => {}} onAnswerText={() => {}} onAnswerSteps={() => {}} />,
   );
   assert.ok(markup.includes("⌘1"), "first option keycap");
   assert.ok(markup.includes("⌘2"), "second option keycap");
