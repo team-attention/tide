@@ -1519,6 +1519,48 @@ test("live_thread_with_running_last_known_state_queues_even_if_runtime_state_dri
   assert.deepEqual(fakes.runtime.events, []);
 });
 
+test("live_thread_with_active_goal_queues_even_before_turn_started_state_lands", async () => {
+  // Codex can report goal active before its turn/started notification lands. While that
+  // window is open, follow-up input must stack in Tide's visible queue instead of racing
+  // a normal send into the goal runner.
+  const fakes = createFakes();
+  const activeRuntimeHandle: AgentRuntimeHandle = {
+    runtimeId: "runtime-goal",
+    threadId: "thread-goal-active",
+    agentId: "codex",
+  };
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-goal-active", {
+        runtimeState: "idle",
+        lastKnownState: "idle",
+        activeRuntimeHandle,
+        goal: "finish the goal",
+        goalState: {
+          objective: "finish the goal",
+          status: "active",
+          provider: "codex",
+          createdAt: now,
+          updatedAt: now,
+        },
+      }),
+    ],
+  });
+
+  const queued = await service.sendComposerInput({
+    threadId: "thread-goal-active",
+    input: "queued while goal turn is starting",
+  });
+
+  assert.equal(queued.ok, true);
+  assert.equal(queued.status, "queued");
+  assert.deepEqual(queued.thread.queuedInputs, ["queued while goal turn is starting"]);
+  assert.deepEqual(fakes.runtime.events, []);
+});
+
 test("idle_thread_with_stale_streaming_tail_sends_followup_not_queued", async () => {
   const fakes = createFakes();
   const activeRuntimeHandle: AgentRuntimeHandle = {

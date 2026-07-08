@@ -418,7 +418,8 @@ function isThreadBusyForComposerQueue(thread: ThreadRecord): boolean {
   return (
     isActiveRuntimeState(thread.runtimeState) ||
     isActiveLastKnownState(thread.lastKnownState) ||
-    thread.promptState !== undefined
+    thread.promptState !== undefined ||
+    thread.goalState?.status === "active"
   );
 }
 

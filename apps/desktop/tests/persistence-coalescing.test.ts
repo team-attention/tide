@@ -74,7 +74,7 @@ function createCountingFixture(input: {
     peekThread() {
       return {
         ok: true as const,
-        thread: { threadId: THREAD, agentBinding: { agentId } },
+        thread: { threadId: THREAD, agentBinding: { agentId }, queuedInputs: [] },
         runtimeState: "running",
         blocks: [block],
       };

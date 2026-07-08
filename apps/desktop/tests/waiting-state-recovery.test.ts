@@ -36,10 +36,23 @@ const card = {
 // whether a card is currently held — applying the SAME settle rule the real service
 // uses (force OR no-prompt settles; otherwise the card is kept). That lets the test read
 // the end-state ("is the card still up?") directly while pinning the projector's force.
-function createProjectorFixture() {
+function createProjectorFixture(options: { activeGoal?: boolean; queuedInputs?: string[] } = {}) {
   const forces: Array<boolean | undefined> = [];
   let promptState: typeof card | undefined;
-  const thread = { threadId: THREAD, agentBinding: { agentId: AGENT }, updatedAt: "t", queuedInputs: [] as string[] };
+  const thread = {
+    threadId: THREAD,
+    agentBinding: { agentId: AGENT },
+    updatedAt: "t",
+    queuedInputs: options.queuedInputs ?? [],
+    goalState: options.activeGoal
+      ? {
+          objective: "finish the goal",
+          status: "active" as const,
+          provider: AGENT,
+          updatedAt: "t",
+        }
+      : undefined,
+  };
   const service = {
     async hydrateThread() {
       return { ok: true as const, thread, runtimeState: "running", blocks: [] };
@@ -123,6 +136,35 @@ test("a turn_completed carrying a notice still does NOT force away a live card",
   });
   assert.deepEqual(forces(), [undefined], "a notice turn-end must not force");
   assert.equal(cardUp(), true, "the card survives a notice turn-end");
+});
+
+test("an active_goal_turn_completed_without_queue_keeps_the_goal_runtime_busy", async () => {
+  const { projector, forces } = createProjectorFixture({ activeGoal: true });
+
+  await projector.ingestStructuredProviderEvent({
+    threadId: THREAD,
+    agentId: AGENT,
+    runtimeId: RUNTIME,
+    event: { kind: "turn_completed" as const },
+  });
+
+  assert.deepEqual(forces(), [], "active goal without queued input is not settled");
+});
+
+test("an active_goal_turn_completed_with_queue_flushes_the_waiting_follow_up", async () => {
+  const { projector, forces } = createProjectorFixture({
+    activeGoal: true,
+    queuedInputs: ["run this next"],
+  });
+
+  await projector.ingestStructuredProviderEvent({
+    threadId: THREAD,
+    agentId: AGENT,
+    runtimeId: RUNTIME,
+    event: { kind: "turn_completed" as const },
+  });
+
+  assert.deepEqual(forces(), [undefined], "queued input gets the normal turn-complete drain path");
 });
 
 test("a runtime_exited DOES force-settle the now-dead card", async () => {
