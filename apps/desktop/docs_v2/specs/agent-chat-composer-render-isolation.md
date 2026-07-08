@@ -85,6 +85,8 @@ Internal invariant:
 
 - Domain test: a long existing Thread keeps `viewModel.blocks` reference-equal after
   `updateComposerDraft`.
+- Domain test: switching to another Thread/session and then back reuses the first
+  Thread's block-view reference instead of thrashing a single-slot cache.
 - Domain test: changing one source block invalidates the block-view array and updates
   that block's rendered body while reusing unchanged block views.
 - Product Shell selector test: `updateProductShellComposerDraft` may recompute the chat
@@ -92,10 +94,11 @@ Internal invariant:
 
 ## Implementation Notes
 
-- Use a small single-slot memo for `visibleBlocksForState`, keyed by source `blocks`
-  reference and active `threadId`.
-- Use a small single-slot memo for the mapped `AgentChatBlockView[]`, keyed by the
-  visible block list reference.
+- Use `WeakMap<AgentChatBlock[], Map<string | undefined, AgentChatBlock[]>>` for
+  visible block lists, keyed by the source `blocks` array and active `threadId`.
+- Use `WeakMap<AgentChatBlock[], AgentChatBlockView[]>` for mapped block-view lists,
+  keyed by the visible block list reference.
 - Use a `WeakMap<AgentChatBlock, AgentChatBlockView>` for per-block view reuse.
 - Keep the cache local to the Agent Chat view-model module; it is an implementation
-  detail, not application state.
+  detail, not application state. WeakMap keys avoid holding closed Thread arrays alive
+  and let multiple active/recent Threads reuse their own cached block views.

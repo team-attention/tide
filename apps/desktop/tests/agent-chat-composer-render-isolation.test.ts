@@ -67,6 +67,20 @@ test("draft-only updates preserve the long-thread block view reference", () => {
   assert.equal(after.blocks[after.blocks.length - 1], before.blocks[before.blocks.length - 1]);
 });
 
+test("switching between long threads does not thrash the block view cache", () => {
+  const firstState = longThreadState(12);
+  const secondState: AgentChatShellState = {
+    ...longThreadState(12),
+    blocks: Array.from({ length: 12 }, (_, index) => block(`second-block-${index}`, index)),
+  };
+  const first = createAgentChatShellViewModel(firstState);
+  const second = createAgentChatShellViewModel(secondState);
+  const firstAgain = createAgentChatShellViewModel(firstState);
+
+  assert.notEqual(second.blocks, first.blocks);
+  assert.equal(firstAgain.blocks, first.blocks);
+});
+
 test("source block updates invalidate only the changed block view", () => {
   const state = longThreadState(12);
   const before = createAgentChatShellViewModel(state);

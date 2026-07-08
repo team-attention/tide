@@ -360,50 +360,41 @@ function deriveChatState(
   return "ready";
 }
 
-type VisibleBlocksCache = {
-  sourceBlocks: AgentChatBlock[];
-  threadId: string | undefined;
-  visibleBlocks: AgentChatBlock[];
-};
-
-type BlockViewsCache = {
-  visibleBlocks: AgentChatBlock[];
-  blockViews: AgentChatBlockView[];
-};
-
-let visibleBlocksCache: VisibleBlocksCache | undefined;
-let blockViewsCache: BlockViewsCache | undefined;
+const visibleBlocksCache = new WeakMap<
+  AgentChatBlock[],
+  Map<string | undefined, AgentChatBlock[]>
+>();
+const blockViewsCache = new WeakMap<AgentChatBlock[], AgentChatBlockView[]>();
 // Reducers replace a block object when provider output changes, so the same object
 // reference can safely reuse its derived view across draft-only state updates.
 const blockViewBySource = new WeakMap<AgentChatBlock, AgentChatBlockView>();
 
 function visibleBlocksForState(state: AgentChatShellState): AgentChatBlock[] {
   const threadId = state.thread?.threadId;
-  if (
-    visibleBlocksCache !== undefined &&
-    visibleBlocksCache.sourceBlocks === state.blocks &&
-    visibleBlocksCache.threadId === threadId
-  ) {
-    return visibleBlocksCache.visibleBlocks;
+  let threadCache = visibleBlocksCache.get(state.blocks);
+  if (threadCache === undefined) {
+    threadCache = new Map();
+    visibleBlocksCache.set(state.blocks, threadCache);
+  }
+  const cached = threadCache.get(threadId);
+  if (cached !== undefined) {
+    return cached;
   }
   const visibleBlocks =
     threadId === undefined
       ? state.blocks
       : state.blocks.filter((block) => block?.threadId === threadId);
-  visibleBlocksCache = {
-    sourceBlocks: state.blocks,
-    threadId,
-    visibleBlocks,
-  };
+  threadCache.set(threadId, visibleBlocks);
   return visibleBlocks;
 }
 
 function blockViewsForVisibleBlocks(blocks: AgentChatBlock[]): AgentChatBlockView[] {
-  if (blockViewsCache !== undefined && blockViewsCache.visibleBlocks === blocks) {
-    return blockViewsCache.blockViews;
+  const cached = blockViewsCache.get(blocks);
+  if (cached !== undefined) {
+    return cached;
   }
   const blockViews = blocks.map(blockViewForSourceBlock);
-  blockViewsCache = { visibleBlocks: blocks, blockViews };
+  blockViewsCache.set(blocks, blockViews);
   return blockViews;
 }
 
