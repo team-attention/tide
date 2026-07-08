@@ -10,6 +10,7 @@ export function createAgentChatShellViewModel(
 ): AgentChatShellViewModel {
   const visibleBlocks = visibleBlocksForState(state);
   const chatState = deriveChatState(state, visibleBlocks);
+  const blockViews = blockViewsForVisibleBlocks(visibleBlocks);
   return {
     chatState,
     runtimeState: state.runtimeState,
@@ -42,7 +43,7 @@ export function createAgentChatShellViewModel(
         }
       : undefined,
     prompt: state.promptState,
-    blocks: visibleBlocks.map(toBlockView),
+    blocks: blockViews,
     checklist: deriveChecklist(visibleBlocks),
     composer: {
       mode: state.thread ? "follow_up" : "start",
@@ -359,12 +360,52 @@ function deriveChatState(
   return "ready";
 }
 
+const visibleBlocksCache = new WeakMap<
+  AgentChatBlock[],
+  Map<string | undefined, AgentChatBlock[]>
+>();
+const blockViewsCache = new WeakMap<AgentChatBlock[], AgentChatBlockView[]>();
+// Reducers replace a block object when provider output changes, so the same object
+// reference can safely reuse its derived view across draft-only state updates.
+const blockViewBySource = new WeakMap<AgentChatBlock, AgentChatBlockView>();
+
 function visibleBlocksForState(state: AgentChatShellState): AgentChatBlock[] {
   const threadId = state.thread?.threadId;
-  if (threadId === undefined) {
-    return state.blocks;
+  let threadCache = visibleBlocksCache.get(state.blocks);
+  if (threadCache === undefined) {
+    threadCache = new Map();
+    visibleBlocksCache.set(state.blocks, threadCache);
   }
-  return state.blocks.filter((block) => block?.threadId === threadId);
+  const cached = threadCache.get(threadId);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const visibleBlocks =
+    threadId === undefined
+      ? state.blocks
+      : state.blocks.filter((block) => block?.threadId === threadId);
+  threadCache.set(threadId, visibleBlocks);
+  return visibleBlocks;
+}
+
+function blockViewsForVisibleBlocks(blocks: AgentChatBlock[]): AgentChatBlockView[] {
+  const cached = blockViewsCache.get(blocks);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const blockViews = blocks.map(blockViewForSourceBlock);
+  blockViewsCache.set(blocks, blockViews);
+  return blockViews;
+}
+
+function blockViewForSourceBlock(block: AgentChatBlock): AgentChatBlockView {
+  const cached = blockViewBySource.get(block);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const view = toBlockView(block);
+  blockViewBySource.set(block, view);
+  return view;
 }
 
 // The agent's live checklist = the latest "plan" block's entries. Providers re-emit

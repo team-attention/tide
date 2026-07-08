@@ -223,9 +223,16 @@ type SessionRenderItem =
   | { kind: "block"; block: AgentChatBlockView }
   | { kind: "toolGroup"; key: string; blocks: AgentChatBlockView[] };
 
+let sessionItemsCache:
+  | { blocks: AgentChatBlockView[]; items: SessionRenderItem[] }
+  | undefined;
+
 // Consecutive tool blocks collapse into one Codex-style activity summary; other
 // blocks render as their own turn.
 function groupSessionItems(blocks: AgentChatBlockView[]): SessionRenderItem[] {
+  if (sessionItemsCache !== undefined && sessionItemsCache.blocks === blocks) {
+    return sessionItemsCache.items;
+  }
   const items: SessionRenderItem[] = [];
   let group: { kind: "toolGroup"; key: string; blocks: AgentChatBlockView[] } | null = null;
   for (const block of blocks) {
@@ -247,6 +254,7 @@ function groupSessionItems(blocks: AgentChatBlockView[]): SessionRenderItem[] {
       items.push({ kind: "block", block });
     }
   }
+  sessionItemsCache = { blocks, items };
   return items;
 }
 
