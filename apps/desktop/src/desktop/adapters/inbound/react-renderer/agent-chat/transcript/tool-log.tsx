@@ -1,5 +1,5 @@
 import type { AgentChatBlockView } from "../../../../../application/domains/agent-chat/agent-chat.ts";
-import { useState } from "react";
+import { memo, useMemo, useState } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { styled } from "styled-components";
 import { pickStringField, readToolFilePath, renderFileChip } from "./file-chip.tsx";
@@ -151,9 +151,14 @@ export function toolBodyText(toolName: string, body: string): string {
 
 // A run of tool calls/results renders as ONE muted Codex-style summary line
 // ("Edited 1 file, ran 2 commands"), expandable to the individual tool entries.
-export function ToolActivityGroup({ blocks }: { blocks: AgentChatBlockView[] }): ReactElement {
+export const ToolActivityGroup = memo(function ToolActivityGroup({
+  blocks,
+}: {
+  blocks: AgentChatBlockView[];
+}): ReactElement {
   const [expanded, setExpanded] = useState(false);
-  const summary = summarizeToolActivity(blocks);
+  const summary = useMemo(() => summarizeToolActivity(blocks), [blocks]);
+  const filesChangedList = useMemo(() => createFilesChangedList(blocks), [blocks]);
   return (
     <ToolActivityFrame
       data-block-role="tool"
@@ -169,13 +174,13 @@ export function ToolActivityGroup({ blocks }: { blocks: AgentChatBlockView[] }):
         <ToolActivitySummaryText data-tool-activity-summary="true">{summary}</ToolActivitySummaryText>
         <ToolActivityChevron $expanded={expanded} size={13} aria-hidden />
       </ToolActivitySummaryButton>
-      {createFilesChangedList(blocks)}
+      {filesChangedList}
       {expanded ? (
         <ToolActivityDetail>{blocks.map(createToolLogTurn)}</ToolActivityDetail>
       ) : null}
     </ToolActivityFrame>
   );
-}
+});
 
 // Codex-style "files changed" list: the distinct files edited by this tool group.
 function createFilesChangedList(blocks: AgentChatBlockView[]): ReactElement | null {
