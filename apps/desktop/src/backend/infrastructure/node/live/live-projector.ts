@@ -585,7 +585,7 @@ export function createLiveAgentSessionEventProjector(input: {
         );
         const current = service.peekThread(eventInput.threadId);
         const activeGoal = goalKeepsRuntimeBusy(current.ok ? current.thread.goalState : undefined);
-        const hasQueuedInput = current.ok && (current.thread.queuedInputs?.length ?? 0) > 0;
+        const hasQueuedInput = current.ok && current.thread.queuedInputs.length > 0;
         if (activeGoal && !hasQueuedInput) {
           await flushPersist(eventInput.threadId);
           return;
