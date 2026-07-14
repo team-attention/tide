@@ -9,6 +9,9 @@ import { isProductShellAgentIdentity } from "./start.ts";
 import type { ProductShellProviderUsage } from "./types.ts";
 
 export function providerInventoryFromPayload(payload: unknown): AgentChatProviderInventory | null {
+  if (typeof payload !== "object" || payload === null) {
+    return null;
+  }
   const raw = payload as { agents?: unknown };
   if (!Array.isArray(raw.agents)) {
     return null;
@@ -33,6 +36,9 @@ export function providerReadinessFromInventoryPayload(
   payload: unknown,
   agentId: ProductShellProviderUsage["agentId"],
 ): AgentChatProviderReadiness | null {
+  if (typeof payload !== "object" || payload === null) {
+    return null;
+  }
   const raw = payload as { agents?: unknown };
   if (!Array.isArray(raw.agents)) {
     return null;

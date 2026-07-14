@@ -10,6 +10,10 @@ import {
   createProductShellState,
   startNewProductShellThread,
 } from "../src/desktop/application/domains/product-shell/product-shell.ts";
+import {
+  providerInventoryFromPayload,
+  providerReadinessFromInventoryPayload,
+} from "../src/desktop/application/domains/product-shell/state/provider-inventory-payload.ts";
 import type { AgentChatBackendEvent } from "../src/desktop/application/domains/agent-chat/agent-chat.ts";
 
 // Spec: docs_v2/specs/provider-catalog-ownership-and-model-selection.md
@@ -128,6 +132,15 @@ test("providerInventory.changed surfaces provider CLI update advisory on the sta
   assert.equal(view.agentChat.providerUpdateAdvisory?.agentLabel, "Codex CLI");
   assert.equal(view.agentChat.providerUpdateAdvisory?.currentVersion, "0.141.0");
   assert.equal(view.agentChat.providerUpdateAdvisory?.latestVersion, "0.144.4");
+});
+
+test("provider inventory payload parsers tolerate malformed payloads", () => {
+  assert.equal(providerInventoryFromPayload(null), null);
+  assert.equal(providerInventoryFromPayload(undefined), null);
+  assert.equal(providerInventoryFromPayload("not an object"), null);
+  assert.equal(providerReadinessFromInventoryPayload(null, "codex"), null);
+  assert.equal(providerReadinessFromInventoryPayload(undefined, "codex"), null);
+  assert.equal(providerReadinessFromInventoryPayload("not an object", "codex"), null);
 });
 
 test("agentRuntime.modelCatalogChanged updates the same provider catalog slice", () => {

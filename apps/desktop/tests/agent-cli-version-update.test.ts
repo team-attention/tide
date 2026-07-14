@@ -244,6 +244,33 @@ test("update checker: not installed or unknown latest yields no advisory", async
   assert.equal(checker.advisoryFor("codex", "."), undefined); // latest unknown
 });
 
+test("update checker: refresh failures clear stale advisories without rejecting", async () => {
+  let fail = false;
+  const checker = createAgentUpdateChecker({
+    agentIds: ["codex"],
+    readInstalledVersion: async () => {
+      if (fail) {
+        throw new Error("spawn failed");
+      }
+      return "1.0.0";
+    },
+    readLatestVersion: async () => "1.2.0",
+    buildUpdateTerminalAction: (id, cwd) => ({
+      command: "npm",
+      args: [`${id}@latest`],
+      cwd,
+      expectedCompletion: "retry_preflight",
+    }),
+  });
+
+  assert.deepEqual(await checker.refresh(), ["codex"]);
+  assert.equal(checker.advisoryFor("codex", ".")?.latestVersion, "1.2.0");
+
+  fail = true;
+  await assert.doesNotReject(() => checker.refresh());
+  assert.equal(checker.advisoryFor("codex", "."), undefined);
+});
+
 test("provider detection inventory carries non-blocking CLI update advisories", () => {
   const detection = createProviderDetection({
     hasIntegration: () => true,
