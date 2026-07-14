@@ -18,6 +18,10 @@ function fixtureRoot(): string {
   writeFileSync(join(root, "ignored.txt"), "needle in ignored file\n");
   mkdirSync(join(root, "node_modules"));
   writeFileSync(join(root, "node_modules", "dep.js"), "needle in node_modules\n");
+  mkdirSync(join(root, ".venv"));
+  writeFileSync(join(root, ".venv", "site.py"), "needle in virtualenv\n");
+  mkdirSync(join(root, ".git"));
+  writeFileSync(join(root, ".git", "config"), "needle in git metadata\n");
   return root;
 }
 
@@ -34,14 +38,16 @@ test("searchContent finds case-insensitive matches with line/column", async () =
   assert.equal(a?.lineText, "const Needle = 1;");
 });
 
-test("searchContent includes gitignored files but still skips node_modules", async () => {
+test("searchContent includes gitignored files but still skips heavy dirs", async () => {
   const port = createNodeWorkspaceFilePort();
   const result = await port.searchContent({ root: fixtureRoot(), query: "needle", maxResults: 100, maxFiles: 100 });
   assert.equal(result.ok, true);
   if (!result.ok) return;
   const paths = result.search.matches.map((m) => m.relativePath);
   assert.ok(paths.includes("ignored.txt"), "gitignored file is now searched");
-  assert.ok(!paths.some((p) => p.includes("node_modules")), "heavy dir still skipped");
+  assert.ok(!paths.some((p) => p.includes("node_modules")), "vendor dir still skipped");
+  assert.ok(!paths.some((p) => p.includes(".venv")), "virtualenv dir still skipped");
+  assert.ok(!paths.some((p) => p.includes(".git")), "VCS dir still skipped");
 });
 
 test("searchContent returns empty for a blank query", async () => {

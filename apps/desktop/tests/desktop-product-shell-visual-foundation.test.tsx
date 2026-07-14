@@ -119,15 +119,14 @@ test("left_ui_renders_project_grouped_thread_rows_without_default_status_markers
   assert.doesNotMatch(html, /project-row__count/);
 });
 
-test("thread_rows_keep_scope_status_and_worktree_context_in_hidden_popover", () => {
+test("thread_rows_keep_scope_status_and_worktree_context_out_of_compact_rows", () => {
   const fixtureHtml = renderProductShell();
   const projectRow = extractByDataAttribute(fixtureHtml, "data-thread-row", "thread-workbench");
-  assert.match(projectRow, /aria-describedby="thread-row-context-thread-workbench"/);
   assert.match(projectRow, /aria-label="Thread menu"/);
   assert.doesNotMatch(projectRow, /data-thread-leading-status/);
-  assert.match(projectRow, /data-thread-context-popover[^>]*hidden/);
-  assert.match(projectRow, /(?:tabIndex|tabindex)="-1"/);
-  assert.match(projectRow, />Project</);
+  assert.doesNotMatch(projectRow, /aria-describedby="thread-row-context-/);
+  assert.doesNotMatch(projectRow, /data-thread-context-popover/);
+  assert.doesNotMatch(projectRow, />Project</);
   assert.doesNotMatch(projectRow, />Status</);
   assert.doesNotMatch(projectRow, /thread-row__label/);
   assert.doesNotMatch(projectRow, /thread-row__scope/);
@@ -167,15 +166,15 @@ test("thread_rows_keep_scope_status_and_worktree_context_in_hidden_popover", () 
     "thread-worktree",
   );
 
-  assert.match(worktreeRow, /aria-describedby="thread-row-context-thread-worktree"/);
-  assert.match(worktreeRow, /data-thread-context-popover/);
-  assert.match(worktreeRow, />Project</);
-  assert.match(worktreeRow, />Worktree</);
-  assert.match(worktreeRow, />feature-login</);
-  assert.match(worktreeRow, />Branch</);
-  assert.match(worktreeRow, />tide\/feature-login</);
-  assert.match(worktreeRow, />Status</);
-  assert.match(worktreeRow, />Running</);
+  assert.doesNotMatch(worktreeRow, /aria-describedby="thread-row-context-/);
+  assert.doesNotMatch(worktreeRow, /data-thread-context-popover/);
+  assert.doesNotMatch(worktreeRow, />Project</);
+  assert.doesNotMatch(worktreeRow, />Worktree</);
+  assert.doesNotMatch(worktreeRow, />feature-login</);
+  assert.doesNotMatch(worktreeRow, />Branch</);
+  assert.doesNotMatch(worktreeRow, />tide\/feature-login</);
+  assert.doesNotMatch(worktreeRow, />Status</);
+  assert.doesNotMatch(worktreeRow, />Running</);
   assert.doesNotMatch(worktreeRow, /thread-row__branch/);
   assert.doesNotMatch(worktreeRow, /thread-row__branch-name/);
 });
@@ -980,15 +979,14 @@ test("thread_rows_use_list_style_selection_not_card_blocks", () => {
   assert.doesNotMatch(css, /tide-row-running-breathe/);
   assert.doesNotMatch(css, /\.thread-row--active\s*{[^}]*border-color/s);
   assert.doesNotMatch(css, /\.thread-row(?:--active|\[data-[^\]]+\])?\s*{[^}]*border-left/s);
-  assert.match(threadRowSource, /const ThreadContextPopover = styled\.div`[\s\S]*position:\s*fixed/s);
+  assert.doesNotMatch(threadRowSource, /ThreadContextPopover/);
   assert.doesNotMatch(css, /\.thread-row--scoped\s*{[^}]*height:\s*36px/s);
   assert.doesNotMatch(css, /\.thread-row__scope\s*{/);
   assert.doesNotMatch(css, /\.thread-row__branch\s*{/);
   assert.match(threadRowSource, /"Thread menu"/);
-  assert.match(threadRowSource, /THREAD_ROW_CONTEXT_OPEN_EVENT/);
-  assert.match(threadRowSource, /document\.dispatchEvent\(\s*new CustomEvent\(THREAD_ROW_CONTEXT_OPEN_EVENT/s);
-  assert.match(threadRowSource, /document\.addEventListener\(THREAD_ROW_CONTEXT_OPEN_EVENT/);
-  assert.match(threadRowSource, /hiddenThreadRowContextPopoverStyle/);
+  assert.doesNotMatch(threadRowSource, /THREAD_ROW_CONTEXT_OPEN_EVENT/);
+  assert.doesNotMatch(threadRowSource, /data-thread-context-popover/);
+  assert.doesNotMatch(threadRowSource, /hiddenThreadRowContextPopoverStyle/);
   assert.doesNotMatch(threadRowSource, /typeof window === "undefined"\s*\?\s*fallbackThreadRowContextAnchor/);
 });
 
@@ -1505,6 +1503,19 @@ test("code_editor_pane_has_no_markdown_preview_toggle", () => {
   );
   assert.doesNotMatch(html, /Markdown view mode/);
   assert.match(html, /aria-label="Editor Pane text"/);
+});
+
+test("workbench_code_editor_skin_uses_dark_readable_code_surface", () => {
+  // Spec: docs_v2/specs/workbench-editor-pane-editing.md (D8)
+  const source = readRendererSource("product-shell/workbench/code-editor.styles.ts");
+
+  assert.match(source, /--tide-code-bg:\s*#171716/);
+  assert.match(source, /--tide-code-text:\s*#dbd9d2/);
+  assert.match(source, /--tide-code-selection:\s*rgba\(48,\s*116,\s*197,\s*0\.42\)/);
+  assert.match(source, /\.cm-content\s*{[\s\S]*padding:\s*12px 0 28px/s);
+  assert.match(source, /\.cm-line\s*{[\s\S]*padding:\s*0 28px 0 18px/s);
+  assert.match(source, /\.tok-keyword[\s\S]*#c792ea/s);
+  assert.doesNotMatch(source, /background:\s*var\(--tide-bg\);\s*\n\s*color:\s*var\(--tide-text\);\s*\n\s*font:\s*12px\/1\.55/s);
 });
 
 test("editor_breadcrumb_without_relative_path_is_static", () => {
@@ -3395,8 +3406,10 @@ test("left_ui_context_menus_match_figma_items_and_keep_rows_highlighted", () => 
 
   assert.match(extractByDataAttribute(threadHtml, "data-thread-row", "thread-workbench"), /data-thread-menu-open="true"/);
   assert.match(threadHtml, /data-left-rail-menu-kind="thread"/);
-  assert.match(threadHtml, /Pin \/ unpin/);
-  assert.match(threadHtml, /Archive/);
+  assert.match(threadHtml, /Review changes/);
+  assert.match(threadHtml, /Copy session ID/);
+  assert.doesNotMatch(threadHtml, /Pin \/ unpin/);
+  assert.doesNotMatch(threadHtml, /data-left-rail-menu-item="Archive"/);
   assert.match(extractByDataAttribute(projectHtml, "data-project-row", "tide"), /data-project-menu-open="true"/);
   assert.match(projectHtml, /data-left-rail-menu-kind="project"/);
   assert.match(projectHtml, /Pin project/);

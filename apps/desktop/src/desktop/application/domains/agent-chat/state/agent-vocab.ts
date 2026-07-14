@@ -6,15 +6,13 @@ import {
 } from "../../../../../shared/agent-descriptors.ts";
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
 
-// Codex models, read from the installed codex binary (matches the Codex app
-// picker). codex's --model is free-form, so "Custom model id..." stays too.
+// Codex visible model catalog, verified from `codex debug models` (codex-cli
+// 0.141.0). codex's --model is free-form, so "Custom model id..." stays too.
 export const CODEX_MODELS: CliModelOption[] = [
   { value: "gpt-5.5", label: "GPT-5.5" },
   { value: "gpt-5.4", label: "GPT-5.4" },
   { value: "gpt-5.4-mini", label: "GPT-5.4-Mini" },
-  { value: "gpt-5.3-codex", label: "GPT-5.3-Codex" },
   { value: "gpt-5.3-codex-spark", label: "GPT-5.3-Codex-Spark" },
-  { value: "gpt-5.2", label: "GPT-5.2" },
 ];
 
 export function codexModelLabel(model: string): string {
@@ -119,21 +117,21 @@ export interface CliModelOption {
 }
 
 // A maintained, provider-native model list per CLI agent (models change rarely).
-// Claude values are the real `--model` aliases (verified via `/model`); "Claude
-// default" passes no --model (uses the CLI's own default).
+// Claude values are accepted `--model` ids/aliases; "Claude default" passes no
+// --model and lets the CLI/account resolve its recommended default.
 export function cliModelOptionsForAgent(agentId: string): CliModelOption[] {
   switch (agentId) {
     case "claude":
-      // Mirrors the Claude Code app's model list. "Claude default" passes no
-      // --model (the CLI's own default, currently Opus 4.8); the rest pass an
-      // explicit `--model` id.
+      // Verified against Claude Code model configuration docs and `claude --help`
+      // 2.1.202. The explicit rows use current Anthropic API model ids.
       return [
-        { value: "Claude default", label: "Default", detail: "Opus 4.8" },
+        { value: "Claude default", label: "Default", detail: "Recommended" },
         { value: "claude-fable-5", label: "Fable 5" },
         { value: "claude-opus-4-8", label: "Opus 4.8" },
+        { value: "claude-sonnet-5", label: "Sonnet 5" },
         { value: "claude-opus-4-8[1m]", label: "Opus 4.8 (1M context)" },
-        { value: "claude-sonnet-4-6", label: "Sonnet 4.6" },
         { value: "claude-haiku-4-5", label: "Haiku 4.5" },
+        { value: "claude-sonnet-4-6", label: "Sonnet 4.6", detail: "Legacy" },
         { value: "claude-opus-4-7", label: "Opus 4.7", detail: "Legacy" },
         { value: "claude-opus-4-7[1m]", label: "Opus 4.7 (1M context)", detail: "Legacy" },
         { value: "claude-opus-4-6", label: "Opus 4.6", detail: "Legacy" },

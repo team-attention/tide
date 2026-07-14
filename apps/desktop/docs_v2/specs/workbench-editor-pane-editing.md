@@ -101,6 +101,14 @@ CodeMirror and its language/parser packages are MIT-licensed, compatible with
 open-source distribution. Because CodeMirror mounts in a real DOM, its rendering
 is verified with jsdom-backed tests rather than the SSR snapshot path.
 
+### D8. The CodeMirror skin must read like a primary code surface
+
+The editor chrome should track the Codex App style: a dark, low-glare code
+surface; quiet gutters; stronger syntax colors; visible current-line and
+selection states; and no plain white/default CodeMirror feel. The product shell
+may stay light or dark globally, but the Workbench Editor itself should be a
+stable code-reading surface with readable contrast in both app themes.
+
 ## Domain Model
 
 ```ts
@@ -213,12 +221,12 @@ Editor refs add:
 | Desktop read-only truncated state | `truncated_workbench_editor_pane_renders_read_only` |
 | Editor is a real CodeMirror editor (content + line numbers) | `workbench_editor_pane_mounts_codemirror_with_file_content_and_line_numbers` |
 | Editor applies grammar-based highlighting | `workbench_editor_pane_applies_grammar_highlighting_tokens` |
+| Editor skin avoids the default CodeMirror look and sets code-surface tokens | `workbench_code_editor_skin_uses_dark_readable_code_surface` |
 
 ## Implementation Notes
 
 - Keep full file text bounded by the existing file byte limit until a larger
   editor model is specified.
-- Use native `<textarea>` for this slice because the current dependency set does
-  not include CodeMirror or Monaco.
-- Add the richer editor engine and LSP connection as later specs on top of the
-  same `bodyText`, file identity, revision, and save contract.
+- Keep CodeMirror styling component-owned in `workbench/code-editor.tsx`; only
+  shared token colors that are also used by markdown/transcript code blocks
+  belong in global CSS.

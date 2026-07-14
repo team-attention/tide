@@ -2,7 +2,7 @@ import type { ProductShellLeftRailMenu, ProductShellListSettings } from "../../.
 import type { MenuAnchorRect, ProductShellHandlers } from "../support/types.ts";
 import type { CSSProperties, ReactElement, ReactNode } from "react";
 import { createListSettingsMenu } from "./section-header.tsx";
-import { Archive, ClipboardCheck, FolderOpen, GitBranchPlus, Pencil, Pin, Trash2 } from "lucide-react";
+import { Archive, Clipboard, ClipboardCheck, FolderOpen, GitBranchPlus, Pencil, Pin, Trash2 } from "lucide-react";
 import {
   FloatingMenuBackdrop,
   FloatingMenuIcon,
@@ -23,8 +23,8 @@ export function createLeftRailContextMenuOverlay(
 ): ReactElement {
   const viewportH = typeof window === "undefined" ? 900 : window.innerHeight;
   const viewportW = typeof window === "undefined" ? 1200 : window.innerWidth;
-  const width = menu.kind === "project" ? 244 : menu.kind === "list_settings" ? 200 : 200;
-  const estimated = menu.kind === "project" ? 230 : menu.kind === "list_settings" ? 230 : 146;
+  const width = menu.kind === "project" ? 244 : menu.kind === "list_settings" ? 200 : 238;
+  const estimated = menu.kind === "project" ? 230 : menu.kind === "list_settings" ? 230 : 214;
   const openUp = anchor.bottom + estimated > viewportH;
   // The trigger (⋯) sits at the right edge of the narrow left rail, so right-align
   // the menu to it (open leftward) — left-aligning would spill over into the chat.
@@ -64,34 +64,44 @@ function createLeftRailContextMenu(
   menu: Exclude<ProductShellLeftRailMenu, { kind: "list_settings" }>,
   handlers: ProductShellHandlers,
 ): ReactElement {
+  const threadInfo = menu.kind === "thread" ? handlers.threadContextMenuInfo(menu.threadId) : null;
   const items: ContextMenuItem[] =
     menu.kind === "thread"
       ? [
-          {
-            label: "Pin / unpin",
-            icon: <Pin size={15} strokeWidth={1.9} />,
-            onClick: () => handlers.onThreadPinToggle(menu.threadId),
-          },
           {
             label: "Review changes",
             icon: <ClipboardCheck size={15} strokeWidth={1.9} />,
             onClick: () => handlers.onOpenThreadReview(menu.threadId),
           },
           {
-            label: "Archive",
-            icon: <Archive size={15} strokeWidth={1.9} />,
-            onClick: () => handlers.onThreadArchiveIntent(menu.threadId),
+            label: "Rename task",
+            icon: <Pencil size={15} strokeWidth={1.9} />,
+            onClick: () => handlers.onThreadRenameStart(menu.threadId),
           },
-          ...(handlers.threadWorktreeBranch(menu.threadId) != null
+          ...(threadInfo?.workingDirectory != null
             ? [
                 {
-                  label: `Delete worktree (${handlers.threadWorktreeBranch(menu.threadId)})…`,
-                  icon: <Trash2 size={15} strokeWidth={1.9} />,
-                  onClick: () => handlers.onThreadDeleteWorktree(menu.threadId),
-                  danger: true,
+                  label: "Reveal in Finder",
+                  icon: <FolderOpen size={15} strokeWidth={1.9} />,
+                  onClick: () => handlers.onThreadRevealInFinder(menu.threadId),
+                } satisfies ContextMenuItem,
+                {
+                  label: "Copy working directory",
+                  icon: <Clipboard size={15} strokeWidth={1.9} />,
+                  onClick: () => copyTextAndClose(threadInfo.workingDirectory ?? "", handlers),
                 } satisfies ContextMenuItem,
               ]
             : []),
+          {
+            label: "Copy session ID",
+            icon: <Clipboard size={15} strokeWidth={1.9} />,
+            onClick: () => copyTextAndClose(threadInfo?.sessionId ?? menu.threadId, handlers),
+          },
+          {
+            label: "Copy thread ID",
+            icon: <Clipboard size={15} strokeWidth={1.9} />,
+            onClick: () => copyTextAndClose(menu.threadId, handlers),
+          },
         ]
       : [
           {
@@ -160,4 +170,11 @@ function createLeftRailContextMenu(
       ))}
     </FloatingMenuSurface>
   );
+}
+
+function copyTextAndClose(value: string, handlers: ProductShellHandlers): void {
+  if (typeof navigator !== "undefined" && navigator.clipboard !== undefined) {
+    void navigator.clipboard.writeText(value);
+  }
+  handlers.onLeftRailMenuOpen(null);
 }

@@ -13,7 +13,7 @@ function projectCwdById(state: ProductShellState, projectId: string): string | u
   )?.cwd;
 }
 
-export function createRailHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onNewThread" | "onNewThreadInProject" | "onProjectToggle" | "onThreadSelect" | "onLeftRailToggle" | "onLeftRailMenuOpen" | "onToggleSection" | "onListSettingsChange" | "onProjectRevealInFinder" | "onProjectArchiveChats" | "onProjectRemove" | "onProjectDeleteWorktree" | "onProjectPinToggle" | "onProjectRenameStart" | "onProjectRenameCancel" | "onProjectRenameSubmit" | "onProjectCreateWorktree" | "onProjectCreateWorktreeSubmit" | "onProjectCreateWorktreeCancel" | "onPinnedProjectSelect" | "onAddProject" | "onNewScratchThread" | "onThreadArchiveIntent" | "onThreadArchiveConfirm" | "onThreadPinToggle" | "onThreadDeleteWorktree" | "onThreadRenameStart" | "onThreadRenameSubmit" | "onThreadRenameCancel" | "onLeftRailTransientClear" | "isSectionCollapsed" | "isProjectRemovable" | "isProjectWorktree" | "onReorderPinnedItem" | "onReorderProject" | "threadWorktreeBranch"> {
+export function createRailHandlers(ctx: ProductShellHandlerContext): Pick<ProductShellHandlers, "onNewThread" | "onNewThreadInProject" | "onProjectToggle" | "onThreadSelect" | "onLeftRailToggle" | "onLeftRailMenuOpen" | "onToggleSection" | "onListSettingsChange" | "onProjectRevealInFinder" | "onProjectArchiveChats" | "onProjectRemove" | "onProjectDeleteWorktree" | "onProjectPinToggle" | "onProjectRenameStart" | "onProjectRenameCancel" | "onProjectRenameSubmit" | "onProjectCreateWorktree" | "onProjectCreateWorktreeSubmit" | "onProjectCreateWorktreeCancel" | "onPinnedProjectSelect" | "onAddProject" | "onNewScratchThread" | "onThreadArchiveIntent" | "onThreadArchiveConfirm" | "onThreadPinToggle" | "threadContextMenuInfo" | "onThreadRevealInFinder" | "onThreadDeleteWorktree" | "onThreadRenameStart" | "onThreadRenameSubmit" | "onThreadRenameCancel" | "onLeftRailTransientClear" | "isSectionCollapsed" | "isProjectRemovable" | "isProjectWorktree" | "onReorderPinnedItem" | "onReorderProject" | "threadWorktreeBranch"> {
   const { props, shellState, setShellState, viewModel, dispatchBackendCommand, applyBackendEvents, themePref, setThemePref, menuAnchor, setMenuAnchor, collapsedSections, setCollapsedSections, columnWidths, setColumnWidths, setIsResizing, quickOpenVisible, setQuickOpenVisible, contentSearchVisible, setContentSearchVisible, worktreeCreate, setWorktreeCreate, worktreeDelete, setWorktreeDelete, windowWidth, bodyRef, lastSubmitAtRef, openFolderAsProject, openFolderForScope, submitWorktreeCreate, openWorktreeDeleteByCwd, confirmWorktreeDelete, startColumnResize } = ctx;
   return {
     onNewThread: () =>
@@ -199,6 +199,36 @@ export function createRailHandlers(ctx: ProductShellHandlerContext): Pick<Produc
         dispatchBackendCommand(result.command);
         return result.state;
       }),
+    threadContextMenuInfo: (threadId) => {
+      const thread = shellState.threads.find((entry) => entry.threadId === threadId);
+      const workingDirectory =
+        thread === undefined
+          ? null
+          : thread.scope.kind === "project"
+            ? thread.scope.cwd
+            : thread.scope.scratchCwd;
+      return {
+        threadId,
+        sessionId: thread?.providerSessionRef?.value ?? threadId,
+        workingDirectory:
+          typeof workingDirectory === "string" && workingDirectory.trim().length > 0
+            ? workingDirectory
+            : null,
+      };
+    },
+    onThreadRevealInFinder: (threadId) => {
+      const thread = shellState.threads.find((entry) => entry.threadId === threadId);
+      const cwd =
+        thread === undefined
+          ? undefined
+          : thread.scope.kind === "project"
+            ? thread.scope.cwd
+            : thread.scope.scratchCwd;
+      if (typeof cwd === "string" && cwd.length > 0) {
+        props.projectBridge?.revealInFinder(cwd);
+      }
+      setShellState((state) => openProductShellLeftRailMenu(state, null));
+    },
     onThreadDeleteWorktree: (threadId) => {
       const thread = shellState.threads.find((entry) => entry.threadId === threadId);
       setShellState((state) => openProductShellLeftRailMenu(state, null));

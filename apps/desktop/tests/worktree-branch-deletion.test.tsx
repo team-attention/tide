@@ -140,21 +140,23 @@ test("worktree_thread_row_exposes_delete_worktree_as_direct_button", () => {
   assert.match(markup, /aria-label="Delete worktree"/);
 });
 
-test("worktree_thread_menu_offers_archive_and_delete_worktree", () => {
+test("worktree_thread_menu_keeps_secondary_utilities_and_omits_direct_hover_actions", () => {
   // D1: a thread living in a `<repo>.worktree/<branch>` worktree exposes both
-  // Review, Archive, and a "Delete worktree (branch)" item in its context menu.
+  // direct Delete worktree as a hover action and keeps the menu for utilities.
   const markup = renderThreadContextMenu("/Users/you/repo.worktree/fix-login");
   assert.match(markup, /Review changes/);
-  assert.match(markup, /Delete worktree \(fix-login\)/);
-  assert.match(markup, /Archive/);
+  assert.match(markup, /Copy working directory/);
+  assert.match(markup, /Copy session ID/);
+  assert.doesNotMatch(markup, /Delete worktree \(fix-login\)/);
+  assert.doesNotMatch(markup, /data-left-rail-menu-item="Archive"/);
 });
 
 test("non_worktree_thread_menu_omits_delete_worktree", () => {
   // Invariant 4: a thread in the main repo (not a worktree) cannot delete a
-  // worktree — its menu offers Review / Archive, but no "Delete worktree".
+  // worktree — its menu offers secondary utilities, but no "Delete worktree".
   const markup = renderThreadContextMenu("/Users/you/repo");
   assert.match(markup, /Review changes/);
-  assert.match(markup, /Archive/);
+  assert.match(markup, /Copy working directory/);
   assert.doesNotMatch(markup, /Delete worktree/);
 });
 

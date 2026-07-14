@@ -69,9 +69,10 @@ Grounded in the integrations + live ACP probes (opencode 1.17.1, gemini 0.46-cla
    accurate immediately**. gemini model *switching* also upgrades to **live** — `session/set_model`
    is confirmed (live-probed `{}`), so `applyConfig` sends it alongside `set_mode` and gemini's
    model change stops restarting. (Permission was already live via `set_mode`.)
-4. **claude/codex stay static but behind the contract**, and are *verifiable*: a later check can
-   diff the curated list against the binary, but enumeration is impossible (claude headless can't
-   list; codex `--model` is free-form). codex keeps its "Custom model id…" escape.
+4. **claude/codex stay static but behind the contract**, and are *verifiable*: Codex can be
+   checked against `codex debug models`; Claude is checked against the installed `claude --help`
+   aliases/full-name examples plus Claude Code/model overview docs until a real enumeration path
+   exists. codex keeps its "Custom model id…" escape.
 5. **Effort is per-model catalog data**, not a fixed Tide list:
    `models[].effortOptions?: string[]`. opencode = reported variants (dynamic); codex =
    `[low,medium,high,xhigh]`; claude = `[low,medium,high,xhigh,max]`; gemini = none. The effort
@@ -196,7 +197,9 @@ interface ProviderModelCatalogDto {
   existing `session/set_mode`), and gemini's `buildSessionConfigUpdate` returns `{kind:"live",
   protocolParams:{modelId}}` for a model change instead of `{kind:"restart"}`. Folded into
   decision 3.
-- **claude/codex accuracy.** Without enumeration, the curated list drifts. Worth a CI check that
-  diffs the list against the installed binary's `--help`/`/model` output? Or accept curation.
+- **claude/codex accuracy.** Codex drift can be detected from `codex debug models`. Claude still
+  lacks a non-interactive list command in the installed CLI, so the maintained list should be
+  reviewed against `claude --help`, Claude Code model configuration docs, and the provider app
+  model picker when changed.
 - **codex `auto` / aliases.** gemini exposes an `auto` model; codex/claude have implicit
   defaults. Represent "auto/default" uniformly as a sentinel `ProviderModelDto` across providers.
