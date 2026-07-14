@@ -20,18 +20,11 @@ const MAX_EDIT_BYTES = 1024 * 1024;
 const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
 const MAX_TREE_DEPTH = 12;
 const MAX_TREE_ENTRIES = 4000;
-// Heavy vendor/build/VCS directories are hidden from the FileTree entirely —
-// they are neither listed nor descended into, so the tree stays source-focused.
-// This is the ONLY exclusion: gitignored and dot/hidden files ARE shown (the
-// tree no longer consults .gitignore), so config/env/scratch files are reachable.
-//
-// The set must cover every ecosystem's machine-generated heavy dir, not just JS:
-// the walk is depth-first under a bounded entry budget, so a single un-excluded
-// giant dir (e.g. a pnpm store with ~18k entries, or a Python .venv) would be
-// descended into first and exhaust the whole budget, starving every sibling and
-// root file that sorts after it — leaving the tree showing only the dirs visited
-// before the blowout. Keep this list current with new package/build/cache dirs.
-const IGNORED_DIRECTORIES = new Set([
+// Bounded recursive source scans (Quick Open, Composer file mentions, and
+// Cmd+Shift+F content search) keep the existing heavy-dir exclusions. Lazy
+// FileTree listings do NOT use this set: FileTree is filesystem navigation and
+// shows machine dirs/dot dirs when they exist.
+const BOUNDED_SOURCE_SCAN_IGNORED_DIRECTORIES = new Set([
   ".cache",
   ".git",
   ".gradle",
@@ -89,9 +82,9 @@ class NodeWorkspaceFilePort implements WorkspaceFilePort {
     root: string;
     maxEntries: number;
     // Lazy mode: descend ONLY into folders whose relativePath is in this set — a
-    // collapsed folder is listed as one entry and never walked, so a huge dir the
-    // user has not expanded can't starve the listing. Present (even empty) selects
-    // lazy mode. Absent falls back to the depth-bounded full walk (Quick Open).
+    // collapsed folder is listed as one entry and never walked. Present (even
+    // empty) selects complete lazy FileTree mode. Absent falls back to the
+    // bounded full walk used by file-picking/search surfaces.
     expandedPaths?: string[];
     maxDepth?: number;
   }): Promise<WorkspaceFileTreeResult> {
@@ -143,12 +136,12 @@ class NodeWorkspaceFilePort implements WorkspaceFilePort {
 
       for (const child of sorted) {
         const isDir = child.isDirectory();
-        if (isDir && IGNORED_DIRECTORIES.has(child.name)) {
+        if (expandedSet === null && isDir && BOUNDED_SOURCE_SCAN_IGNORED_DIRECTORIES.has(child.name)) {
           continue;
         }
         const childPath = path.join(directory, child.name);
         const relativePath = path.relative(root, childPath);
-        if (entries.length >= maxEntries) {
+        if (expandedSet === null && entries.length >= maxEntries) {
           truncated = true;
           return;
         }
@@ -162,8 +155,8 @@ class NodeWorkspaceFilePort implements WorkspaceFilePort {
           kind,
         });
 
-        // Lazy mode descends only into expanded folders; full mode (Quick Open)
-        // descends by depth. A collapsed folder is listed but not walked.
+        // Lazy mode descends only into expanded folders and never caps visible
+        // children. Full mode descends by depth and stays bounded by maxEntries.
         const descend =
           expandedSet === null
             ? depth < maxDepth
@@ -234,7 +227,7 @@ class NodeWorkspaceFilePort implements WorkspaceFilePort {
           return;
         }
         const isDir = child.isDirectory();
-        if (isDir && IGNORED_DIRECTORIES.has(child.name)) {
+        if (isDir && BOUNDED_SOURCE_SCAN_IGNORED_DIRECTORIES.has(child.name)) {
           continue;
         }
         const childPath = path.join(directory, child.name);

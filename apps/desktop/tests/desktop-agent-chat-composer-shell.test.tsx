@@ -2690,12 +2690,18 @@ test("at_file_menu_filters_files_and_splices_a_file_mention", () => {
   assert.equal(picked.composer.activeSurface, null);
 });
 
-test("claude_model_menu_lists_fable_5", () => {
+test("claude_model_menu_lists_latest_named_models", () => {
   const claudeModelMenu = setComposerActiveSurface(
     selectComposerAgent(createAgentChatShellState(), "claude").state,
     "model_menu",
   ).state;
-  assert.match(renderShell(claudeModelMenu), /Fable 5/);
+  const html = renderShell(claudeModelMenu);
+  assert.match(html, /Default/);
+  assert.match(html, /Recommended/);
+  assert.match(html, /Fable 5/);
+  assert.match(html, /Opus 4\.8/);
+  assert.match(html, /Sonnet 5/);
+  assert.match(html, /Haiku 4\.5/);
 });
 
 test("provider_cli_readiness_mentions_readiness_action_without_dropping_draft", () => {

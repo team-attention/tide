@@ -2,7 +2,6 @@ import type { ProductShellViewModel } from "../../../../../application/domains/p
 import type { ProductShellHandlers } from "../support/types.ts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
-import { styled } from "styled-components";
 import CodeMirror from "@uiw/react-codemirror";
 import type { ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView, keymap } from "@codemirror/view";
@@ -14,6 +13,18 @@ import type { CodeIntelContext } from "./code-intel-extensions.ts";
 import { createGitDiffLineDecorations, parseUnifiedDiffLineMarkers } from "./git-diff-lines.ts";
 import { CornerDownRight, FileSearch, ListTree, Save, Search as SearchIcon } from "lucide-react";
 import { InPaneFindBar, useInPaneFindState, usePaneFindIntent } from "../../support/in-pane-find.tsx";
+import {
+  CodeEditorCommandBar,
+  CodeEditorCommandButton,
+  CodeEditorCommandSeparator,
+  CodeEditorMenu,
+  CodeEditorMenuBackdrop,
+  CodeEditorMenuItem,
+  CodeEditorMenuSeparator,
+  CodeEditorSelectionToolbar,
+  CodeEditorSurface,
+  CodeMirrorHost,
+} from "./code-editor.styles.ts";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
 // Language-intelligence extensions: spec workbench-editor-language-intelligence.
 
@@ -485,272 +496,3 @@ function plainTextMatches(value: string, query: string): { from: number; to: num
   }
   return matches;
 }
-
-const CodeEditorSurface = styled.div`
-  position: relative;
-  width: 100%;
-  min-width: 0;
-  min-height: 0;
-  flex: 1 1 auto;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  background: var(--tide-bg);
-`;
-
-const CodeEditorCommandBar = styled.div`
-  min-height: 32px;
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  border-top: 1px solid var(--tide-line);
-  border-bottom: 1px solid var(--tide-line);
-  background: var(--tide-surface);
-`;
-
-const CodeEditorCommandButton = styled.button`
-  width: 24px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--tide-muted);
-  cursor: pointer;
-
-  &:hover:not(:disabled) {
-    background: var(--tide-selection);
-    color: var(--tide-text);
-  }
-
-  &:focus-visible {
-    outline: 2px solid var(--tide-action);
-    outline-offset: -2px;
-  }
-
-  &:disabled {
-    cursor: default;
-    opacity: 0.34;
-  }
-`;
-
-const CodeEditorCommandSeparator = styled.span`
-  width: 1px;
-  height: 16px;
-  margin: 0 3px;
-  background: var(--tide-line);
-`;
-
-const CodeMirrorHost = styled.div`
-  min-height: 0;
-  flex: 1 1 auto;
-
-  > div {
-    min-height: 0;
-    height: 100%;
-    flex: 1 1 auto;
-  }
-
-  .cm-editor {
-    height: 100%;
-    background: var(--tide-bg);
-    color: var(--tide-text);
-    font: 12px/1.55 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  }
-
-  .cm-scroller {
-    overflow: auto;
-  }
-
-  .cm-tide-occurrence {
-    border-radius: 2px;
-    background: rgba(var(--tide-ink-rgb), 0.09);
-  }
-
-  .cm-tide-occurrence--write {
-    background: rgba(var(--tide-ink-rgb), 0.17);
-  }
-
-  .cm-tide-cmdlink {
-    cursor: pointer;
-    text-decoration: underline;
-    text-underline-offset: 2px;
-  }
-
-  .cm-tide-git-line {
-    background-image: linear-gradient(
-      90deg,
-      var(--tide-git-line-color) 0 3px,
-      transparent 3px
-    );
-  }
-
-  .cm-tide-git-line--added {
-    --tide-git-line-color: var(--tide-diff-add);
-    background-color: color-mix(in srgb, var(--tide-diff-add) 9%, transparent);
-  }
-
-  .cm-tide-git-line--changed {
-    --tide-git-line-color: var(--tide-diff-add);
-    background-color: color-mix(in srgb, var(--tide-diff-add) 11%, var(--tide-diff-del) 5%, transparent);
-  }
-
-  .cm-tide-git-line--deleted {
-    --tide-git-line-color: var(--tide-diff-del);
-    background-color: color-mix(in srgb, var(--tide-diff-del) 8%, transparent);
-  }
-
-  .cm-tooltip {
-    overflow: hidden;
-    border: 1px solid var(--tide-line-strong, var(--tide-line));
-    border-radius: 6px;
-    background: var(--tide-surface);
-    color: var(--tide-text);
-    box-shadow: var(--tide-shadow-popover);
-  }
-
-  .cm-tide-hover,
-  .cm-tide-signature {
-    max-width: 480px;
-    overflow-wrap: break-word;
-    padding: 7px 10px;
-    font: 12px/1.55 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    white-space: pre-wrap;
-  }
-
-  .cm-tide-hover {
-    max-height: 320px;
-    overflow-y: auto;
-  }
-
-  .cm-tide-signature strong {
-    font-weight: 700;
-    text-decoration: underline;
-    text-underline-offset: 2px;
-  }
-
-  .cm-tooltip-autocomplete > ul {
-    max-height: 240px;
-    font: 12px/1.7 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  }
-
-  .cm-tooltip-autocomplete > ul > li {
-    padding: 2px 8px;
-    color: var(--tide-text);
-  }
-
-  .cm-tooltip-autocomplete > ul > li[aria-selected] {
-    background: var(--tide-selection);
-    color: var(--tide-text);
-  }
-
-  .cm-completionIcon {
-    color: var(--tide-muted);
-  }
-
-  .cm-completionDetail {
-    margin-left: 8px;
-    color: var(--tide-muted);
-    font-style: normal;
-  }
-
-  .cm-gutters {
-    border-right: 1px solid var(--tide-line);
-    background: var(--tide-surface);
-    color: var(--tide-muted);
-  }
-
-  .cm-activeLine,
-  .cm-activeLineGutter {
-    background: var(--tide-editor-active-line);
-  }
-
-  .cm-editor.cm-focused {
-    outline: none;
-  }
-
-  .cm-selectionBackground,
-  .cm-focused .cm-selectionBackground,
-  .cm-content ::selection {
-    background: var(--tide-editor-selection) !important;
-  }
-`;
-
-const CodeEditorSelectionToolbar = styled.button`
-  position: fixed;
-  z-index: 80;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 10px;
-  border: 1px solid var(--tide-line-strong, var(--tide-line));
-  border-radius: 8px;
-  background: var(--tide-text);
-  color: var(--tide-bg);
-  box-shadow: 0 6px 18px -6px rgba(36, 33, 38, 0.45);
-  cursor: pointer;
-  font: 600 12px/1 Inter, ui-sans-serif, system-ui, sans-serif;
-  white-space: nowrap;
-
-  svg {
-    color: var(--tide-bg);
-    opacity: 0.85;
-  }
-
-  &:hover {
-    opacity: 0.92;
-  }
-`;
-
-const CodeEditorMenuBackdrop = styled.div`
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-`;
-
-const CodeEditorMenu = styled.div`
-  position: fixed;
-  min-width: 184px;
-  display: flex;
-  flex-direction: column;
-  padding: 4px;
-  border: 1px solid var(--tide-line-strong, var(--tide-line));
-  border-radius: 8px;
-  background: var(--tide-bg);
-  box-shadow: 0 10px 30px -10px rgb(20 18 24 / 28%);
-  animation: tide-pop-in 0.13s ease;
-  transform-origin: top;
-`;
-
-const CodeEditorMenuItem = styled.button`
-  height: 30px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--tide-text);
-  cursor: pointer;
-  font: 13px/1 -apple-system, system-ui, sans-serif;
-  text-align: left;
-  transition: background-color 0.12s ease, color 0.12s ease;
-
-  &:hover:not(:disabled) {
-    background: var(--tide-selection);
-  }
-
-  &:disabled {
-    cursor: default;
-    opacity: 0.4;
-  }
-`;
-
-const CodeEditorMenuSeparator = styled.div`
-  height: 1px;
-  margin: 4px 8px;
-  background: var(--tide-line);
-`;

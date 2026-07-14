@@ -111,9 +111,11 @@ export type WorkspaceFileSearchResult =
 export interface WorkspaceFilePort {
   listTree(input: {
     root: string;
+    // Used only by the bounded full walk. Lazy FileTree mode ignores this so an
+    // expanded folder's direct children are not silently omitted.
     maxEntries: number;
-    // Lazy mode: descend only into these expanded folder paths. Absent => the
-    // depth-bounded full walk (Quick Open).
+    // Lazy FileTree mode: descend only into these expanded folder paths and do
+    // not hide/cap entries. Absent => depth-bounded full walk (Quick Open).
     expandedPaths?: string[];
     maxDepth?: number;
   }): Promise<WorkspaceFileTreeResult>;
@@ -133,8 +135,8 @@ export interface WorkspaceFilePort {
     byteLimit: number;
   }): Promise<WorkspaceImageFileReadResult>;
 
-  // Project-wide content search (gitignore-filtered). Returns matching lines
-  // across files under `root` for a plain-text (case-insensitive) query.
+  // Project-wide content search. It does not consult .gitignore, but the Node
+  // adapter keeps the bounded source-scan heavy-dir exclusions.
   searchContent(input: {
     root: string;
     query: string;

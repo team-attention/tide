@@ -691,11 +691,10 @@ export class WorkbenchCommandHandler {
             "Thread does not have an Execution Context root for FileTree View.",
           );
         }
-        // Lazy listing: with `expandedPaths` present, the port lists the root plus
-        // only the expanded subtrees — a collapsed folder (e.g. a pnpm store) is
-        // listed but never walked. Quick Open omits `expandedPaths` and passes
-        // `maxDepth` for the depth-bounded full walk. Heavy dirs are skipped either
-        // way by the workspace file port.
+        // Lazy FileTree listing: with `expandedPaths` present, the port lists the
+        // root plus only the expanded subtrees and never hides/caps entries. Quick
+        // Open omits `expandedPaths` and passes `maxDepth`/`maxEntries` for the
+        // bounded full walk, which keeps the source-scan heavy-dir exclusions.
         const listed = await this.workspaceFilePort.listTree({
           root,
           maxEntries: fileTreeMaxEntries(input.data?.maxEntries),

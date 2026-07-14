@@ -1,41 +1,19 @@
 import type { ProductShellThreadView } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import {
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type FocusEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactElement,
 } from "react";
 import { css, keyframes, styled } from "styled-components";
 import { menuAnchorFromEvent } from "../chrome/chrome.tsx";
-import { worktreeRepoRootForCwd } from "../../../../../../shared/worktree/path.ts";
 import { Archive, MoreHorizontal, Pin, PinOff, Trash2 } from "lucide-react";
 import { VisuallyHidden } from "../../support/visually-hidden.tsx";
 // Extracted from tide-product-shell.ts (spec: navigable-source-structure).
-
-interface ThreadRowContextItem {
-  kind: "scope" | "worktree" | "branch" | "status";
-  label: string;
-  value: string;
-  title?: string;
-}
-
-interface ThreadRowContextAnchor {
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-}
 
 interface ThreadRowProps {
   thread: ProductShellThreadView;
   handlers: ProductShellHandlers;
 }
-
-const THREAD_ROW_CONTEXT_OPEN_EVENT = "tide-thread-row-context-open";
 
 export function createThreadRow(
   thread: ProductShellThreadView,
@@ -49,94 +27,19 @@ function ThreadRow({ thread, handlers }: ThreadRowProps): ReactElement {
   const hasUnread = thread.unread === true;
   const showAttention = needsAttention || hasUnread;
   const worktreeBranch = handlers.threadWorktreeBranch(thread.threadId);
-  const contextItems = createThreadRowContextItems(thread);
-  const contextPopoverId = `thread-row-context-${thread.threadId}`;
-  const rowRef = useRef<HTMLDivElement | null>(null);
-  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [contextAnchor, setContextAnchor] = useState<ThreadRowContextAnchor | null>(null);
   const threadMenu = {
     kind: "thread" as const,
     threadId: thread.threadId,
   };
-  const cancelContextClose = () => {
-    if (closeTimerRef.current !== null) {
-      clearTimeout(closeTimerRef.current);
-      closeTimerRef.current = null;
-    }
-  };
-  const updateContextAnchor = () => {
-    cancelContextClose();
-    const rect = rowRef.current?.getBoundingClientRect();
-    if (rect === undefined) {
-      return;
-    }
-    if (typeof document !== "undefined") {
-      document.dispatchEvent(
-        new CustomEvent(THREAD_ROW_CONTEXT_OPEN_EVENT, {
-          detail: { threadId: thread.threadId },
-        }),
-      );
-    }
-    setContextAnchor({
-      left: rect.left,
-      right: rect.right,
-      top: rect.top,
-      bottom: rect.bottom,
-    });
-  };
-  const scheduleContextClose = () => {
-    cancelContextClose();
-    closeTimerRef.current = setTimeout(() => {
-      closeTimerRef.current = null;
-      setContextAnchor(null);
-    }, 180);
-  };
   const openThreadMenu = (event: { currentTarget: HTMLElement }) => {
-    cancelContextClose();
-    setContextAnchor(null);
     handlers.onLeftRailMenuOpen(
       threadMenu,
       menuAnchorFromEvent(event),
     );
   };
-  const onContextBlur = (event: FocusEvent<HTMLDivElement>) => {
-    if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
-      return;
-    }
-    scheduleContextClose();
-  };
-  useEffect(() => {
-    if (typeof document === "undefined") {
-      return () => cancelContextClose();
-    }
-    const closeWhenAnotherRowOpens = (event: Event) => {
-      const openedThreadId = (event as CustomEvent<{ threadId?: string }>).detail?.threadId;
-      if (openedThreadId === thread.threadId) {
-        return;
-      }
-      cancelContextClose();
-      setContextAnchor(null);
-    };
-    document.addEventListener(THREAD_ROW_CONTEXT_OPEN_EVENT, closeWhenAnotherRowOpens);
-    return () => {
-      document.removeEventListener(THREAD_ROW_CONTEXT_OPEN_EVENT, closeWhenAnotherRowOpens);
-      cancelContextClose();
-    };
-  }, [thread.threadId]);
-  const contextOpen = contextAnchor !== null;
-  const contextPopoverStyle =
-    contextAnchor === null
-      ? hiddenThreadRowContextPopoverStyle()
-      : threadRowContextPopoverStyle(contextAnchor, contextItems);
   return (
-    <ThreadRowWrap
-      onMouseEnter={updateContextAnchor}
-      onMouseLeave={scheduleContextClose}
-      onFocus={updateContextAnchor}
-      onBlur={onContextBlur}
-    >
+    <ThreadRowWrap>
       <ThreadRowFrame
-        ref={rowRef}
         $active={thread.active && !thread.hydrating}
         $menuOpen={thread.contextMenuOpen}
         $archiveConfirming={thread.archiveConfirming}
@@ -186,7 +89,6 @@ function ThreadRow({ thread, handlers }: ThreadRowProps): ReactElement {
             data-thread-row-main
             type="button"
             aria-pressed={thread.active}
-            aria-describedby={contextPopoverId}
             onClick={() => handlers.onThreadSelect(thread.threadId)}
             onDoubleClick={() => handlers.onThreadRenameStart(thread.threadId)}
           >
@@ -259,54 +161,9 @@ function ThreadRow({ thread, handlers }: ThreadRowProps): ReactElement {
             </ThreadActions>,
           ]
         )}
-        <ThreadContextPopover
-          id={contextPopoverId}
-          data-thread-context-popover
-          role="tooltip"
-          tabIndex={-1}
-          hidden={!contextOpen}
-          aria-hidden={contextOpen ? undefined : true}
-          style={contextPopoverStyle}
-          onMouseEnter={cancelContextClose}
-          onMouseLeave={scheduleContextClose}
-        >
-          {contextItems.map((item) => (
-            <ThreadContextRow key={item.kind} data-thread-context-row>
-              <ThreadContextKind>{item.label}</ThreadContextKind>
-              <ThreadContextValue title={item.title ?? item.value}>
-                {item.value}
-              </ThreadContextValue>
-            </ThreadContextRow>
-          ))}
-        </ThreadContextPopover>
       </ThreadRowFrame>
     </ThreadRowWrap>
   );
-}
-
-function threadRowContextPopoverStyle(
-  anchor: ThreadRowContextAnchor,
-  items: ThreadRowContextItem[],
-): CSSProperties {
-  const gap = 8;
-  const margin = 8;
-  const width = 300;
-  const viewportW = typeof window === "undefined" ? 1200 : window.innerWidth;
-  const viewportH = typeof window === "undefined" ? 900 : window.innerHeight;
-  const estimatedHeight = 18 + items.length * 18;
-  const openLeft = anchor.right + gap + width > viewportW - margin;
-  const left = openLeft
-    ? Math.max(margin, anchor.left - width - gap)
-    : Math.min(anchor.right + gap, viewportW - width - margin);
-  const top = Math.max(
-    margin,
-    Math.min(anchor.top - 2, viewportH - estimatedHeight - margin),
-  );
-  return {
-    left,
-    top,
-    width,
-  };
 }
 
 function createThreadActionButton(
@@ -331,115 +188,6 @@ function createThreadActionButton(
   );
 }
 
-function hiddenThreadRowContextPopoverStyle(): CSSProperties {
-  return {
-    left: "0px",
-    top: "0px",
-    width: 300,
-  };
-}
-
-function createThreadRowContextItems(thread: ProductShellThreadView): ThreadRowContextItem[] {
-  const items: ThreadRowContextItem[] = [createScopeContextItem(thread)];
-  const worktree = worktreeContextValue(thread);
-  if (worktree !== null) {
-    items.push(worktree);
-  }
-  const branch = launchOptionString(thread, "branch");
-  if (branch !== null) {
-    items.push({ kind: "branch", label: "Branch", value: branch });
-  }
-  const status = threadStatusContextValue(thread);
-  if (status !== null) {
-    items.push({ kind: "status", label: "Status", value: status });
-  }
-  return items;
-}
-
-function createScopeContextItem(thread: ProductShellThreadView): ThreadRowContextItem {
-  if (thread.scope.kind !== "project") {
-    return {
-      kind: "scope",
-      label: "Scope",
-      value: thread.scope.scratchCwd || "Scratch",
-    };
-  }
-  const worktreeRepoRoot = worktreeRepoRootForCwd(thread.scope.cwd);
-  if (worktreeRepoRoot !== null) {
-    return {
-      kind: "scope",
-      label: "Project",
-      value: basenameLabel(worktreeRepoRoot) ?? thread.scope.projectId,
-      title: worktreeRepoRoot,
-    };
-  }
-  const cwdLabel = basenameLabel(thread.scope.cwd);
-  return {
-    kind: "scope",
-    label: "Project",
-    value:
-      cwdLabel === null || cwdLabel === thread.scope.projectId
-        ? thread.scope.projectId
-        : `${thread.scope.projectId} / ${cwdLabel}`,
-    title: thread.scope.cwd,
-  };
-}
-
-function worktreeContextValue(thread: ProductShellThreadView): ThreadRowContextItem | null {
-  const scopedWorktree =
-    thread.scope.kind === "project" && worktreeRepoRootForCwd(thread.scope.cwd) !== null
-      ? (thread.worktreeBranch ?? basenameLabel(thread.scope.cwd))
-      : null;
-  if (scopedWorktree !== null && scopedWorktree.length > 0) {
-    return {
-      kind: "worktree",
-      label: "Worktree",
-      value: scopedWorktree,
-      title: thread.scope.kind === "project" ? thread.scope.cwd : undefined,
-    };
-  }
-  const launchWorktree = launchOptionString(thread, "worktree");
-  if (launchWorktree === null || launchWorktree === "current folder") {
-    return null;
-  }
-  if (launchWorktree === "new") {
-    return { kind: "worktree", label: "Worktree", value: "New worktree" };
-  }
-  return {
-    kind: "worktree",
-    label: "Worktree",
-    value: basenameLabel(launchWorktree) ?? launchWorktree,
-    title: launchWorktree,
-  };
-}
-
-function threadStatusContextValue(thread: ProductShellThreadView): string | null {
-  if (thread.running === true) {
-    return "Running";
-  }
-  if (thread.attention === true) {
-    return "Needs attention";
-  }
-  if (thread.unread === true) {
-    return "Unread";
-  }
-  if (thread.live === true) {
-    return "Live";
-  }
-  return null;
-}
-
-function launchOptionString(
-  thread: ProductShellThreadView,
-  key: "branch" | "worktree",
-): string | null {
-  const value = thread.launchOptions?.[key];
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-}
-
-function basenameLabel(path: string): string | null {
-  return path.split(/[/\\]/).filter((seg: string) => seg.length > 0).pop() ?? null;
-}
 
 function createThreadLeadingStatus(
   thread: ProductShellThreadView,
@@ -667,70 +415,4 @@ const ThreadConfirmButton = styled.button`
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
-`;
-
-const ThreadContextRow = styled.span`
-  min-width: 0;
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  align-items: center;
-  column-gap: 8px;
-`;
-
-const ThreadContextKind = styled.span`
-  color: var(--tide-muted);
-  font-size: 9.5px;
-  font-weight: 650;
-  line-height: 13px;
-  text-transform: uppercase;
-`;
-
-const ThreadContextValue = styled.span`
-  min-width: 0;
-  overflow: hidden;
-  color: var(--tide-text);
-  font-size: 12px;
-  line-height: 15px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-`;
-
-const ThreadContextPopover = styled.div`
-  position: fixed;
-  z-index: 70;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 7px 8px;
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--tide-bg) 94%, var(--tide-surface));
-  box-shadow:
-    0 18px 44px -22px rgb(52 48 56 / 46%),
-    0 6px 18px -12px rgb(52 48 56 / 28%);
-  color: var(--tide-text);
-  pointer-events: auto;
-  transform: translateY(-2px) scale(0.98);
-  transform-origin: top left;
-  animation: tide-pop-in 0.12s ease forwards;
-  user-select: text;
-
-  &[hidden] {
-    display: none;
-  }
-
-  [data-theme="dark"] & {
-    box-shadow:
-      0 18px 48px -18px rgb(0 0 0 / 76%),
-      0 6px 18px -10px rgb(0 0 0 / 72%);
-  }
-
-  &:hover ${ThreadContextRow} {
-    align-items: start;
-  }
-
-  &:hover ${ThreadContextValue} {
-    overflow-wrap: anywhere;
-    text-overflow: clip;
-    white-space: normal;
-  }
 `;

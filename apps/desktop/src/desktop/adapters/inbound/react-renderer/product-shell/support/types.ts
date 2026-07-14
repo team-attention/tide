@@ -188,6 +188,12 @@ export interface MenuAnchorRect {
   right: number;
 }
 
+export interface ProductShellThreadMenuInfo {
+  threadId: string;
+  sessionId: string;
+  workingDirectory: string | null;
+}
+
 export interface ProductShellHandlers {
   onNewThread: () => void;
   onNewThreadInProject: (projectId: string) => void;
@@ -313,6 +319,8 @@ export interface ProductShellHandlers {
   onThreadArchiveIntent: (threadId: string) => void;
   onThreadArchiveConfirm: (threadId: string) => void;
   onThreadPinToggle: (threadId: string) => void;
+  threadContextMenuInfo: (threadId: string) => ProductShellThreadMenuInfo;
+  onThreadRevealInFinder: (threadId: string) => void;
   // The branch of the worktree a Thread runs in, or null when the Thread is not
   // in a (default-rule) worktree — drives the "Delete worktree" menu item.
   threadWorktreeBranch: (threadId: string) => string | null;

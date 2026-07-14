@@ -7,7 +7,7 @@ Execution Context root.
 
 It covers:
 
-- Backend-owned bounded FileTree listing for a Thread root.
+- Backend-owned lazy FileTree listing for a Thread root.
 - A `refresh_file_tree` Workbench command.
 - Shared Contract delivery of the FileTree View through `workbench.changed`.
 - Desktop rendering of the latest Backend-provided FileTree View.
@@ -16,7 +16,7 @@ It covers:
   when the folder is expanded, with a per-row skeleton while loading.
 
 It does not implement rename, delete, drag/drop, live file watching,
-ignored-file preferences, or a full IDE tree model.
+ignored-file preferences, a full IDE tree model, or search indexing.
 
 ## Evidence
 
@@ -65,9 +65,10 @@ walk before the real source — the tree then showed only the few dirs visited
 before the blowout. Lazy descent removes the budget-starvation failure mode at
 the source: there is no eager whole-tree walk to starve.
 
-`maxEntries` remains a safety ceiling for a single pathological expanded folder.
-A separate **full** listing mode (depth-bounded, no `expandedPaths`) is retained
-only for Quick Open (Cmd+P), which needs every file for fuzzy search.
+Lazy FileTree mode does not use `maxEntries` as a visibility cap. Once a folder
+is expanded, its immediate children are listed completely unless the directory is
+unreadable. A separate **full** listing mode (depth-bounded, no `expandedPaths`)
+is retained for bounded file-picking surfaces such as Quick Open (Cmd+P).
 
 ### D4. Desktop opens the column before refresh completes
 
@@ -101,19 +102,17 @@ Expanding a folder:
 Collapsing a folder hides its descendants client-side with no Backend round-trip
 and keeps them in the loaded entries as a best-effort cache.
 
-### D7. FileTree does not consult `.gitignore`; only heavy machine dirs are hidden
+### D7. FileTree never hides or truncates filesystem entries by directory name
 
-The FileTree (and Cmd+Shift+F content search) **no longer consult `.gitignore`**
-(the matcher was removed in 0.1.46): gitignored/hidden files (`.env`, `.claude/`,
-dotfiles) are listed and searchable so config/env/scratch files are reachable.
-The only exclusion is a fixed set of heavy vendor/build/VCS/cache directories,
-which are neither listed nor descended into. The set must span every ecosystem's
-machine dirs (`node_modules dist build out target coverage .next .git .svn .hg
-.pnpm-store .yarn .turbo .gradle .venv venv __pycache__ .mypy_cache .pytest_cache
-.ruff_cache .cache`), because under lazy descent it is still the thing that keeps
-an expanded parent from listing tens of thousands of vendor children, and it
-keeps the cosmetic clutter out. It is a declutter filter, not the perf ceiling
-(lazy descent is).
+The FileTree does not consult `.gitignore` and does not use a fixed hidden
+directory set. Gitignored files, dotfiles, VCS folders, virtualenvs, package
+stores, and vendor/build/cache directories are listed when they exist. A
+collapsed folder is not read, but once a folder is expanded, its immediate
+children are listed completely unless the directory is unreadable.
+
+Content Search and bounded full-tree scans are separate source-search surfaces.
+They keep their existing heavy-directory exclusions until search/indexing is
+designed separately; those exclusions must not apply to lazy FileTree listings.
 
 ## Contracts
 
@@ -122,11 +121,11 @@ keeps the cosmetic clutter out. It is a declutter filter, not the perf ceiling
 `workbench.changed` / `thread.hydrated` are unchanged.
 
 `workbench.command refresh_file_tree` `data` carries the expanded set for a lazy
-listing, or `maxDepth` for the Quick Open full listing:
+listing, or `maxDepth` / `maxEntries` for the bounded full listing:
 
 ```json
 { "threadId": "...", "command": "refresh_file_tree",
-  "data": { "expandedPaths": ["src", "src/app"], "maxEntries": 4000 } }
+  "data": { "expandedPaths": ["src", "src/app"] } }
 ```
 
 ```json
@@ -135,12 +134,13 @@ listing, or `maxDepth` for the Quick Open full listing:
 ```
 
 The start-page query `workspace.readFileTree` (`{ cwd, expandedPaths?,
-maxEntries? }` → `workspace.fileTreeLoaded`) takes the same `expandedPaths`.
+maxEntries? }` → `workspace.fileTreeLoaded`) takes the same `expandedPaths`;
+`maxEntries` is ignored in lazy mode and retained for callers that still pass it.
 
 `WorkspaceFilePort.listTree` input becomes
 `{ root; maxEntries; expandedPaths?; maxDepth? }`: with `expandedPaths` it
-descends only into expanded folders; with `maxDepth` (and no `expandedPaths`) it
-does the bounded full walk for Quick Open.
+descends only into expanded folders and does not hide or cap entries; with
+`maxDepth` / `maxEntries` (and no `expandedPaths`) it does the bounded full walk.
 
 Desktop Product Shell state gains `fileTree.loadingFolderPath?: string | null`
 (state-only, not a contract field) to drive the per-row skeleton.
@@ -193,17 +193,23 @@ Re-expanding a previously loaded folder reveals it client-side with no command.
 7. Folders are collapsed by default; a descendant is visible only when every
    ancestor folder is expanded. Collapsing, and re-expanding an already-loaded
    folder, emit no Backend command.
-8. FileTree listing never returns entries inside the fixed heavy-dir set; it does
-   NOT otherwise consult `.gitignore` (gitignored/hidden files are listed).
+8. Lazy FileTree listing never hides entries by directory name and never omits
+   entries because a directory is large. It does NOT consult `.gitignore`
+   (gitignored/hidden files are listed).
+9. Content Search and bounded full-tree scans may keep heavy-directory
+   exclusions, but those exclusions must not affect lazy FileTree listing.
 
 ## Tests
 
 | Rule | Test expectation |
 |------|------------------|
 | Lazy descent only into expanded folders | `file_tree_listing_descends_only_into_expanded_paths` |
-| Collapsed heavy/huge dir costs one entry, never starves siblings | `file_tree_listing_is_not_starved_by_a_huge_heavy_dir_that_sorts_first` |
-| Gitignored files shown, heavy dirs hidden | `file_tree_listing_shows_gitignored_files_but_still_hides_heavy_dirs` |
+| Machine and gitignored dirs show in lazy mode | `file_tree_listing_shows_gitignored_and_machine_dirs_in_lazy_mode` |
+| Lazy root listing is not capped by `maxEntries` | `file_tree_listing_does_not_truncate_lazy_root_when_many_machine_dirs_sort_first` |
+| Expanded folder children are not capped by `maxEntries` | `file_tree_listing_does_not_truncate_expanded_folder_children` |
+| Machine dirs expand on demand | `file_tree_listing_expands_machine_dir_on_demand` |
 | Quick Open full mode still walks deep | `file_tree_full_listing_walks_to_max_depth_for_quick_open` |
+| Search keeps source-scan heavy exclusions | `searchContent includes gitignored files but still skips heavy dirs` |
 | Expanding an unloaded folder emits a refresh with the new expanded set | `expanding_unloaded_folder_emits_refresh_with_expanded_paths` |
 | Re-expanding a loaded folder reveals client-side with no command | `re_expanding_loaded_folder_does_not_emit_a_command` |
 | Collapsing a folder emits no command | `collapsing_folder_does_not_emit_a_command` |
@@ -212,13 +218,13 @@ Re-expanding a previously loaded folder reveals it client-side with no command.
 ## Implementation Notes
 
 - `listTree` descends conditionally on `expandedPaths`; keep the Node adapter
-  responsible for filesystem traversal, sorting, and the heavy-dir exclusion.
+  responsible for filesystem traversal and sorting.
+- Lazy FileTree mode (`expandedPaths` present, even empty) must not apply
+  heavy-directory exclusions or `maxEntries` truncation.
 - Keep Product Shell state structural: it stores the latest `fileTree` payload
   plus `expandedFolderPaths` / `loadingFolderPath`; the folder-toggle reducer
   decides reveal-from-cache vs dispatch-refresh.
 - `workspace.fileTreeLoaded` must reset `expandedFolderPaths` only when the cwd
   changes (a new project), not on an expand-driven re-list of the same cwd.
 - Quick Open keeps the depth-bounded full listing (no `expandedPaths`); the
-  heavy-dir exclusion keeps it bounded.
-</content>
-</invoke>
+  heavy-dir exclusion and `maxEntries` cap keep it bounded.

@@ -92,8 +92,8 @@ export function fileTreeMaxEntries(value: unknown): number {
 }
 
 // The set of folder relative paths the UI has expanded. Present (even empty) =>
-// lazy listing (descend only into these folders). Absent (undefined) => the
-// depth-bounded full walk used by Quick Open.
+// complete lazy FileTree listing (descend only into these folders). Absent
+// (undefined) => the bounded full walk used by Quick Open/file mentions.
 export function fileTreeExpandedPaths(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;

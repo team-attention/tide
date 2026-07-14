@@ -21,16 +21,16 @@ function fixtureRoot(files: Record<string, string>, dirs: string[] = []): string
   return root;
 }
 
-async function listNames(root: string): Promise<string[]> {
+async function listLazyNames(root: string, expandedPaths: string[] = []): Promise<string[]> {
   const port = createNodeWorkspaceFilePort();
-  const result = await port.listTree({ root, maxDepth: 12, maxEntries: 4000 });
+  const result = await port.listTree({ root, expandedPaths, maxEntries: 1 });
   assert.ok(result.ok, "listTree should succeed");
   return result.fileTree.entries.map((entry) => entry.relativePath);
 }
 
-test("file_tree_listing_shows_gitignored_files_but_still_hides_heavy_dirs", async () => {
-  // Gitignored and dot/hidden files ARE shown (the tree no longer consults
-  // .gitignore); only the heavy vendor/build/VCS dirs stay hidden.
+test("file_tree_listing_shows_gitignored_and_machine_dirs_in_lazy_mode", async () => {
+  // Lazy FileTree is filesystem navigation: gitignored, dot/hidden, VCS,
+  // virtualenv, and vendor dirs are all visible at their parent level.
   const root = fixtureRoot(
     {
       ".gitignore": [
@@ -45,10 +45,10 @@ test("file_tree_listing_shows_gitignored_files_but_still_hides_heavy_dirs", asyn
       "debug.log": "noise",
       "keep.txt": "ok",
     },
-    ["node_modules", ".secret-dir"],
+    [".git", ".secret-dir", ".venv", "node_modules"],
   );
 
-  const names = await listNames(root);
+  const names = await listLazyNames(root);
 
   assert.ok(names.includes("src"), "src folder is visible");
   assert.ok(names.includes("README.md"), "non-ignored file is visible");
@@ -60,17 +60,15 @@ test("file_tree_listing_shows_gitignored_files_but_still_hides_heavy_dirs", asyn
   assert.ok(names.includes("debug.log"), "gitignored glob file is now visible");
   assert.ok(names.includes(".secret-dir"), "gitignored dir is now visible");
 
-  // The fixed heavy-dir set is still the one exclusion.
-  assert.ok(!names.includes("node_modules"), "heavy dir still hidden");
+  // Machine dirs are also visible in FileTree.
+  assert.ok(names.includes(".git"), "VCS dir is visible");
+  assert.ok(names.includes(".venv"), "virtualenv dir is visible");
+  assert.ok(names.includes("node_modules"), "vendor dir is visible");
 });
 
-test("file_tree_listing_is_not_starved_by_a_huge_heavy_dir_that_sorts_first", async () => {
-  // Regression: the walk is depth-first under a bounded entry budget. A single
-  // giant machine dir that sorts before the real source (a pnpm content store,
-  // a Python .venv / __pycache__) must not be descended into and consume the
-  // whole budget — which would truncate the walk and hide every sibling and root
-  // file that sorts after it. These dirs are excluded outright, so the budget is
-  // spent on actual project files.
+test("file_tree_listing_does_not_truncate_lazy_root_when_many_machine_dirs_sort_first", async () => {
+  // Lazy FileTree lists root children completely and does not spend the caller's
+  // full-walk budget inside collapsed machine dirs.
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tide-fs-"));
   for (const heavy of [".pnpm-store", ".venv", "__pycache__"]) {
     for (let i = 0; i < 50; i += 1) {
@@ -86,22 +84,20 @@ test("file_tree_listing_is_not_starved_by_a_huge_heavy_dir_that_sorts_first", as
   fs.writeFileSync(path.join(root, "zzz-last.txt"), "ok\n", "utf8");
 
   const port = createNodeWorkspaceFilePort();
-  // A small budget each heavy dir alone would exhaust if it were descended.
-  const result = await port.listTree({ root, maxDepth: 12, maxEntries: 25 });
+  // A tiny maxEntries would truncate the old full walk; lazy FileTree ignores it.
+  const result = await port.listTree({ root, expandedPaths: [], maxDepth: 12, maxEntries: 2 });
   assert.ok(result.ok, "listTree should succeed");
   const names = result.fileTree.entries.map((entry) => entry.relativePath);
 
   for (const heavy of [".pnpm-store", ".venv", "__pycache__"]) {
-    assert.ok(
-      !names.some((name) => name === heavy || name.startsWith(`${heavy}/`)),
-      `${heavy} is excluded entirely`,
-    );
+    assert.ok(names.includes(heavy), `${heavy} root folder is visible`);
+    assert.ok(!names.some((name) => name.startsWith(`${heavy}/pkg-`)), `${heavy} is collapsed until expanded`);
   }
-  assert.ok(names.includes("src"), "source dir survives the heavy dirs");
-  assert.ok(names.includes("src/app.ts"), "nested source survives");
+  assert.ok(names.includes("src"), "source dir survives the machine dirs");
+  assert.ok(!names.includes("src/app.ts"), "collapsed source dir is not walked");
   assert.ok(names.includes("package.json"), "root file survives");
   assert.ok(names.includes("zzz-last.txt"), "the last-sorting root file survives");
-  assert.equal(result.fileTree.truncated, false, "no truncation once heavy dirs are excluded");
+  assert.equal(result.fileTree.truncated, false, "lazy FileTree does not truncate root children");
 });
 
 test("file_tree_listing_descends_only_into_expanded_paths", async () => {
@@ -143,8 +139,8 @@ test("file_tree_listing_descends_only_into_expanded_paths", async () => {
 });
 
 test("file_tree_full_listing_walks_to_max_depth_for_quick_open", async () => {
-  // Without `expandedPaths`, the depth-bounded full walk (Quick Open) descends so
-  // fuzzy search sees every file.
+  // Without `expandedPaths`, the depth-bounded full walk (Quick Open) descends
+  // into source folders so fuzzy search sees deep files.
   const root = fixtureRoot({ "a/b/c/deep.ts": "1", "top.md": "2" });
   const port = createNodeWorkspaceFilePort();
   const result = await port.listTree({ root, maxEntries: 4000, maxDepth: 12 });
@@ -154,17 +150,67 @@ test("file_tree_full_listing_walks_to_max_depth_for_quick_open", async () => {
   assert.ok(names.includes("top.md"));
 });
 
-test("file_tree_listing_without_gitignore_lists_everything_but_heavy_dirs", async () => {
-  // D7: a root without a .gitignore still hides only the always-hidden heavy dirs.
+test("file_tree_full_listing_keeps_heavy_dir_exclusions_for_quick_open", async () => {
+  // The bounded full walk remains source-focused for Quick Open/file mentions.
+  const root = fixtureRoot({
+    "node_modules/dep/index.js": "dep",
+    ".venv/site.py": "venv",
+    "src/main.ts": "1",
+  });
+  const port = createNodeWorkspaceFilePort();
+  const result = await port.listTree({ root, maxEntries: 4000, maxDepth: 12 });
+  assert.ok(result.ok, "listTree should succeed");
+  const names = result.fileTree.entries.map((entry) => entry.relativePath);
+  assert.ok(names.includes("src/main.ts"));
+  assert.ok(!names.some((name) => name === "node_modules" || name.startsWith("node_modules/")));
+  assert.ok(!names.some((name) => name === ".venv" || name.startsWith(".venv/")));
+});
+
+test("file_tree_listing_expands_machine_dir_on_demand", async () => {
+  const root = fixtureRoot({
+    ".venv/pyvenv.cfg": "home = /usr/bin",
+    ".venv/bin/python": "python",
+    "node_modules/pkg/package.json": "{}",
+  });
+  const rootOnly = await listLazyNames(root);
+  assert.ok(rootOnly.includes(".venv"));
+  assert.ok(rootOnly.includes("node_modules"));
+  assert.ok(!rootOnly.includes(".venv/pyvenv.cfg"), "collapsed machine dir is not walked");
+
+  const expanded = await listLazyNames(root, [".venv", "node_modules"]);
+  assert.ok(expanded.includes(".venv/pyvenv.cfg"), "expanded virtualenv file is visible");
+  assert.ok(expanded.includes(".venv/bin"), "expanded virtualenv folder child is visible");
+  assert.ok(expanded.includes("node_modules/pkg"), "expanded vendor folder child is visible");
+  assert.ok(!expanded.includes("node_modules/pkg/package.json"), "nested vendor folder remains collapsed");
+});
+
+test("file_tree_listing_does_not_truncate_expanded_folder_children", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tide-fs-"));
+  fs.mkdirSync(path.join(root, "many"), { recursive: true });
+  for (let i = 0; i < 30; i += 1) {
+    fs.writeFileSync(path.join(root, "many", `file-${String(i).padStart(2, "0")}.txt`), "x", "utf8");
+  }
+  const port = createNodeWorkspaceFilePort();
+  const result = await port.listTree({ root, expandedPaths: ["many"], maxEntries: 5 });
+  assert.ok(result.ok, "listTree should succeed");
+  const children = result.fileTree.entries
+    .map((entry) => entry.relativePath)
+    .filter((name) => name.startsWith("many/file-"));
+  assert.equal(children.length, 30, "expanded folder direct children are complete");
+  assert.equal(result.fileTree.truncated, false);
+});
+
+test("file_tree_listing_without_gitignore_lists_machine_dirs_in_lazy_mode", async () => {
+  // D7: FileTree does not need .gitignore to decide visibility.
   const root = fixtureRoot(
     { "src/main.ts": "1", "notes.md": "n" },
     ["node_modules", ".git"],
   );
-  const names = await listNames(root);
+  const names = await listLazyNames(root);
   assert.ok(names.includes("src"));
   assert.ok(names.includes("notes.md"));
-  assert.ok(!names.includes("node_modules"), "heavy dir hidden even without gitignore");
-  assert.ok(!names.includes(".git"), "vcs dir hidden even without gitignore");
+  assert.ok(names.includes("node_modules"), "vendor dir visible even without gitignore");
+  assert.ok(names.includes(".git"), "VCS dir visible even without gitignore");
 });
 
 // ---- New File: readTextFile create flag (spec: workbench-new-file.md) ----

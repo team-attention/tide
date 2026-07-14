@@ -163,8 +163,8 @@ export class WorkspaceQueryHandler {
   async readWorkspaceFileTree(
     input: ReadWorkspaceFileTreeInput,
   ): Promise<ServiceResult<ReadWorkspaceFileTreeResult>> {
-    // Same workspace file port + limits as the thread-bound refresh_file_tree:
-    // lazy when `expandedPaths` is present, depth-bounded full walk otherwise.
+    // Same workspace file port as the thread-bound refresh_file_tree: complete
+    // lazy FileTree when `expandedPaths` is present, bounded full walk otherwise.
     const listed = await this.workspaceFilePort.listTree({
       root: input.cwd,
       maxEntries: fileTreeMaxEntries(input.maxEntries),

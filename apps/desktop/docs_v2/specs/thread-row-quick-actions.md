@@ -8,9 +8,10 @@
 
 Thread Row hover quick-actions expose the row-local commands that fit safely in
 the right slot: **Pin/unpin**, **Archive**, and, for worktree rows only,
-**Delete worktree**. The full menu remains available by right-click. Row metadata
-such as Project, Worktree, Branch, and Status stays out of the row and lives in
-the hover/focus context popover.
+**Delete worktree**. The row context menu remains available by right-click or
+the `...` button, but it is a secondary utility menu, not a duplicate of the
+hover actions. It contains non-row-slot actions such as review, rename, reveal,
+and copy identifiers.
 
 ## Evidence
 
@@ -37,17 +38,19 @@ the hover/focus context popover.
    - Pin icon reflects state (pinned ↔ unpinned); label "Pin"/"Unpin".
    - Archive uses the **existing** inline Confirm flow (`onThreadArchiveIntent` →
      `archiveConfirming` → Confirm → `onThreadArchiveConfirm`); that flow is unchanged.
-2. **Right-click keeps the full menu** (Pin/Archive/Delete worktree) for parity and
-   secondary discoverability.
+2. **Right-click opens a utility menu, not a duplicate action menu.** It includes
+   Review changes, Rename task, Reveal in Finder, Copy working directory, Copy
+   session ID, and Copy thread ID. Pin/archive/delete stay in the hover slot.
 3. **Delete worktree is direct only on worktree rows.** It uses the existing confirm
    dialog/safety path; non-worktree rows do not render the button.
 4. **Right-side precedence** (the row's right edge is shared by three features):
    `Ctrl`-held `^N` badge (`multitask-navigation` L2) **>** hover quick-actions
    **>** at-rest (attention/running dot + time). I.e. at rest show dot+time; on hover
    show pin/archive/delete-when-available; while `Ctrl` held show the number badge.
-5. **Row context is not inline metadata.** Project/worktree/branch/status context is
-   mounted as a hidden hover/focus popover for every thread row, then measured and
-   shown as a fixed flyout when opened.
+5. **Row context is not a second hover popover.** Project/worktree/branch/status
+   metadata stays out of the one-line row. Operational context is available
+   through explicit menu actions and copied identifiers instead of an automatic
+   flyout that competes with the real menu.
 6. **No inert leading status slot.** Running keeps the spinner and attention/unread
    keeps the small dot, but idle, live-idle, and pinned rows render no placeholder
    circle or leading pin marker.
@@ -65,17 +68,18 @@ the hover/focus context popover.
 ## Domain Model / Contracts
 
 - **Renderer-only. No contract change.** Reuses existing handlers and the existing
-  inline archive-confirm state. `context-menu.tsx` is unchanged (menu stays full).
+  inline archive-confirm state. Thread utility menu data is derived from the
+  renderer's current Thread view/state.
 
 ## Flow
 
-1. Hover a Thread Row → quick-action icons fade in on the right (pin/unpin,
+1. Hover a Thread Row → quick-action icons appear on the right (pin/unpin,
    archive, and delete-worktree only for worktree rows); the time/dot hides.
-2. Hover/focus also opens the fixed context popover. Moving from row to popover keeps
-   it open briefly so long worktree/branch names can be inspected.
-3. Click **pin** → toggles immediately. Click **archive** → inline Confirm appears
+2. Click **pin** → toggles immediately. Click **archive** → inline Confirm appears
    (existing flow). Click **delete worktree** → existing worktree delete confirmation.
-   Right-click → full menu.
+3. Right-click or click `...` → utility menu. Copy actions write to the OS
+   clipboard and close the menu. Reveal opens the Thread working directory in
+   Finder when it has one.
 
 ## Invariants
 
@@ -83,7 +87,8 @@ the hover/focus context popover.
   step).
 - Destructive Delete worktree is rendered only for worktree rows and still goes
   through the existing confirm path.
-- Right-click always opens the full menu (unchanged behavior).
+- Right-click always opens the utility menu.
+- The utility menu does not repeat the visible hover actions.
 - Quick-actions never overlap the `Ctrl`-held `^N` badge (precedence rule, Decision 4) —
   coordinate the right-slot rendering with `multitask-navigation` L2.
 - Idle/live-idle/pinned rows do not reserve a leading status slot.
@@ -96,15 +101,18 @@ the hover/focus context popover.
 - worktree thread renders Delete worktree; non-worktree does not.
 - idle/live-idle/pinned rows do not render `thread-row__leading`; running and
   attention rows still do.
-- worktree/project context appears in the hidden hover/focus popover, not as inline
-  row text.
+- context menu renders Review, Rename, Reveal, Copy working directory, Copy
+  session ID, and Copy thread ID.
+- Copy session ID uses the provider session ref when present and falls back to
+  the Tide Thread id when no provider session has been bound yet.
 - right-side precedence (badge vs hover vs time) — covered jointly when multitask L2 lands.
 
 ## Implementation Notes
 
-- **Files:** `left-rail/thread-row.tsx` (actions area: add pin + archive icon buttons,
+- **Files:** `left-rail/thread-row.tsx` (actions area: pin + archive icon buttons,
   delete-worktree only for worktree rows; leading status only for running/attention);
-  area CSS for hover reveal + the time/badge/actions precedence.
+  `left-rail/context-menu.tsx` (secondary thread utilities); handler helpers for
+  resolving Thread cwd/session identifiers.
 - The **only** coupling is the row right-slot precedence
   with `multitask-navigation` L2 (number badge) — land the time↔actions↔badge slot logic
   once, shared.
