@@ -6,7 +6,10 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { createNodeWorkspaceFilePort } from "../src/backend/adapters/outbound/workspace-file/node-workspace-file-port.ts";
+import {
+  createNodeWorkspaceFilePort,
+  normalizeWorkspaceRelativePath,
+} from "../src/backend/adapters/outbound/workspace-file/node-workspace-file-port.ts";
 
 function fixtureRoot(files: Record<string, string>, dirs: string[] = []): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tide-fs-"));
@@ -135,6 +138,18 @@ test("file_tree_listing_descends_only_into_expanded_paths", async () => {
   assert.ok(
     expandDeep.fileTree.entries.some((entry) => entry.relativePath === "src/util/helper.ts"),
     "expanding the nested folder reveals its deep file",
+  );
+});
+
+test("workspace_relative_paths_normalize_windows_separators_for_contract_paths", () => {
+  assert.equal(
+    normalizeWorkspaceRelativePath(String.raw`src\util\helper.ts`, "\\"),
+    "src/util/helper.ts",
+  );
+  assert.equal(
+    normalizeWorkspaceRelativePath(String.raw`src\literal-backslash.ts`, "/"),
+    String.raw`src\literal-backslash.ts`,
+    "POSIX keeps backslashes because they can be filename characters",
   );
 });
 

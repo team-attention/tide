@@ -140,7 +140,7 @@ class NodeWorkspaceFilePort implements WorkspaceFilePort {
           continue;
         }
         const childPath = path.join(directory, child.name);
-        const relativePath = path.relative(root, childPath);
+        const relativePath = workspaceRelativePath(root, childPath);
         if (expandedSet === null && entries.length >= maxEntries) {
           truncated = true;
           return;
@@ -231,7 +231,7 @@ class NodeWorkspaceFilePort implements WorkspaceFilePort {
           continue;
         }
         const childPath = path.join(directory, child.name);
-        const relativePath = path.relative(root, childPath);
+        const relativePath = workspaceRelativePath(root, childPath);
         if (isDir) {
           await visit(childPath);
           continue;
@@ -657,8 +657,19 @@ function resolveInsideRoot(
     ok: true,
     root,
     path: candidate,
-    relativePath: path.relative(root, candidate) || ".",
+    relativePath: workspaceRelativePath(root, candidate) || ".",
   };
+}
+
+export function normalizeWorkspaceRelativePath(
+  relativePath: string,
+  separator = path.sep,
+): string {
+  return separator === "\\" ? relativePath.replace(/\\/g, "/") : relativePath;
+}
+
+function workspaceRelativePath(root: string, candidate: string): string {
+  return normalizeWorkspaceRelativePath(path.relative(root, candidate));
 }
 
 function candidateInsideRoot(root: string, candidate: string): boolean {
