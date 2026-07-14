@@ -67,21 +67,29 @@ export function createAgentUpdateChecker(
       const before = new Map(deps.agentIds.map((id) => [id, hasAdvisory(id)]));
       await Promise.all(
         deps.agentIds.map(async (agentId) => {
-          const current = await deps.readInstalledVersion(agentId);
-          if (current === undefined) {
-            // Not installed (or unreadable): drop any stale versions so no advisory
-            // lingers for an agent the user just uninstalled.
+          try {
+            const current = await deps.readInstalledVersion(agentId);
+            if (current === undefined) {
+              // Not installed (or unreadable): drop any stale versions so no advisory
+              // lingers for an agent the user just uninstalled.
+              installed.delete(agentId);
+              latest.delete(agentId);
+              return;
+            }
+            installed.set(agentId, current);
+            const newest = await deps.readLatestVersion(agentId);
+            if (newest === undefined) {
+              latest.delete(agentId);
+              return;
+            }
+            latest.set(agentId, newest);
+          } catch {
+            // Refresh is background/non-critical. A transient spawn or registry
+            // failure should clear stale advisory state for that agent, not reject
+            // the whole refresh loop.
             installed.delete(agentId);
             latest.delete(agentId);
-            return;
           }
-          installed.set(agentId, current);
-          const newest = await deps.readLatestVersion(agentId);
-          if (newest === undefined) {
-            latest.delete(agentId);
-            return;
-          }
-          latest.set(agentId, newest);
         }),
       );
       return deps.agentIds.filter((id) => (before.get(id) ?? false) !== hasAdvisory(id));
@@ -96,6 +104,7 @@ export function createAgentUpdateChecker(
 export function createLiveAgentUpdateChecker(input: {
   agentIds: ProviderCliAgentId[];
   resolveExecutable: (command: string) => string | undefined;
+  onAdvisoryChanged?: (agentIds: ProviderCliAgentId[]) => void;
 }): RefreshableAgentCliUpdateChecker {
   const npmPath = input.resolveExecutable("npm") ?? "npm";
   const checker = createAgentUpdateChecker({
@@ -107,13 +116,24 @@ export function createLiveAgentUpdateChecker(input: {
     readLatestVersion: (agentId) => latestPublishedVersion(installPackageForAgent(agentId), npmPath),
     buildUpdateTerminalAction: (agentId, cwd) => npmUpdateReadinessTerminalAction({ npmPath, agentId, cwd }),
   });
-  // Populate off the startup critical path; the advisory then surfaces on the next
-  // readiness check (agent select / thread open). Refresh periodically to stay fresh.
-  setImmediate(() => {
-    void checker.refresh();
-  });
-  setInterval(() => {
-    void checker.refresh();
-  }, REFRESH_INTERVAL_MS).unref?.();
+  const refreshAndNotify = () => {
+    void checker.refresh()
+      .then((changed) => {
+        if (changed.length > 0) {
+          input.onAdvisoryChanged?.(changed);
+        }
+      })
+      .catch((error: unknown) => {
+        process.emitWarning(
+          error instanceof Error ? error.message : "Failed to refresh agent update advisories.",
+          { type: "TideAgentUpdateCheckerWarning" },
+        );
+      });
+  };
+  // Populate off the startup critical path. The composition root re-emits provider
+  // inventory when advisory state changes, so the start composer can show/clear the
+  // non-blocking update chip before a send.
+  setImmediate(refreshAndNotify);
+  setInterval(refreshAndNotify, REFRESH_INTERVAL_MS).unref?.();
   return checker;
 }

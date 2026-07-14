@@ -2149,6 +2149,12 @@ test("codex_model_chip_renders_polished_label_but_stores_provider_native_value",
   assert.equal(view.composer.modelLabel, "GPT-5.5 · Medium");
 });
 
+test("codex_default_model_chip_uses_latest_cli_default_reasoning", () => {
+  const view = createAgentChatShellViewModel(createAgentChatShellState());
+
+  assert.equal(view.composer.modelLabel, "GPT-5.6-Sol · Low");
+});
+
 test("codex_reasoning_effort_row_sets_launch_option_and_updates_chip_label", () => {
   // Spec: docs_v2/specs/composer-agent-runtime-source.md D5a
   const withModelMenu = setComposerActiveSurface(
@@ -2163,7 +2169,7 @@ test("codex_reasoning_effort_row_sets_launch_option_and_updates_chip_label", () 
   const view = createAgentChatShellViewModel(high);
 
   assert.equal(high.composer.startOptions.launchOptions?.reasoning, "high");
-  assert.equal(view.composer.modelLabel, "GPT-5.5 · High");
+  assert.equal(view.composer.modelLabel, "GPT-5.6-Sol · High");
 });
 
 test("selecting_opencode_uses_provider_cli_model_and_permission_defaults", () => {
@@ -2702,6 +2708,20 @@ test("claude_model_menu_lists_latest_named_models", () => {
   assert.match(html, /Opus 4\.8/);
   assert.match(html, /Sonnet 5/);
   assert.match(html, /Haiku 4\.5/);
+});
+
+test("codex_model_menu_lists_latest_cli_models_and_gpt56_max_effort", () => {
+  const state = setComposerActiveSurface(createAgentChatShellState(), "model_menu").state;
+  const rows = createAgentChatShellViewModel(state).composer.activeSurface?.rows ?? [];
+  const rowIds = rows.map((entry) => entry.rowId);
+
+  assert.ok(rowIds.includes("model:gpt-5.6-sol"));
+  assert.ok(rowIds.includes("model:gpt-5.6-terra"));
+  assert.ok(rowIds.includes("model:gpt-5.6-luna"));
+  assert.ok(rowIds.includes("model:gpt-5.5"));
+  assert.ok(rowIds.includes("reasoning-max"));
+  assert.ok(!rowIds.includes("reasoning-ultra"));
+  assert.equal(rows.find((entry) => entry.rowId === "reasoning-low")?.selected, true);
 });
 
 test("provider_cli_readiness_mentions_readiness_action_without_dropping_draft", () => {

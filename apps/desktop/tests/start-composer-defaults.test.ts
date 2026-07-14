@@ -135,12 +135,12 @@ test("existing_worktree_paths_are_not_restored_as_global_start_defaults", () => 
   }
 });
 
-test("with no remembered preference a new thread falls back to codex/gpt-5.5", () => {
+test("with no remembered preference a new thread falls back to codex/gpt-5.6-sol", () => {
   setPreferredStartComposer(null);
   const state = startNewProductShellThread(createProductShellState({ includeFixtureData: false }));
   const startOptions = state.agentChat.composer.startOptions;
   assert.equal(startOptions.agentBinding.agentId, "codex");
-  assert.equal(startOptions.launchOptions?.model, "gpt-5.5");
+  assert.equal(startOptions.launchOptions?.model, "gpt-5.6-sol");
 });
 
 test("preferredStartComposerFromState captures an opencode Start Composer pick", () => {

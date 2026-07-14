@@ -1163,7 +1163,7 @@ test("sending_start_composer_from_product_shell_opens_the_new_thread_optimistica
 
   assert.equal(result.command?.kind, "thread.start");
   assert.equal(result.command?.payload.initialMessage, "Build the Product Shell interactions");
-  assert.equal(result.command?.payload.launchOptions?.model, "gpt-5.5");
+  assert.equal(result.command?.payload.launchOptions?.model, "gpt-5.6-sol");
   // The command carries a client-generated id; the new thread is shown right away
   // with that id as active, and the draft is cleared so a re-click can't resend.
   const newThreadId = result.command?.payload.threadId;
@@ -1185,7 +1185,7 @@ test("sending_start_composer_from_product_shell_uses_provider_native_model_value
 
   assert.equal(result.command?.kind, "thread.start");
   assert.deepEqual(result.command?.payload.launchOptions, {
-    model: "gpt-5.5",
+    model: "gpt-5.6-sol",
     permission: "approve-for-me",
     worktree: "current folder",
     branch: "main",

@@ -317,9 +317,11 @@ export function createLiveBackendContractMessageAdapter(
     }),
   };
   // Background agent-CLI update detection (spec: version-management.md, Lane 2).
+  let emitProviderInventoryChanged = () => undefined;
   const agentUpdateChecker = createLiveAgentUpdateChecker({
     agentIds: Object.keys(integrations) as ProviderCliAgentId[],
     resolveExecutable,
+    onAdvisoryChanged: () => emitProviderInventoryChanged(),
   });
   let emitOpencodeProviderCatalogChanged = () => undefined;
 
@@ -442,7 +444,20 @@ export function createLiveBackendContractMessageAdapter(
   const detection = createProviderDetection({
     hasIntegration: (agentId) => integrations[agentId] !== undefined,
     resolveExecutable,
+    defaultCwd: process.cwd(),
+    updateChecker: agentUpdateChecker,
   });
+  emitProviderInventoryChanged = () => {
+    emitBackendEvents([
+      {
+        contractVersion: CONTRACT_VERSION,
+        eventId: nextEventId(),
+        kind: "providerInventory.changed",
+        emittedAt: new Date().toISOString(),
+        payload: detection.getProviderInventory(),
+      },
+    ]);
+  };
   emitOpencodeProviderCatalogChanged = () => {
     void (async () => {
       try {

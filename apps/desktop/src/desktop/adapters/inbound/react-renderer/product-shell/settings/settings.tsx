@@ -88,7 +88,7 @@ const WORKTREE_SETTINGS_STORAGE_KEY = "tide.worktreeSettings";
 const START_COMPOSER_STORAGE_KEY = "tide.startComposerDefaults";
 
 // Remembers the agent + model the user last chose in the Start Composer, so the
-// next New Thread defaults to it instead of always codex/gpt-5.5.
+// next New Thread defaults to it instead of the built-in Codex default.
 export function loadPreferredStartComposer(): PreferredStartComposer | null {
   try {
     const raw = getStoredPref(START_COMPOSER_STORAGE_KEY);
