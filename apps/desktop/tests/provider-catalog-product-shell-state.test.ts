@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   applyProductShellBackendEvent,
+  createProductShellViewModel,
   createProductShellState,
   startNewProductShellThread,
 } from "../src/desktop/application/domains/product-shell/product-shell.ts";
@@ -87,6 +88,46 @@ test("providerInventory.changed owns available provider agents outside thread.li
       ["opencode", true],
     ],
   );
+});
+
+test("providerInventory.changed surfaces provider CLI update advisory on the start composer", () => {
+  const state = applyProductShellBackendEvent(
+    createProductShellState({ includeFixtureData: false }),
+    {
+      kind: "providerInventory.changed",
+      payload: {
+        agents: [
+          {
+            agentId: "codex",
+            installed: true,
+            readiness: {
+              agentId: "codex",
+              ready: true,
+              blockers: [],
+              update: {
+                currentVersion: "0.141.0",
+                latestVersion: "0.144.4",
+                terminalAction: {
+                  command: "npm",
+                  args: ["install", "-g", "@openai/codex@latest"],
+                  cwd: ".",
+                  expectedCompletion: "retry_preflight",
+                },
+              },
+            },
+          },
+          { agentId: "claude", installed: true },
+          { agentId: "opencode", installed: true },
+        ],
+      },
+    },
+  );
+
+  const view = createProductShellViewModel(state);
+
+  assert.equal(view.agentChat.providerUpdateAdvisory?.agentLabel, "Codex CLI");
+  assert.equal(view.agentChat.providerUpdateAdvisory?.currentVersion, "0.141.0");
+  assert.equal(view.agentChat.providerUpdateAdvisory?.latestVersion, "0.144.4");
 });
 
 test("agentRuntime.modelCatalogChanged updates the same provider catalog slice", () => {

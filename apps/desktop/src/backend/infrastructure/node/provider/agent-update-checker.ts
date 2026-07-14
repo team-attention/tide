@@ -96,6 +96,7 @@ export function createAgentUpdateChecker(
 export function createLiveAgentUpdateChecker(input: {
   agentIds: ProviderCliAgentId[];
   resolveExecutable: (command: string) => string | undefined;
+  onAdvisoryChanged?: (agentIds: ProviderCliAgentId[]) => void;
 }): RefreshableAgentCliUpdateChecker {
   const npmPath = input.resolveExecutable("npm") ?? "npm";
   const checker = createAgentUpdateChecker({
@@ -107,13 +108,22 @@ export function createLiveAgentUpdateChecker(input: {
     readLatestVersion: (agentId) => latestPublishedVersion(installPackageForAgent(agentId), npmPath),
     buildUpdateTerminalAction: (agentId, cwd) => npmUpdateReadinessTerminalAction({ npmPath, agentId, cwd }),
   });
-  // Populate off the startup critical path; the advisory then surfaces on the next
-  // readiness check (agent select / thread open). Refresh periodically to stay fresh.
+  // Populate off the startup critical path. The composition root re-emits provider
+  // inventory when advisory state changes, so the start composer can show/clear the
+  // non-blocking update chip before a send.
   setImmediate(() => {
-    void checker.refresh();
+    void checker.refresh().then((changed) => {
+      if (changed.length > 0) {
+        input.onAdvisoryChanged?.(changed);
+      }
+    });
   });
   setInterval(() => {
-    void checker.refresh();
+    void checker.refresh().then((changed) => {
+      if (changed.length > 0) {
+        input.onAdvisoryChanged?.(changed);
+      }
+    });
   }, REFRESH_INTERVAL_MS).unref?.();
   return checker;
 }

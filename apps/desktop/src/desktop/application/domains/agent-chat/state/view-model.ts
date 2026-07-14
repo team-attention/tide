@@ -1,5 +1,5 @@
 import type { AgentChatBlock, AgentChatBlockPhase, AgentChatBlockView, AgentChatChecklistEntry, AgentChatChecklistStatus, AgentChatChecklistView, AgentChatContextItem, AgentChatShellState, AgentChatShellViewModel, AgentChatStartOptions, AgentChatState, AgentChatThreadSummary, AgentChatUsage, AgentChatUsageRateLimitView, AgentChatUsageView, LaunchOptionFeedback, LiveTurnActivityView } from "./types.ts";
-import { codexModelLabel, defaultModelValueForAgent, defaultPermissionForAgent, formatAgentLabel, modelLabelForAgent, permissionLabelForValue, runtimeSourceForBinding } from "./agent-vocab.ts";
+import { codexModelLabel, defaultModelValueForAgent, defaultPermissionForAgent, defaultReasoningValueForAgent, formatAgentLabel, modelLabelForAgent, permissionLabelForValue, runtimeSourceForBinding } from "./agent-vocab.ts";
 import { createActiveComposerSurface } from "./choice-surfaces.ts";
 import { environmentContextValue, launchOptionsForState } from "./launch-options.ts";
 import { nativeEvidenceForBlock, nativeEvidenceLabel } from "./native-evidence-view.ts";
@@ -283,11 +283,15 @@ function modelLabelForState(state: AgentChatShellState): string {
   // codex exposes a reasoning effort; show it next to the model so the chip
   // reflects the real setting (not a hardcoded level).
   if (binding.agentId === "codex") {
-    const reasoning = String(launchOptions?.reasoning ?? "medium");
+    const reasoning = String(
+      launchOptions?.reasoning ?? defaultReasoningValueForAgent("codex", model),
+    );
     return `${codexModelLabel(model)} · ${reasoningLabel(reasoning)}`;
   }
   if (binding.agentId === "claude") {
-    const effort = String(launchOptions?.reasoning ?? "high");
+    const effort = String(
+      launchOptions?.reasoning ?? defaultReasoningValueForAgent("claude", model),
+    );
     return `${modelLabelForAgent("claude", model, catalog)} · ${reasoningLabel(effort)}`;
   }
   return modelLabelForAgent(binding.agentId, model, catalog);

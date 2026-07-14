@@ -8,6 +8,7 @@ import {
   type AgentIntegrationRegistry,
 } from "../src/backend/adapters/outbound/agent-runtime/runtime-ports/agent-integration-agent-runtime-port.ts";
 import { createAgentUpdateChecker } from "../src/backend/infrastructure/node/provider/agent-update-checker.ts";
+import { createProviderDetection } from "../src/backend/infrastructure/node/provider/provider-detection.ts";
 import type {
   AgentIntegrationPort,
   AgentIntegrationPreflightResult,
@@ -241,4 +242,36 @@ test("update checker: not installed or unknown latest yields no advisory", async
   assert.deepEqual(changed, []);
   assert.equal(checker.advisoryFor("claude", "."), undefined); // not installed
   assert.equal(checker.advisoryFor("codex", "."), undefined); // latest unknown
+});
+
+test("provider detection inventory carries non-blocking CLI update advisories", () => {
+  const detection = createProviderDetection({
+    hasIntegration: () => true,
+    resolveExecutable: (command) => `/bin/${command}`,
+    defaultCwd: "/repo",
+    updateChecker: {
+      advisoryFor: (agentId, cwd) =>
+        agentId === "codex"
+          ? {
+              currentVersion: "0.141.0",
+              latestVersion: "0.144.4",
+              terminalAction: {
+                command: "npm",
+                args: ["install", "-g", "@openai/codex@latest"],
+                cwd,
+                expectedCompletion: "retry_preflight",
+              },
+            }
+          : undefined,
+    },
+  });
+
+  const codex = detection.getProviderInventory().agents.find((agent) => agent.agentId === "codex");
+  const claude = detection.getProviderInventory().agents.find((agent) => agent.agentId === "claude");
+
+  assert.equal(codex?.readiness?.ready, true);
+  assert.equal(codex?.readiness?.update?.currentVersion, "0.141.0");
+  assert.equal(codex?.readiness?.update?.latestVersion, "0.144.4");
+  assert.equal(codex?.readiness?.update?.terminalAction.cwd, "/repo");
+  assert.equal(claude?.readiness?.update, undefined);
 });

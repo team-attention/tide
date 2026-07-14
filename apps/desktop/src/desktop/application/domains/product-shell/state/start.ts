@@ -146,7 +146,7 @@ function defaultStartScope(state: ProductShellState): AgentChatThreadScope {
 }
 
 // The user's most-recently-used Start Composer agent + model/permission/reasoning,
-// so a new thread defaults to their last choice instead of always codex/gpt-5.5.
+// so a new thread defaults to their last choice instead of the built-in Codex default.
 // Set by the Desktop adapter from persisted storage; null = historical defaults.
 // Module-level (not in ProductShellState) so it survives full New-Thread resets.
 export interface PreferredStartComposer {

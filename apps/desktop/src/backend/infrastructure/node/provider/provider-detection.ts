@@ -12,6 +12,7 @@ import type {
 import { createOpencodeModelCatalog } from "./opencode-model-catalog.ts";
 import { createOpencodeVendorCatalog, reconcileVendorUsability } from "./opencode-vendor-catalog.ts";
 import { createOpencodeAuthServer } from "./opencode-auth-server.ts";
+import type { AgentCliUpdateChecker } from "../../../adapters/outbound/agent-runtime/runtime-ports/agent-integration-agent-runtime-port.ts";
 
 // The local-system provider detection surfaced on thread.listed: which provider-CLI
 // agents are installed (executable resolves + an integration exists) and opencode's
@@ -39,6 +40,9 @@ export interface ProviderDetection {
 
 const STATIC_PROVIDER_MODELS: Record<"codex" | "claude", ProviderModelDto[]> = {
   codex: [
+    { value: "gpt-5.6-sol", label: "GPT-5.6-Sol" },
+    { value: "gpt-5.6-terra", label: "GPT-5.6-Terra" },
+    { value: "gpt-5.6-luna", label: "GPT-5.6-Luna" },
     { value: "gpt-5.5", label: "GPT-5.5" },
     { value: "gpt-5.4", label: "GPT-5.4" },
     { value: "gpt-5.4-mini", label: "GPT-5.4-Mini" },
@@ -59,7 +63,7 @@ const STATIC_PROVIDER_MODELS: Record<"codex" | "claude", ProviderModelDto[]> = {
 };
 
 const DEFAULT_PROVIDER_MODEL: Record<ProviderCliAgentId, string> = {
-  codex: "gpt-5.5",
+  codex: "gpt-5.6-sol",
   claude: "Claude default",
   opencode: "opencode default",
 };
@@ -67,6 +71,8 @@ const DEFAULT_PROVIDER_MODEL: Record<ProviderCliAgentId, string> = {
 export function createProviderDetection(input: {
   hasIntegration: (agentId: ProviderCliAgentId) => boolean;
   resolveExecutable: (command: string) => string | undefined;
+  defaultCwd?: string;
+  updateChecker?: AgentCliUpdateChecker;
 }): ProviderDetection {
   const opencodeCatalog = createOpencodeModelCatalog((command) => input.resolveExecutable(command));
   const opencodeVendorCatalog = createOpencodeVendorCatalog((command) => input.resolveExecutable(command));
@@ -131,12 +137,28 @@ export function createProviderDetection(input: {
   return {
     detectAvailableAgents: installedAgents,
     getProviderInventory: () => ({
-      agents: PROVIDER_CLI_AGENT_IDS.map((agentId) => ({
-        agentId,
-        installed:
+      agents: PROVIDER_CLI_AGENT_IDS.map((agentId) => {
+        const installed =
           input.hasIntegration(agentId) &&
-          input.resolveExecutable(executableForAgent(agentId)) !== undefined,
-      })),
+          input.resolveExecutable(executableForAgent(agentId)) !== undefined;
+        const update = installed
+          ? input.updateChecker?.advisoryFor(agentId, input.defaultCwd ?? ".")
+          : undefined;
+        return {
+          agentId,
+          installed,
+          ...(installed
+            ? {
+                readiness: {
+                  agentId,
+                  ready: true,
+                  blockers: [],
+                  ...(update ? { update } : {}),
+                },
+              }
+            : {}),
+        };
+      }),
     }),
     getProviderCatalog: async ({ agentId, scope }) => {
       if (agentId === "opencode") {

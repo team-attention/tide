@@ -1,6 +1,6 @@
 import type { ProductShellBackendEventSource, ProductShellContentSearch, ProductShellProviderCapability, ProductShellProviderUsage, ProductShellState } from "./types.ts";
 import { applyAgentChatBackendEvent, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
-import type { AgentChatBackendEvent, AgentChatCommandOption, AgentChatProviderCatalog, AgentChatProviderInventory, AgentChatThreadSummary } from "../../agent-chat/agent-chat.ts";
+import type { AgentChatBackendEvent, AgentChatCommandOption, AgentChatProviderCatalog, AgentChatProviderReadiness, AgentChatThreadSummary } from "../../agent-chat/agent-chat.ts";
 import { applyAppChromeBackendEvent } from "../../app-chrome/app-chrome-state.ts";
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
 import { applyProductShellThreadArchivedEvent, applyProductShellThreadEvent, applyProductShellThreadLaunchOptionsChangedEvent, applyProductShellThreadPinChangedEvent, applyProductShellThreadRenamedEvent, toProductShellThreadFromSummary } from "./thread-list.ts";
@@ -8,6 +8,7 @@ import { setProductShellProviderCommands } from "./composer-bridge.ts";
 import { activeSurfaceThreadId, createStartAgentChatState, isProductShellAgentIdentity } from "./start.ts";
 import { productShellFileTreeFromPayload } from "./file-tree.ts";
 import { defaultModelForProvider, providerCatalogFromPayload, providerModelsFromPayload } from "./provider-catalog-payload.ts";
+import { providerInventoryFromPayload, providerReadinessFromInventoryPayload } from "./provider-inventory-payload.ts";
 import { applyDismissedProductShellEditorReferences, reconcileEditorDrafts } from "./workbench-editor.ts";
 import { projectsFromThreads } from "./view-model.ts";
 import { resolveProductShellActiveWorkbenchPaneId } from "./workbench-active-pane.ts";
@@ -75,7 +76,13 @@ export function applyProductShellBackendEvent(
     }
     case "providerInventory.changed": {
       const providerInventory = providerInventoryFromPayload(event.payload);
-      return providerInventory === null ? nextState : { ...nextState, providerInventory };
+      if (providerInventory === null) {
+        return nextState;
+      }
+      return applyProviderInventoryReadinessToStartComposer(
+        { ...nextState, providerInventory },
+        event.payload,
+      );
     }
     case "providerCatalog.changed": {
       const catalog = providerCatalogFromPayload(event.payload);
@@ -457,25 +464,45 @@ function seedProviderInventoryFromLegacyThreadList(
   };
 }
 
-function providerInventoryFromPayload(payload: unknown): AgentChatProviderInventory | null {
-  const raw = payload as { agents?: unknown };
-  if (!Array.isArray(raw.agents)) {
-    return null;
+function applyProviderInventoryReadinessToStartComposer(
+  state: ProductShellState,
+  payload: unknown,
+): ProductShellState {
+  if (state.agentChat.thread !== null) {
+    return state;
   }
-  const agents = raw.agents
-    .map((entry): AgentChatProviderInventory["agents"][number] | null => {
-      const candidate = entry as { agentId?: unknown; installed?: unknown };
-      if (
-        typeof candidate.agentId !== "string" ||
-        !isProductShellAgentIdentity(candidate.agentId) ||
-        typeof candidate.installed !== "boolean"
-      ) {
-        return null;
-      }
-      return { agentId: candidate.agentId, installed: candidate.installed };
-    })
-    .filter((entry): entry is AgentChatProviderInventory["agents"][number] => entry !== null);
-  return { agents };
+  const agentId = state.agentChat.composer.startOptions.agentBinding.agentId;
+  if (!isProductShellAgentIdentity(agentId)) {
+    return state;
+  }
+  const incoming = providerReadinessFromInventoryPayload(payload, agentId);
+  if (incoming === null) {
+    return state;
+  }
+  return {
+    ...state,
+    agentChat: {
+      ...state.agentChat,
+      providerReadiness: mergeInventoryReadinessUpdate(
+        state.agentChat.providerReadiness,
+        incoming,
+      ),
+    },
+  };
+}
+
+function mergeInventoryReadinessUpdate(
+  existing: AgentChatProviderReadiness | null,
+  incoming: AgentChatProviderReadiness,
+): AgentChatProviderReadiness {
+  if (existing?.agentId !== incoming.agentId) {
+    return incoming;
+  }
+  if (incoming.update === undefined) {
+    const { update: _update, ...withoutUpdate } = existing;
+    return withoutUpdate;
+  }
+  return { ...existing, update: incoming.update };
 }
 
 function shouldApplyBackendEventToActiveSurfaces(

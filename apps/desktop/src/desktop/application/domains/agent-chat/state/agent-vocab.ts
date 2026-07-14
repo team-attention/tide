@@ -6,9 +6,13 @@ import {
 } from "../../../../../shared/agent-descriptors.ts";
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
 
-// Codex visible model catalog, verified from `codex debug models` (codex-cli
-// 0.141.0). codex's --model is free-form, so "Custom model id..." stays too.
+// Codex visible model catalog, verified from `npx -y @openai/codex@latest
+// debug models` (codex-cli 0.144.4). codex's --model is free-form, so custom
+// provider-native ids remain valid even when they are not listed here.
 export const CODEX_MODELS: CliModelOption[] = [
+  { value: "gpt-5.6-sol", label: "GPT-5.6-Sol" },
+  { value: "gpt-5.6-terra", label: "GPT-5.6-Terra" },
+  { value: "gpt-5.6-luna", label: "GPT-5.6-Luna" },
   { value: "gpt-5.5", label: "GPT-5.5" },
   { value: "gpt-5.4", label: "GPT-5.4" },
   { value: "gpt-5.4-mini", label: "GPT-5.4-Mini" },
@@ -175,8 +179,25 @@ export function defaultModelValueForAgent(agentId: string): string {
     case "opencode":
       return "opencode default";
     default:
-      return "gpt-5.5";
+      return "gpt-5.6-sol";
   }
+}
+
+export function defaultReasoningValueForAgent(agentId: string, model?: string): string {
+  if (agentId === "claude") {
+    return "high";
+  }
+  if (agentId === "codex") {
+    switch (model ?? defaultModelValueForAgent("codex")) {
+      case "gpt-5.6-sol":
+        return "low";
+      case "gpt-5.3-codex-spark":
+        return "high";
+      default:
+        return "medium";
+    }
+  }
+  return "high";
 }
 
 function defaultModelLabelForAgent(
@@ -219,7 +240,7 @@ function modelRowIdForAgent(agentId: string): string {
     case "claude":
       return "claude-default";
     default:
-      return "gpt-55-high";
+      return "gpt-56-sol";
   }
 }
 

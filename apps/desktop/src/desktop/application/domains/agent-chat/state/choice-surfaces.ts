@@ -1,6 +1,6 @@
 import type { AgentChatAgentId, AgentChatAgentRuntimeSource, AgentChatChoiceSurfaceRowView, AgentChatChoiceSurfaceView, AgentChatCommandOption, AgentChatProjectOption, AgentChatShellState, AgentChatShellUpdateResult, AgentChatThreadScope } from "./types.ts";
 import { activeComposerTrigger, selectComposerAgent, setComposerActiveSurface } from "./composer.ts";
-import { CODEX_MODELS, PERMISSION_OPTIONS, REASONING_LEVELS, cliModelOptionsForAgent, defaultModelValueForAgent, defaultPermissionForAgent, formatAgentLabel, isAgentAvailable, isAgentAvailabilityKnown, isAgentComingSoon, normalizePermissionValue, permissionConfigForAgent, runtimeSourceForBinding } from "./agent-vocab.ts";
+import { CODEX_MODELS, PERMISSION_OPTIONS, REASONING_LEVELS, cliModelOptionsForAgent, defaultModelValueForAgent, defaultPermissionForAgent, defaultReasoningValueForAgent, formatAgentLabel, isAgentAvailable, isAgentAvailabilityKnown, isAgentComingSoon, normalizePermissionValue, permissionConfigForAgent, runtimeSourceForBinding } from "./agent-vocab.ts";
 import { branchMenuRows, defaultBranchName, worktreeForBranch, worktreeMenuRows } from "./branch-environment-menu-rows.ts";
 import { launchOptionsForState, setComposerNewWorktreeIntent, updateComposerLaunchOptions, updateComposerScope } from "./launch-options.ts";
 import { buildOpencodeConnectSurface, isOpencodeUsable } from "./opencode-onramp.ts";
@@ -473,7 +473,7 @@ function modelForRow(rowId: string): string | undefined {
   }
   switch (rowId) {
     case "codex-model":
-      return "gpt-5.5";
+      return defaultModelValueForAgent("codex");
     case "claude-default":
       return "Claude default";
     default:
@@ -559,13 +559,20 @@ function reasoningForRow(rowId: string): "low" | "medium" | "high" | "xhigh" | "
   }
 }
 
-// Codex has no enumerable model list (free-form `--model`); the real tuning knob
-// is reasoning effort. Surface the active model plus the three effort levels.
+// Codex has a curated visible list plus free-form `--model` support. GPT-5.6
+// rows expose `max` in the latest CLI; `ultra` stays out until the runtime mapping
+// is explicitly verified.
 function codexModelMenuRows(
   state: AgentChatShellState,
   selectedModel: string,
 ): AgentChatChoiceSurfaceRowView[] {
-  const reasoning = String(launchOptionsForState(state)?.reasoning ?? "medium");
+  const reasoning = String(
+    launchOptionsForState(state)?.reasoning ??
+      defaultReasoningValueForAgent("codex", selectedModel),
+  );
+  const reasoningLevels = selectedModel.startsWith("gpt-5.6-")
+    ? ["low", "medium", "high", "xhigh", "max"]
+    : ["low", "medium", "high", "xhigh"];
   const rows: AgentChatChoiceSurfaceRowView[] = [
     row("model-section", "Model", "Codex Agent Integration", "source", "source"),
   ];
@@ -583,7 +590,7 @@ function codexModelMenuRows(
   }
   rows.push(
     row("reasoning-section", "Reasoning effort", "model_reasoning_effort", "source", "source"),
-    ...effortRows(reasoning, ["low", "medium", "high", "xhigh"]),
+    ...effortRows(reasoning, reasoningLevels),
   );
   return rows;
 }
