@@ -47,6 +47,9 @@ export function parseCodexDebugModels(stdout: string): ProviderModelDto[] {
   }
   return parsed.models
     .map((entry): ProviderModelDto | null => {
+      if (typeof entry !== "object" || entry === null) {
+        return null;
+      }
       const model = entry as CodexDebugModel;
       if (typeof model.slug !== "string" || typeof model.display_name !== "string") {
         return null;
@@ -97,9 +100,22 @@ export function createCodexModelCatalog(
 
   return {
     get: async () => {
-      inflight ??= refresh().finally(() => {
-        inflight = null;
-      });
+      if (inflight === null) {
+        const promise = refresh();
+        inflight = promise;
+        void promise.then(
+          () => {
+            if (inflight === promise) {
+              inflight = null;
+            }
+          },
+          () => {
+            if (inflight === promise) {
+              inflight = null;
+            }
+          },
+        );
+      }
       return inflight;
     },
     invalidate: () => {
@@ -114,6 +130,9 @@ function codexEffortOptions(payload: unknown): string[] {
   }
   return payload
     .map((entry): string | null => {
+      if (typeof entry !== "object" || entry === null) {
+        return null;
+      }
       const effort = (entry as { effort?: unknown }).effort;
       return typeof effort === "string" ? effort : null;
     })
