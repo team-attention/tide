@@ -749,7 +749,6 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   private clearStreamingTextBuffers(): void {
     this.streamBodies.clear();
     this.reasoningBodies.clear();
-    this.flushScheduled = false;
   }
 
   private flushStream(): void {
