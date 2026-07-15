@@ -21,7 +21,7 @@ const advisoryTerminalAction = {
 
 function stateWithReadiness(
   ready: boolean,
-  update?: { currentVersion: string; latestVersion: string; terminalAction: typeof advisoryTerminalAction },
+  update?: { currentVersion: string; latestVersion: string; terminalAction?: typeof advisoryTerminalAction },
 ): AgentChatShellState {
   return {
     ...createAgentChatShellState(),
@@ -42,6 +42,13 @@ test("view model exposes the update advisory even when the agent is ready", () =
 
 test("view model has no advisory when readiness carries no update", () => {
   const vm = createAgentChatShellViewModel(stateWithReadiness(true));
+  assert.equal(vm.providerUpdateAdvisory, undefined);
+});
+
+test("view model hides the update chip when no safe terminal action is available", () => {
+  const vm = createAgentChatShellViewModel(
+    stateWithReadiness(true, { currentVersion: "1.0.0", latestVersion: "1.2.0" }),
+  );
   assert.equal(vm.providerUpdateAdvisory, undefined);
 });
 

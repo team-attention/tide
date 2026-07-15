@@ -118,7 +118,14 @@ export function toProviderReadinessDto(
     blockers: readiness.blockers.map((blocker) => ({ ...blocker })),
     // Non-blocking "newer CLI published" advisory rides alongside, never gating `ready`.
     ...(readiness.update
-      ? { update: { ...readiness.update, terminalAction: { ...readiness.update.terminalAction } } }
+      ? {
+          update: {
+            ...readiness.update,
+            ...(readiness.update.terminalAction
+              ? { terminalAction: { ...readiness.update.terminalAction } }
+              : {}),
+          },
+        }
       : {}),
   };
 }

@@ -92,13 +92,11 @@ function providerUpdateAdvisoryFromPayload(payload: unknown): AgentChatProviderU
     return null;
   }
   const terminalAction = providerReadinessTerminalActionFromPayload(raw.terminalAction);
-  return terminalAction === null
-    ? null
-    : {
-        currentVersion: raw.currentVersion,
-        latestVersion: raw.latestVersion,
-        terminalAction,
-      };
+  return {
+    currentVersion: raw.currentVersion,
+    latestVersion: raw.latestVersion,
+    ...(terminalAction !== null ? { terminalAction } : {}),
+  };
 }
 
 function providerReadinessBlockerFromPayload(payload: unknown): AgentChatProviderReadinessBlocker | null {

@@ -40,6 +40,14 @@ provider CLIs are stale.
   - Composer UI renders an `Update <Agent>` chip when `providerReadiness.update`
     exists.
   - Tests cover the chip rendering and update-terminal dispatch.
+- A real failing local state showed two Codex installs on PATH:
+  - `~/.local/bin/codex -> ~/.codex/packages/standalone/current/bin/codex`
+    reported `codex-cli 0.141.0` and was the executable Tide actually used.
+  - `~/.nvm/versions/node/v22.20.0/bin/codex` reported `codex-cli 0.144.4`
+    after the update button ran npm.
+  - Because `~/.local/bin` precedes nvm on PATH, `npm install -g
+    @openai/codex@latest` succeeded but updated a lower-priority executable; the
+    advisory and old model catalog correctly reappeared on restart.
 - The likely missing behavior is propagation: `createLiveAgentUpdateChecker()` runs
   `refresh()` in the background, but the live wiring ignores the returned
   changed-agent list and does not proactively re-emit provider readiness for the
@@ -70,12 +78,30 @@ provider CLIs are stale.
   `high`.
 - **D7. The update advisory must appear before send.** Users should not need to start
   a thread or hit a readiness blocker to learn that their provider CLI is stale.
+- **D8. The update action is the resolved executable's native updater.** Tide
+  must not update a different provider CLI than the one it launches. If the
+  resolved executable advertises a provider-native updater, the update terminal
+  runs that exact executable (`codex update`, `claude update`, or `opencode
+  upgrade`). If native update is not advertised, Tide keeps the stale-version
+  advisory internally but does not show a one-click update action. Missing-CLI
+  setup still uses npm as the best-effort bootstrap path.
+- **D9. MCP attachment must not become a provider wrapper.** Tide's Browser MCP
+  and Workbench MCP tools are attached to the resolved provider executable through
+  provider-native launch configuration (`codex app-server -c mcp_servers...`,
+  `claude --mcp-config ...`, `opencode acp` `mcpServers`). The provider process
+  command remains the same executable Tide found on the user's shell PATH; Tide
+  must not insert a separate wrapper binary between the user-selected provider
+  and the runtime.
 
 ## Out Of Scope
 
 - Tide app self-update UI or release-feed behavior.
-- Homebrew/curl/native installer detection. This slice keeps the existing npm
-  `install -g <pkg>@latest` path.
+- Homebrew/curl/native installer detection. This slice keeps npm
+  `install -g <pkg>@latest` as the missing-CLI bootstrap path; installed provider
+  CLI updates target only a proven updater for the resolved executable.
+- Replacing the provider launch mechanism with Tide-owned provider wrapper scripts.
+  MCP/tool integration stays a launch-plan concern, not a binary-substitution
+  concern.
 - A full Providers & Models settings hub.
 - Dynamic per-account Codex entitlement gating beyond what the CLI reports.
 - Codex `ultra` mode UI unless a provider smoke proves the exact app-server launch
@@ -112,7 +138,10 @@ provider CLIs are stale.
 3. Tide must surface that advisory for the selected provider in the start composer
    without requiring a send.
 4. Clicking the chip runs the existing readiness terminal handoff:
-   `npm install -g <package>@latest`, `expectedCompletion: "retry_preflight"`.
+   `<resolved codex> update`, `<resolved claude> update`, or `<resolved
+   opencode> upgrade`, `expectedCompletion: "retry_preflight"` when that
+   provider-native updater is advertised. If it is not advertised, no one-click
+   update chip is surfaced.
 5. When the terminal completes, `refreshUpdateAdvisories()` re-reads versions before
    readiness is rechecked, clearing the chip once installed `===` latest.
 
@@ -149,6 +178,9 @@ provider CLIs are stale.
   present, the composer shows `Update Codex`.
 - Existing chip click test remains: clicking the update chip dispatches
   `update_available:terminal`.
+- Update action targeting: resolved provider executables build provider-native
+  update terminal actions only after probing the native updater; unknown install
+  methods produce no one-click action.
 - Codex catalog: menu includes `model:gpt-5.6-sol`, `model:gpt-5.6-terra`,
   `model:gpt-5.6-luna`, and retained older rows.
 - Codex default: `defaultModelValueForAgent("codex") === "gpt-5.6-sol"`.

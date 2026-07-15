@@ -6,12 +6,15 @@ import {
   executableForAgent,
   installPackageForAgent,
   latestPublishedVersion,
-  npmUpdateReadinessTerminalAction,
+  providerNativeUpdateCommandAvailable,
   providerVersionForExecutable,
+  updateReadinessTerminalActionForAgent,
 } from "../../../adapters/outbound/agent-integrations/shared/provider-cli-commands.ts";
 
 // How often the background probe re-reads installed + latest versions.
 const REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+type ProviderReadinessTerminalActionTemplate = Omit<ProviderReadinessTerminalAction, "cwd">;
 
 // Background agent-CLI update detection (spec: version-management.md, Lane 2).
 // Holds the last-known installed and latest-published version per agent and
@@ -28,8 +31,12 @@ export interface AgentUpdateCheckerDeps {
   // Latest published version (`npm view <pkg> version`), or undefined on failure.
   // Network I/O, so asynchronous — refresh awaits all agents in parallel.
   readLatestVersion: (agentId: ProviderCliAgentId) => Promise<string | undefined>;
-  // The in-place update readiness terminal action (npm install -g <pkg>@latest).
-  buildUpdateTerminalAction: (agentId: ProviderCliAgentId, cwd: string) => ProviderReadinessTerminalAction;
+  // The in-place update readiness terminal action template, when Tide can prove a
+  // safe updater for the resolved executable. Undefined means "do not show a
+  // one-click update". Runs during background refresh, never in readiness lookup.
+  readUpdateTerminalAction: (
+    agentId: ProviderCliAgentId,
+  ) => Promise<ProviderReadinessTerminalActionTemplate | undefined>;
 }
 
 export interface RefreshableAgentCliUpdateChecker extends AgentCliUpdateChecker {
@@ -43,6 +50,7 @@ export function createAgentUpdateChecker(
 ): RefreshableAgentCliUpdateChecker {
   const installed = new Map<ProviderCliAgentId, string>();
   const latest = new Map<ProviderCliAgentId, string>();
+  const updateActions = new Map<ProviderCliAgentId, ProviderReadinessTerminalActionTemplate>();
 
   const hasAdvisory = (agentId: ProviderCliAgentId): boolean => {
     const current = installed.get(agentId);
@@ -57,10 +65,11 @@ export function createAgentUpdateChecker(
       if (current === undefined || newest === undefined || !semverLess(current, newest)) {
         return undefined;
       }
+      const terminalAction = updateActions.get(agentId);
       return {
         currentVersion: current,
         latestVersion: newest,
-        terminalAction: deps.buildUpdateTerminalAction(agentId, cwd),
+        ...(terminalAction !== undefined ? { terminalAction: { ...terminalAction, cwd } } : {}),
       };
     },
     async refresh() {
@@ -74,21 +83,34 @@ export function createAgentUpdateChecker(
               // lingers for an agent the user just uninstalled.
               installed.delete(agentId);
               latest.delete(agentId);
+              updateActions.delete(agentId);
               return;
             }
             installed.set(agentId, current);
             const newest = await deps.readLatestVersion(agentId);
             if (newest === undefined) {
               latest.delete(agentId);
+              updateActions.delete(agentId);
               return;
             }
             latest.set(agentId, newest);
+            if (semverLess(current, newest)) {
+              const terminalAction = await deps.readUpdateTerminalAction(agentId);
+              if (terminalAction === undefined) {
+                updateActions.delete(agentId);
+              } else {
+                updateActions.set(agentId, terminalAction);
+              }
+            } else {
+              updateActions.delete(agentId);
+            }
           } catch {
             // Refresh is background/non-critical. A transient spawn or registry
             // failure should clear stale advisory state for that agent, not reject
             // the whole refresh loop.
             installed.delete(agentId);
             latest.delete(agentId);
+            updateActions.delete(agentId);
           }
         }),
       );
@@ -114,7 +136,27 @@ export function createLiveAgentUpdateChecker(input: {
       return exe === undefined ? Promise.resolve(undefined) : providerVersionForExecutable(exe);
     },
     readLatestVersion: (agentId) => latestPublishedVersion(installPackageForAgent(agentId), npmPath),
-    buildUpdateTerminalAction: (agentId, cwd) => npmUpdateReadinessTerminalAction({ npmPath, agentId, cwd }),
+    readUpdateTerminalAction: async (agentId) => {
+      const executablePath = input.resolveExecutable(executableForAgent(agentId));
+      const nativeUpdateAvailable =
+        executablePath !== undefined &&
+        await providerNativeUpdateCommandAvailable({ executablePath, agentId });
+      const terminalAction = updateReadinessTerminalActionForAgent({
+        agentId,
+        cwd: "",
+        executablePath,
+        nativeUpdateAvailable,
+      });
+      if (terminalAction === undefined) {
+        return undefined;
+      }
+      return {
+        command: terminalAction.command,
+        args: terminalAction.args,
+        ...(terminalAction.env !== undefined ? { env: terminalAction.env } : {}),
+        expectedCompletion: terminalAction.expectedCompletion,
+      };
+    },
   });
   const refreshAndNotify = () => {
     void checker.refresh()

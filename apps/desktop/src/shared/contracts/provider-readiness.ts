@@ -14,10 +14,9 @@ export interface ProviderReadinessDto {
 export interface ProviderUpdateAdvisoryDto {
   currentVersion: string;
   latestVersion: string;
-  // The readiness terminal action that updates the CLI in place (npm install -g
-  // <pkg>@latest, re-running preflight on exit) — the same terminal handoff used
-  // to install a missing CLI.
-  terminalAction: ProviderReadinessTerminalActionDto;
+  // The readiness terminal action that updates the CLI in place, present only
+  // when Tide can prove a safe updater for the resolved executable.
+  terminalAction?: ProviderReadinessTerminalActionDto;
 }
 
 export interface ProviderReadinessBlockerDto {
