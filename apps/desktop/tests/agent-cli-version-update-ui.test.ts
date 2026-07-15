@@ -13,8 +13,8 @@ import type { AgentChatShellState } from "../src/desktop/application/domains/age
 // agent is ready, and a click runs the in-place CLI update readiness terminal.
 
 const advisoryTerminalAction = {
-  command: "npm",
-  args: ["install", "-g", "@anthropic-ai/claude-code@latest"],
+  command: "/bin/claude",
+  args: ["update"],
   cwd: ".",
   expectedCompletion: "retry_preflight" as const,
 };
@@ -72,7 +72,7 @@ test("selecting the update row dispatches the in-place update readiness terminal
   };
   assert.equal(payload.command, "open_terminal");
   assert.equal(payload.threadId, "thread-1");
-  assert.equal(payload.data.args.at(-1), "@anthropic-ai/claude-code@latest");
+  assert.deepEqual(payload.data.args, ["update"]);
   assert.equal(payload.data.terminalRole, "provider_readiness");
 });
 

@@ -24,8 +24,8 @@ import type { AgentChatShellState } from "../src/desktop/application/domains/age
 import type { ComposerHandlers } from "../src/desktop/adapters/inbound/react-renderer/agent-chat/support/types.ts";
 
 const advisoryTerminalAction = {
-  command: "npm",
-  args: ["install", "-g", "@anthropic-ai/claude-code@latest"],
+  command: "/bin/claude",
+  args: ["update"],
   cwd: ".",
   expectedCompletion: "retry_preflight" as const,
 };

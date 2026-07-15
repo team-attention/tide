@@ -11,7 +11,8 @@ Two coordinated update experiences under one epic:
 - **Lane 2 — Agent CLI update.** For each installed Provider CLI (claude / codex
   / opencode), detect the installed version vs the latest published npm
   version and surface a non-blocking inline nudge ("Update <Agent> — vX → vY")
-  that runs the same Provider Setup Surface terminal handoff used for install.
+  that runs the resolved executable's native updater in a provider-readiness
+  Terminal Pane.
 
 Both lanes share one mental model — *current vs latest → click to apply* — but
 own different plumbing because the apply mechanisms and process owners differ.
@@ -61,27 +62,29 @@ own different plumbing because the apply mechanisms and process owners differ.
 - **D2. Agent update = non-blocking chip** in the composer toolbar (a quiet pill
   beside the Permission/Model chips, present from the start composer on), not a
   full readiness card, not a Settings hub, and never a gate. An
-  outdated-but-working CLI keeps `ready: true`. A single click runs the same
-  Setup Surface terminal update handoff (no extra confirm step).
-- **D3. One epic, sliced.** Lane 2 (backend-local, reuses Setup Surface) ships
+  outdated-but-working CLI keeps `ready: true`. A single click opens the
+  provider-readiness Terminal Pane for the resolved executable's native updater
+  when Tide can prove that updater exists.
+- **D3. One epic, sliced.** Lane 2 (backend-local, reuses readiness terminals) ships
   first; Lane 1 (Main process + CI/publish) second. Designed together here.
-- **D4. Detection.** Agent installed version via `<cli> --version` (local, cheap,
+- **D4. Detection.** Agent installed version via `<resolved cli> --version` (local, cheap,
   may run in preflight). Latest via `npm view <pkg> version` (network) cached and
   run **off the critical path** (background, like opencode's out-of-band catalog).
-  Apply reuses `npm install -g <pkg>@latest` + `retry_preflight`.
+  Apply runs that same resolved executable's native updater (`codex update`,
+  `claude update`, or `opencode upgrade`) + `retry_preflight`.
 - **D5. Ownership.** App self-update lives in **Electron Main** (app lifecycle,
   `autoUpdater`, `quitAndInstall`) and reaches the renderer over `window.tide`
-  IPC. Agent update lives in **Backend** readiness and reaches the renderer over
-  the existing `providerReadiness.changed` backend event. macOS only for now.
+  IPC. Agent update lives in **Backend** readiness and reaches the renderer
+  through provider inventory/readiness payloads. macOS only for now.
 - **D6. Outdated never blocks.** The update advisory rides alongside readiness
   without flipping `ready`.
 
 ## Out Of Scope
 
 - Windows / Linux packaging and their update channels.
-- Non-npm agent installs (Homebrew, curl). If the installed version is readable
-  but Tide did not install via npm, show the version but the nudge still offers
-  the npm `@latest` path (best-effort) — no bespoke per-installer updater.
+- Deleting or deduplicating provider CLI installs. Tide follows shell command
+  resolution and updates the resolved executable in place when a native updater
+  is advertised.
 - Silent/auto agent updates, version pinning UI, rollback.
 - Changing the existing passive `agentRuntime.noticePosted` relay (kept; de-dup
   with active detection is a follow-up note, not this slice).
@@ -92,7 +95,7 @@ own different plumbing because the apply mechanisms and process owners differ.
 ### Lane 2 (Backend)
 
 - `ProviderUpdateAdvisory` (domain) / `ProviderUpdateAdvisoryDto` (contract):
-  `{ currentVersion: string; latestVersion: string; setup: ProviderSetupSurfaceAction }`.
+  `{ currentVersion: string; latestVersion: string; terminalAction?: ProviderReadinessTerminalAction }`.
 - Added optional field `update?` on `ProviderReadinessResult` (domain) and
   `ProviderReadinessDto` (contract). Present ⇔ a newer npm version is known AND
   `currentVersion < latestVersion`. **Independent of `ready` and `blockers`.**
@@ -119,7 +122,7 @@ own different plumbing because the apply mechanisms and process owners differ.
 export interface ProviderUpdateAdvisoryDto {
   currentVersion: string;
   latestVersion: string;
-  setup: ProviderSetupSurfaceActionDto; // npm install -g <pkg>@latest, retry_preflight
+  terminalAction?: ProviderReadinessTerminalActionDto; // native updater, retry_preflight
 }
 export interface ProviderReadinessDto {
   agentId: AgentId;
@@ -129,9 +132,9 @@ export interface ProviderReadinessDto {
 }
 ```
 
-No new backend event kind: the advisory rides on the existing
-`providerReadiness.changed` payload. The background latest-version probe triggers
-a readiness re-emit for an agent when it first learns a newer version exists.
+No new backend event kind: the advisory rides on provider readiness payloads.
+The background latest-version probe triggers a provider inventory re-emit when
+advisory state changes.
 
 ### Main ↔ renderer IPC (Lane 1, via preload `window.tide`)
 
@@ -175,25 +178,22 @@ a readiness re-emit for an agent when it first learns a newer version exists.
 
 ### Lane 2 — Agent CLI update
 
-1. Background probe (startup + every N hours), for each agent whose executable
-   resolves: `npm view <pkg> version` → fill `AgentLatestVersionCache`.
-2. During readiness preflight, after confirming the executable resolves, read the
-   installed version (`<cli> --version`, parsed). If the cache has a `latest` and
-   `semverLess(installed, latest)`, attach `update` to the readiness result.
-   `ready`/`blockers` are computed exactly as today.
-3. The advisory surfaces on the next readiness check (agent select / thread open /
-   send / setup retry — all frequent), and the periodic refresh keeps the cache
-   fresh. (Implemented this way rather than a proactive push: readiness is already
-   re-checked constantly during use, so a dedicated re-emit was unnecessary for v1.
-   A proactive `providerReadiness.changed` after a probe is a noted follow-up.)
+1. Background probe (startup + every N hours), for each agent whose shell-resolved
+   executable resolves: read `<resolved cli> --version` and `npm view <pkg>
+   version`.
+2. If the cache has a `latest` and `semverLess(installed, latest)`, attach
+   `update` to the readiness result. `ready`/`blockers` are computed exactly as
+   today.
+3. The background refresh re-emits provider inventory when advisory state changes
+   so the start composer can show or clear the update chip before send.
 4. Renderer composer toolbar: when the view model exposes `update`, render a
    compact `↑ Update <Agent>` chip beside the Permission/Model chips (NOT a
    separate choice-surface card). The version detail (`vX → vY`) lives in the
-   chip's tooltip. A single click runs the same Setup Surface handoff as install
-   (`npm install -g <pkg>@latest` in the visible terminal, then `retry_preflight`)
-   via the `update_available:setup` row. The chip renders even when `blockers` is
-   empty and `ready` is true, and shows from the start composer (the toolbar is
-   not gated on an active thread). Absent `update`, no chip renders.
+   chip's tooltip. A single click runs the readiness terminal handoff for the
+   resolved executable's native updater via the `update_available:terminal` row.
+   The chip renders even when `blockers` is empty and `ready` is true, and shows
+   from the start composer (the toolbar is not gated on an active thread). Absent
+   `update` or absent safe terminal action, no chip renders.
 
 ## Invariants
 
@@ -209,7 +209,7 @@ a readiness re-emit for an agent when it first learns a newer version exists.
   advisory rather than a false one.
 - Lane 1 stays in Main (app lifecycle); Lane 2 stays in Backend (readiness). The
   renderer learns of each only through its existing channel (`window.tide` vs
-  `providerReadiness.changed`).
+  backend provider inventory/readiness events).
 
 ## Tests
 
@@ -219,14 +219,15 @@ a readiness re-emit for an agent when it first learns a newer version exists.
   `2.0.0` not `< 1.9.9`; pre-release (`1.2.3-beta.1 < 1.2.3`); non-semver input ⇒
   `false` (no advisory).
 - **Readiness advisory (backend, fake version reader + fake latest cache).**
-  installed `<` latest ⇒ `update` attached with the `@latest` setup action;
-  installed `===` latest ⇒ no `update`; latest unknown ⇒ no `update`; in all cases
-  `ready` and `blockers` equal the no-advisory baseline.
+  installed `<` latest ⇒ `update` attached with the resolved executable's native
+  update terminal action when the updater is advertised; installed `===` latest
+  ⇒ no `update`; latest unknown ⇒ no `update`; in all cases `ready` and
+  `blockers` equal the no-advisory baseline.
 - **Renderer chip.** View model with `update` renders an `↑ Update <Agent>` chip
   in the composer toolbar even when `blockers` is empty / `ready` true, and with
   no active thread (start composer); the chip is NOT a choice-surface card;
-  clicking it dispatches the `update_available:setup` Setup Surface handoff;
-  absent `update` renders no chip.
+  clicking it dispatches the `update_available:terminal` readiness-terminal
+  handoff; absent `update` or absent terminal action renders no chip.
 - **App-update status mapping (pure).** `mapAutoUpdaterEvent` maps
   checking/available/download-progress/downloaded/error/not-available to the right
   `AppUpdateStatus`.
@@ -242,12 +243,11 @@ Slice order (one epic, incremental):
 1. **Lane 2 contract + pure utils.** Add `ProviderUpdateAdvisoryDto` + optional
    `update` to contract & domain; add `semver-compare.ts`; tests first.
 2. **Lane 2 backend detection.** `providerVersionForExecutable` (`<cli> --version`
-   parse) beside `provider-cli-commands.ts`; `installPackageForAgent` →
-   `@latest` setup action (reuse `npmInstallSetupAction`); background latest probe
-   with cache + `providerReadiness.changed` re-emit. Attach `update` in each
-   integration's preflight after the resolve-executable success path.
+   parse) beside `provider-cli-commands.ts`; background latest probe with cache;
+   probe the resolved executable for a native updater and attach that terminal
+   action when available. Re-emit provider inventory when advisory state changes.
 3. **Lane 2 renderer.** Non-blocking update nudge in `readiness.ts` + view model
-   field; selecting runs the existing Setup Surface dispatch.
+   field; selecting opens the provider-readiness Terminal Pane.
 4. **Lane 1 Main.** Add `electron-updater`. New `auto-update.ts` (thin bridge) +
    `auto-update-status.ts` (pure `mapAutoUpdaterEvent` / `shouldRunAutoUpdater`),
    mirroring `notifications.ts` / `notification-policy.ts`. Wire into

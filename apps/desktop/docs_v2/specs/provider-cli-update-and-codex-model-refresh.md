@@ -6,8 +6,9 @@ This slice fixes the provider-CLI update path and the Codex model menu together:
 
 - Tide must show a non-blocking CLI update advisory when the installed provider CLI
   is older than the latest npm package for `codex`, `claude`, or `opencode`.
-- Codex model choices must match the latest Codex CLI catalog, including GPT-5.6-Sol,
-  Terra, and Luna.
+- Codex model choices must match the shell-resolved Codex CLI catalog. If that
+  executable is new enough to list GPT-5.6-Sol, Terra, and Luna, Tide shows them;
+  if it is stale, Tide shows the stale local catalog plus an update advisory.
 - A user on an old Codex CLI should understand why GPT-5.6 is missing: the local CLI
   is stale and Tide should offer the CLI update path.
 
@@ -61,11 +62,13 @@ provider CLIs are stale.
 - **D2. Local installed CLI controls the user's available provider behavior.** If the
   installed Codex CLI is old, Tide should surface "Update Codex" rather than silently
   pretending the old CLI supports new models.
-- **D3. Codex static catalog follows the latest Codex CLI catalog for fallback/menu
-  rows.** Latest verified source for this slice is `npx -y @openai/codex@latest
-  debug models`, not the stale globally installed `codex`.
-- **D4. Default Codex model becomes `gpt-5.6-sol` after the catalog update.**
-  Existing explicit older/custom model selections remain preserved.
+- **D3. Codex catalog follows the shell-resolved Codex CLI.** The runtime source
+  of truth is the same executable Tide launches, queried with `codex debug
+  models`. Static desktop rows are fallback-only and must not pretend a stale
+  local CLI can launch latest-only models.
+- **D4. Default Codex model comes from the local catalog.** The default is the
+  first selectable row returned by the resolved CLI. Existing explicit older or
+  custom model selections remain preserved.
 - **D5. Codex reasoning menu gains `max` for GPT-5.6 rows, but `ultra` is not shipped
   as a plain reasoning row until Tide has an explicit runtime mapping for it.**
   Latest CLI reports `ultra` as a supported effort for Sol/Terra, but Tide currently
@@ -113,8 +116,9 @@ provider CLIs are stale.
 - `ProviderReadinessDto.update` is the renderer contract for a non-blocking CLI update
   advisory.
 - `AgentChatShellState.providerReadiness.update` drives the composer update chip.
-- `CODEX_MODELS` and `STATIC_PROVIDER_MODELS.codex` are the curated Codex fallback
-  catalog used before a dynamic catalog exists.
+- `CODEX_MODELS` and `STATIC_PROVIDER_MODELS.codex` are fallback rows only; the
+  live Codex catalog and default come from the resolved executable's `debug
+  models` output.
 
 ## Contracts
 
@@ -133,8 +137,9 @@ provider CLIs are stale.
 
 1. On backend startup, `AgentUpdateChecker.refresh()` reads installed and latest npm
    versions for `codex`, `claude`, and `opencode`.
-2. If installed `<` latest, the checker stores an advisory with an npm update terminal
-   action.
+2. If installed `<` latest, the checker stores an advisory. A one-click terminal
+   action is attached only when the resolved executable advertises a native
+   updater.
 3. Tide must surface that advisory for the selected provider in the start composer
    without requiring a send.
 4. Clicking the chip runs the existing readiness terminal handoff:
@@ -147,12 +152,12 @@ provider CLIs are stale.
 
 ### Codex Model Menu
 
-1. Tide updates its Codex catalog to match latest Codex CLI visible rows.
-2. The Codex model menu shows GPT-5.6 rows before older models.
-3. New Codex threads default to `gpt-5.6-sol`.
-4. With no explicit reasoning option, the default Sol chip/menu reads `Low`.
-5. Older/custom model ids still render and remain valid if already stored.
-6. If the installed Codex CLI is stale, Tide also shows `Update Codex` so the user can
+1. Tide queries the shell-resolved Codex CLI with `debug models`.
+2. The Codex model menu shows exactly the selectable local rows reported by that
+   executable.
+3. New Codex threads default to the first selectable local row.
+4. Older/custom model ids still render and remain valid if already stored.
+5. If the installed Codex CLI is stale, Tide also shows `Update Codex` so the user can
    move to the CLI version whose catalog includes GPT-5.6.
 
 ## Invariants
@@ -163,7 +168,9 @@ provider CLIs are stale.
 - Update detection never blocks the readiness hot path; network/subprocess work stays
   in the background refresh.
 - Stale installed versions must not linger after an update terminal completes.
-- Codex model values are provider-native ids (`gpt-5.6-sol`), not display labels.
+- Codex model values are provider-native ids, not display labels.
+- Codex latest-only rows must not be shown unless the resolved executable reports
+  them.
 - The app must not conflate Tide app version with provider CLI versions in UI copy,
   tests, or specs.
 
@@ -181,13 +188,15 @@ provider CLIs are stale.
 - Update action targeting: resolved provider executables build provider-native
   update terminal actions only after probing the native updater; unknown install
   methods produce no one-click action.
-- Codex catalog: menu includes `model:gpt-5.6-sol`, `model:gpt-5.6-terra`,
-  `model:gpt-5.6-luna`, and retained older rows.
-- Codex default: `defaultModelValueForAgent("codex") === "gpt-5.6-sol"`.
-- Codex default reasoning: no explicit reasoning on `gpt-5.6-sol` labels/selects
-  `low`; explicit older model `gpt-5.5` still labels/selects `medium`.
-- Provider detection catalog: Codex static catalog exposes GPT-5.6 rows and default
-  model `gpt-5.6-sol`.
+- Codex catalog: menu rows match the resolved CLI's `debug models` output.
+- Codex catalog: when the local CLI does not list `gpt-5.6-sol`, Tide does not
+  show `model:gpt-5.6-sol`.
+- Codex default: the provider catalog default is the first selectable local
+  Codex model, not a hard-coded latest model.
+- Codex default reasoning: explicit older model `gpt-5.5` still labels/selects
+  `medium`; new models use the reasoning levels reported by the local catalog.
+- Provider detection catalog: Codex readiness/catalog environment carries the
+  resolved executable path and version when available.
 
 ## Implementation Notes
 
@@ -196,12 +205,7 @@ provider CLIs are stale.
    selected-agent advisory.
 2. Keep the update chip renderer and terminal handoff; they already match the desired
    interaction.
-3. Update Codex catalog/defaults from latest CLI output:
-   - `gpt-5.6-sol` -> `GPT-5.6-Sol`
-   - `gpt-5.6-terra` -> `GPT-5.6-Terra`
-   - `gpt-5.6-luna` -> `GPT-5.6-Luna`
-4. Make Codex reasoning rows model-sensitive enough for this slice: show `max`
-   when the selected model starts with `gpt-5.6-`; do not show `ultra` until the
-   runtime option mapping is explicitly smoke-tested.
-5. After implementation, update the desktop version and release a new build only if
+3. Keep the desktop fallback Codex catalog conservative; dynamic local catalog
+   rows replace it when the resolved CLI reports them.
+4. After implementation, update the desktop version and release a new build only if
    the user wants the fix shipped immediately.

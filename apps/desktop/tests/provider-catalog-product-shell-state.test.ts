@@ -114,8 +114,8 @@ test("providerInventory.changed surfaces provider CLI update advisory on the sta
                 currentVersion: "0.141.0",
                 latestVersion: "0.144.4",
                 terminalAction: {
-                  command: "npm",
-                  args: ["install", "-g", "@openai/codex@latest"],
+                  command: "/bin/codex",
+                  args: ["update"],
                   cwd: ".",
                   expectedCompletion: "retry_preflight",
                 },

@@ -64,6 +64,7 @@ Each spec must be narrow enough to test and implement as one slice.
 | [Provider Discovery Resilience](provider-discovery-resilience.md) | Drafted | Cross-provider guardrails so Tide relies on observed provider facts with provenance instead of hand-maintained release assumptions. |
 | [Codex CLI Version Catalog Defaults](codex-cli-version-catalog-defaults.md) | Drafted | Make Codex defaults follow the installed CLI version/catalog evidence instead of latest static rows. |
 | [Start Composer Provider CLI Update Refresh](start-composer-provider-cli-update-refresh.md) | Drafted | Ensure Start Composer update chips open a Draft Thread terminal and refresh provider catalogs after CLI update completion. |
+| [Provider CLI Executable Resolution](provider-cli-executable-resolution.md) | Drafted | Keep provider readiness, catalogs, runtime launch, update checks, and update actions on the same shell-resolved CLI executable. |
 | [Thread Row Changes Routing](thread-row-changes-routing.md) | Drafted | Route Thread Row changes actions to the working-tree Changes pane and align launcher Diff affordances. |
 | [opencode Composer Model And Provider Flow](opencode-composer-model-provider-flow.md) | Drafted | Make the opencode Model Chip open a compact provider-first model/connect/reconnect flow instead of a flat menu plus separate on-ramp. |
 | [opencode Local Session Adoption](opencode-local-session-adoption.md) | Drafted | Adopt existing local opencode sessions into Tide Threads using `opencode session list` and `opencode export`, then resume via `opencode_session`. |

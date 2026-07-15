@@ -7,7 +7,10 @@ import {
   type AgentCliUpdateChecker,
   type AgentIntegrationRegistry,
 } from "../src/backend/adapters/outbound/agent-runtime/runtime-ports/agent-integration-agent-runtime-port.ts";
-import { createAgentUpdateChecker } from "../src/backend/infrastructure/node/provider/agent-update-checker.ts";
+import {
+  createAgentUpdateChecker,
+  createLiveAgentUpdateChecker,
+} from "../src/backend/infrastructure/node/provider/agent-update-checker.ts";
 import { createProviderDetection } from "../src/backend/infrastructure/node/provider/provider-detection.ts";
 import type {
   AgentIntegrationPort,
@@ -47,7 +50,7 @@ const advisoryChecker: AgentCliUpdateChecker = {
   advisoryFor: (_agentId, cwd) => ({
     currentVersion: "1.0.0",
     latestVersion: "1.2.0",
-    terminalAction: { command: "npm", args: ["install", "-g", "x@latest"], cwd, expectedCompletion: "retry_preflight" },
+    terminalAction: { command: "/bin/claude", args: ["update"], cwd, expectedCompletion: "retry_preflight" },
   }),
 };
 
@@ -124,7 +127,7 @@ test("readiness port: a ready agent still carries a non-blocking update advisory
   assert.deepEqual(result.blockers, []);
   assert.equal(result.update?.currentVersion, "1.0.0");
   assert.equal(result.update?.latestVersion, "1.2.0");
-  assert.equal(result.update?.terminalAction.args.at(-1), "x@latest");
+  assert.deepEqual(result.update?.terminalAction.args, ["update"]);
 });
 
 test("readiness port: the advisory rides alongside blockers without changing them", async () => {
@@ -161,8 +164,8 @@ test("update checker: advisory only after refresh, only when installed < latest"
     readInstalledVersion: async (id) => (id === "claude" ? "1.0.0" : "2.0.0"),
     readLatestVersion: async (id) => (id === "claude" ? "1.2.0" : "2.0.0"),
     readUpdateTerminalAction: async (id) => ({
-      command: "npm",
-      args: ["install", "-g", `${id}@latest`],
+      command: `/bin/${id}`,
+      args: ["update"],
       expectedCompletion: "retry_preflight",
     }),
   });
@@ -207,8 +210,8 @@ test("readiness port: refreshUpdateAdvisories clears a stale advisory after an i
     readInstalledVersion: async () => installedClaude,
     readLatestVersion: async () => "1.2.0",
     readUpdateTerminalAction: async (id) => ({
-      command: "npm",
-      args: ["install", "-g", `${id}@latest`],
+      command: `/bin/${id}`,
+      args: ["update"],
       expectedCompletion: "retry_preflight",
     }),
   });
@@ -250,7 +253,7 @@ test("update checker: not installed or unknown latest yields no advisory", async
     agentIds: ["claude", "codex"],
     readInstalledVersion: async (id) => (id === "claude" ? undefined : "1.0.0"),
     readLatestVersion: async (id) => (id === "claude" ? "9.9.9" : undefined),
-    readUpdateTerminalAction: async (id) => ({ command: "npm", args: [`${id}@latest`], expectedCompletion: "retry_preflight" }),
+    readUpdateTerminalAction: async (id) => ({ command: `/bin/${id}`, args: ["update"], expectedCompletion: "retry_preflight" }),
   });
   const changed = await checker.refresh();
   assert.deepEqual(changed, []);
@@ -270,8 +273,8 @@ test("update checker: refresh failures clear stale advisories without rejecting"
     },
     readLatestVersion: async () => "1.2.0",
     readUpdateTerminalAction: async (id) => ({
-      command: "npm",
-      args: [`${id}@latest`],
+      command: `/bin/${id}`,
+      args: ["update"],
       expectedCompletion: "retry_preflight",
     }),
   });
@@ -296,8 +299,8 @@ test("provider detection inventory carries non-blocking CLI update advisories", 
               currentVersion: "0.141.0",
               latestVersion: "0.144.4",
               terminalAction: {
-                command: "npm",
-                args: ["install", "-g", "@openai/codex@latest"],
+                command: "/bin/codex",
+                args: ["update"],
                 cwd,
                 expectedCompletion: "retry_preflight",
               },
@@ -314,4 +317,44 @@ test("provider detection inventory carries non-blocking CLI update advisories", 
   assert.equal(codex?.readiness?.update?.latestVersion, "0.144.4");
   assert.equal(codex?.readiness?.update?.terminalAction.cwd, "/repo");
   assert.equal(claude?.readiness?.update, undefined);
+});
+
+test("live update checker targets the same resolved executable for version and update", async () => {
+  const versionReads: string[] = [];
+  const latestReads: Array<[string, string]> = [];
+  const updateProbes: Array<{ executablePath: string; agentId: ProviderCliAgentId }> = [];
+  const resolved = new Map([
+    ["codex", "/Users/me/.local/bin/codex"],
+    ["npm", "/Users/me/.nvm/versions/node/v22.20.0/bin/npm"],
+  ]);
+
+  const checker = createLiveAgentUpdateChecker({
+    agentIds: ["codex"],
+    resolveExecutable: (command) => resolved.get(command),
+    startBackgroundRefresh: false,
+    readVersionForExecutable: async (executablePath) => {
+      versionReads.push(executablePath);
+      return "0.141.0";
+    },
+    readLatestPublishedVersion: async (pkg, npmPath) => {
+      latestReads.push([pkg, npmPath]);
+      return "0.144.4";
+    },
+    probeNativeUpdateCommand: async (input) => {
+      updateProbes.push(input);
+      return true;
+    },
+  });
+
+  assert.deepEqual(await checker.refresh(), ["codex"]);
+
+  const advisory = checker.advisoryFor("codex", "/repo");
+  assert.deepEqual(versionReads, ["/Users/me/.local/bin/codex"]);
+  assert.deepEqual(latestReads, [["@openai/codex", "/Users/me/.nvm/versions/node/v22.20.0/bin/npm"]]);
+  assert.deepEqual(updateProbes, [
+    { executablePath: "/Users/me/.local/bin/codex", agentId: "codex" },
+  ]);
+  assert.equal(advisory?.terminalAction?.command, "/Users/me/.local/bin/codex");
+  assert.deepEqual(advisory?.terminalAction?.args, ["update"]);
+  assert.equal(advisory?.terminalAction?.cwd, "/repo");
 });
