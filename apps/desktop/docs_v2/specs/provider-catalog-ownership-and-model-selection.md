@@ -59,10 +59,11 @@ Supersedes these earlier spec decisions:
    A sentinel like `"opencode default"` is a selected launch value, not evidence that the option
    catalog has one row.
 
-4. **No correctness cache.** The implementation must not add TTL cache or fallback cache to make
-   the UI look populated. It may dedupe an in-flight catalog request so two simultaneous calls do
-   not spawn the same provider process twice. It must not reuse stale or failed results unless a
-   future spec adds an explicit stale state and UI.
+4. **Last-known successful UI snapshot.** The Renderer may restore the latest ready, non-empty
+   catalog for each provider from its Main-owned UI preferences before its first request. This is
+   a display seed only: it neither authorizes a model nor suppresses the normal live request.
+   Failed, unavailable, empty, and malformed catalog results are never persisted. See
+   `provider-catalog-last-known-snapshot.md`.
 
 5. **Renderer requests a provider catalog snapshot.** Startup push may remain for preloading, but
    the renderer must explicitly request catalog snapshots for the active/new-thread provider and
@@ -85,8 +86,7 @@ Supersedes these earlier spec decisions:
 - Changing how a selected model is applied to a running provider session.
 - Adding a providers hub redesign.
 - Adding model costs, context windows, favorites, or search ranking.
-- Adding cache policy for provider catalogs. If caching is needed later, it requires a separate
-  spec with explicit freshness and stale UI.
+- Backend cache policy or caching failed provider catalog results.
 - Reworking provider auth flows except where auth state is read as provider inventory/catalog.
 
 ## Domain Model
@@ -245,8 +245,10 @@ Contract rules:
 - Thread list never blocks on provider model/vendor enumeration.
 - Thread list never transports provider model/vendor options.
 - The Model picker never treats missing catalog as "Default is the only option".
-- Provider catalog failure is visible as provider catalog failure.
-- No provider catalog TTL cache is introduced in this slice.
+- Provider catalog failure is visible as provider catalog failure when no last-known ready snapshot
+  exists; a failed refresh preserves a restored option-list seed until the next ready response.
+- The startup request remains the live catalog correctness path even when a last-known UI snapshot
+  is available.
 - No Desktop module global is the source of truth for provider catalog state.
 - A selected model may be displayed even when catalog is unavailable, but it must not imply that
   available options are known.
@@ -324,7 +326,12 @@ Contract rules:
    - Split selected-value label helpers from option-list builders.
    - Make loading/error/unavailable states explicit surfaces.
 
-6. **Cleanup**
+6. **Last-known UI snapshot**
+   - Restore and persist only ready, non-empty provider catalog snapshots through the existing
+     Main-owned UI-preference channel.
+   - Keep the restored snapshot out of Thread state and preserve the live request on every launch.
+
+7. **Cleanup**
    - Remove catalog module globals from `agent-vocab.ts` / `opencode-onramp.ts`.
    - Remove stale spec references that put catalog data on `thread.listed`.
    - Keep selected launch option persistence unchanged.
@@ -340,5 +347,5 @@ On Tide startup with opencode selected:
 - If opencode catalog read fails, the picker shows an explicit error/retry state, not a
   one-row Default menu.
 
-No cache or fallback workaround is required for this behavior.
-
+After a successful catalog read, the next app launch may render that last-known option list before
+the live catalog response arrives. The live response remains the authority for its next update.

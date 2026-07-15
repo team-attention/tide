@@ -263,6 +263,42 @@ test("codex model menu uses local provider catalog instead of latest static rows
   );
 });
 
+test("a failed catalog refresh keeps the last-known ready model rows", () => {
+  const seeded = createProductShellState({
+    includeFixtureData: false,
+    providerCatalogs: {
+      codex: {
+        agentId: "codex",
+        status: "ready",
+        models: [{ value: "gpt-5.6-sol", label: "GPT-5.6-Sol" }],
+        defaultModel: "gpt-5.6-sol",
+      },
+    },
+  });
+
+  const afterFailedRefresh = applyProductShellBackendEvent(seeded, {
+    kind: "providerCatalog.changed",
+    payload: {
+      catalog: {
+        agentId: "codex",
+        status: "error",
+        models: [],
+        defaultModel: "gpt-5.5",
+        error: {
+          code: "timed_out",
+          message: "Codex catalog timed out.",
+          retryable: true,
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(
+    afterFailedRefresh.providerCatalogs.codex?.models.map((model) => model.value),
+    ["gpt-5.6-sol"],
+  );
+});
+
 test("ready provider catalog updates untouched start composer default model", () => {
   const state = applyProductShellBackendEvent(
     createProductShellState({ includeFixtureData: false }),

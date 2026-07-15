@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Renderer UI preferences (theme, left-rail order, list/worktree settings, preferred
-// Start Composer) owned by MAIN, not renderer localStorage. WHY: the renderer's FIRST
+// Start Composer, and last-known provider catalog snapshots) owned by MAIN, not renderer localStorage. WHY: the renderer's FIRST
 // synchronous localStorage access at boot blocks ~3.8s while the 3 MB module loads (an
 // Electron storage-init/contention stall — see thread-list-metadata-first-restore.md). So
 // Main reads these prefs from a small JSON file (Node fs, instant); the renderer's preload

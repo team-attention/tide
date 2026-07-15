@@ -99,7 +99,7 @@ export function createProductShellState(
     providerCommands: [],
     providerCapabilities: [],
     providerInventory: null,
-    providerCatalogs: {},
+    providerCatalogs: input.providerCatalogs ?? {},
     composerFileMentions: null,
     pinnedProjectIds: [],
     pinnedItemOrder: input.pinnedItemOrder ?? [],
