@@ -101,6 +101,11 @@ test("codex app-server provider capability sends review/start on the initialized
         turn: { id: "review-turn-1" },
       },
     });
+    const initialize = recordedRequests(receivedFile).find((entry) => entry.method === "initialize");
+    assert.deepEqual(initialize?.params, {
+      clientInfo: { name: "tide", title: "Tide", version: "2.0" },
+      capabilities: { experimentalApi: true, requestAttestation: false },
+    });
     const reviewStart = recordedRequests(receivedFile).find((entry) => entry.method === "review/start");
     assert.deepEqual(reviewStart?.params, {
       threadId: "codex-thread-1",

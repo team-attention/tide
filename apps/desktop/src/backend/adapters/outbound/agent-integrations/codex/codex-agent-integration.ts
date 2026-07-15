@@ -383,6 +383,18 @@ function codexPermissionUsesWorkspaceSandbox(permission: string | undefined): bo
   );
 }
 
+function codexGranularApprovalPolicy(): Record<string, unknown> {
+  return {
+    granular: {
+      sandbox_approval: true,
+      rules: true,
+      skill_approval: true,
+      request_permissions: true,
+      mcp_elicitations: true,
+    },
+  };
+}
+
 function dedupeStrings(values: string[]): string[] {
   return Array.from(new Set(values));
 }
@@ -410,10 +422,11 @@ function codexThreadStartParams(
     // Codex's macOS seatbelt workspace sandbox denies GUI process registration
     // with LaunchServices/WindowServer, which makes Electron abort before app JS
     // starts. Tide's automatic mode should match the user's terminal process
-    // environment while keeping Codex's on-failure approval policy distinct from
-    // the explicit "Full access" mode's never-ask behavior.
+    // environment while keeping Codex's granular approval policy distinct from
+    // the explicit "Full access" mode's never-ask behavior. Codex app-server
+    // 0.144 replaced the previous `on-failure` policy with `granular`.
     params.sandbox = "danger-full-access";
-    params.approvalPolicy = "on-failure";
+    params.approvalPolicy = codexGranularApprovalPolicy();
   } else if (permission === "full-access" || permission === "dangerously-bypass-approvals-and-sandbox") {
     params.sandbox = "danger-full-access";
     params.approvalPolicy = "never";
@@ -426,10 +439,12 @@ function codexThreadStartParams(
   } else if (
     permission === "untrusted" ||
     permission === "on-request" ||
-    permission === "never" ||
-    permission === "on-failure"
+    permission === "never"
   ) {
     params.approvalPolicy = permission;
+  } else if (permission === "on-failure") {
+    // Legacy raw value persisted by older Tide/Codex sessions.
+    params.approvalPolicy = codexGranularApprovalPolicy();
   }
   return params;
 }

@@ -32,6 +32,18 @@ const basePreflightInput: AgentIntegrationPreflightInput = {
   scope: projectScope,
 };
 
+function codexGranularApprovalPolicy(): Record<string, unknown> {
+  return {
+    granular: {
+      sandbox_approval: true,
+      rules: true,
+      skill_approval: true,
+      request_permissions: true,
+      mcp_elicitations: true,
+    },
+  };
+}
+
 test("codex_preflight_reports_not_installed_when_codex_executable_is_missing", async () => {
   const integration = codexIntegration({
     executablePath: undefined,
@@ -201,7 +213,7 @@ test("codex_launch_plan_applies_model_sandbox_and_approval_via_protocol_params",
   assert.equal(approvalPlan.protocolParams?.sandbox, "workspace-write");
   assert.equal(approvalPlan.protocolParams?.approvalPolicy, "on-request");
   assert.equal(autoPlan.protocolParams?.sandbox, "danger-full-access");
-  assert.equal(autoPlan.protocolParams?.approvalPolicy, "on-failure");
+  assert.deepEqual(autoPlan.protocolParams?.approvalPolicy, codexGranularApprovalPolicy());
   assert.equal(fullAccessPlan.protocolParams?.sandbox, "danger-full-access");
   assert.equal(fullAccessPlan.protocolParams?.approvalPolicy, "never");
 });
@@ -231,7 +243,8 @@ test("codex_launch_plan_enables_workspace_network_for_legacy_workspace_modes", a
   });
 
   assert.equal(approveForMePlan.protocolParams?.sandbox, "danger-full-access");
-  assert.equal(approveForMePlan.protocolParams?.approvalPolicy, "on-failure");
+  assert.deepEqual(approveForMePlan.protocolParams?.approvalPolicy, codexGranularApprovalPolicy());
+  assert.deepEqual(legacyApprovalPlan.protocolParams?.approvalPolicy, codexGranularApprovalPolicy());
   assertWorkspaceNetworkNotConfigured(approveForMePlan.args);
   assertWorkspaceNetworkEnabled(legacyWorkspacePlan.args);
   assertWorkspaceNetworkEnabled(legacyApprovalPlan.args);

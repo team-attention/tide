@@ -7,9 +7,9 @@
 //   no `jsonrpc` field). Client requests: {id, method, params}; responses echo
 //   the id. Notifications have no id. The SERVER also sends requests (its own id
 //   namespace) for approvals — answered with {id, result:{decision}}.
-// - handshake: initialize {clientInfo, capabilities:null} → result, then
-//   notification "initialized". Core thread/turn methods need no experimental
-//   capability flag.
+// - handshake: initialize {clientInfo, capabilities:{experimentalApi:true,...}}
+//   → result, then notification "initialized". `experimentalApi` is required for
+//   the v0.144 granular approval policy that replaces the old on-failure policy.
 // - thread/start {cwd, approvalPolicy, sandbox, model?} → {thread:{id, path}};
 //   thread/resume {threadId} restores a prior session (verified cross-process).
 // - turn/start {threadId, input:[{type:"text",text}]} → streaming notifications:
@@ -201,7 +201,10 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   private async bootstrap(input: CreateCodexAppServerClientInput): Promise<void> {
     this.request("initialize", {
       clientInfo: { name: "tide", title: "Tide", version: "2.0" },
-      capabilities: null,
+      capabilities: {
+        experimentalApi: true,
+        requestAttestation: false,
+      },
     }, () => {
       this.notify("initialized", {});
       if (input.resumeThreadId !== undefined) {
