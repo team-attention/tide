@@ -1,4 +1,4 @@
-import { addProductShellComposerAttachment, addProductShellComposerContextChip, answerProductShellPromptSteps, answerProductShellPromptText, discardProductShellDraftThread, editProductShellQueuedInput, ensureComposerDraftThreadActive, interruptProductShellRuntime, isProductShellAgentIdentity, localBranchCheckoutRequest, planLocalBranchCheckout, refreshStartPageFileTree, removeProductShellComposerAttachment, removeProductShellComposerContextChip, removeProductShellQueuedInput, resolveProductShellComposerNewWorktree, runProductShellQueuedInputNow, selectProductShellChoiceSurfaceRow, setProductShellComposerActiveSurface, setProductShellComposerContextChipComment, setProductShellGitContext, setProductShellRegisteredProjects, submitProductShellComposerDraft, updateProductShellComposerDraft, type LocalBranchCheckoutTarget, type ProductShellState } from "../../../../../application/domains/product-shell/product-shell.ts";
+import { addProductShellComposerAttachment, addProductShellComposerContextChip, answerProductShellPromptSteps, answerProductShellPromptText, discardProductShellDraftThread, editProductShellQueuedInput, ensureComposerDraftThreadActive, interruptProductShellRuntime, isProductShellAgentIdentity, localBranchCheckoutRequest, planLocalBranchCheckout, refreshStartPageFileTree, removeProductShellComposerAttachment, removeProductShellComposerContextChip, removeProductShellQueuedInput, resolveProductShellComposerNewWorktree, runProductShellQueuedInputNow, selectProductShellChoiceSurfaceRow, selectProductShellProviderCliUpdateRow, setProductShellComposerActiveSurface, setProductShellComposerContextChipComment, setProductShellGitContext, setProductShellRegisteredProjects, submitProductShellComposerDraft, updateProductShellComposerDraft, type LocalBranchCheckoutTarget, type ProductShellState } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { AgentChatThreadScope } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import { resolveWorktreeName } from "../../../../../../shared/worktree/name.ts";
 import { makeWorktreeHash } from "../dialogs/worktree-name-input.tsx";
@@ -337,6 +337,16 @@ export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<Pr
         if (cwd !== undefined) {
           openBranchDeleteByName(cwd, branch);
         }
+        return;
+      }
+      if (surfaceKind === "provider_readiness" && rowId === "update_available:terminal") {
+        setShellState((state) => {
+          const result = selectProductShellProviderCliUpdateRow(state);
+          for (const command of result.commands) {
+            dispatchBackendCommand(command);
+          }
+          return result.state;
+        });
         return;
       }
       // Selecting an agent slot: select it, ensure a Draft Thread to host any readiness terminal,

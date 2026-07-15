@@ -1,9 +1,10 @@
-import type { ProductShellState, ProductShellUpdateResult } from "./types.ts";
+import type { ProductShellBackendCommand, ProductShellState, ProductShellUpdateResult } from "./types.ts";
 import { addComposerAttachment, addComposerContextChip, answerPromptSteps, answerPromptText, applyAgentChatBackendEvent, editQueuedInput, interruptComposer, removeComposerAttachment, removeComposerContextChip, resolveComposerNewWorktreeIntent, selectAgentChatChoiceSurfaceRow, setComposerActiveSurface, setComposerContextChipComment, setComposerFolderScope, setComposerNewWorktreeIntent, submitComposer, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
 import type { AgentChatChoiceSurfaceView, AgentChatCommandOption, AgentChatComposerAttachment, AgentChatComposerSurfaceKind, AgentChatContextChip, AgentChatPromptState, AgentChatPromptStepAnswer } from "../../agent-chat/agent-chat.ts";
 import { agentChatWithProjects, projectsFromThreads } from "./view-model.ts";
 import { applyAppChromeBackendEvent } from "../../app-chrome/app-chrome-state.ts";
 import { toProductShellThreadFromSummary } from "./thread-list.ts";
+import { ensureComposerDraftThreadActive } from "./workbench.ts";
 // Extracted from product-shell-state.ts (spec: navigable-source-structure).
 
 // Open / close the inline "new worktree" name input for a project. The actual
@@ -96,6 +97,29 @@ export function selectProductShellChoiceSurfaceRow(
         : {}),
     },
     command: result.command,
+  };
+}
+
+export function selectProductShellProviderCliUpdateRow(
+  state: ProductShellState,
+): { state: ProductShellState; commands: ProductShellBackendCommand[] } {
+  if (state.agentChat.providerReadiness?.update?.terminalAction === undefined) {
+    return { state, commands: [] };
+  }
+  const hosted =
+    state.agentChat.thread === null
+      ? ensureComposerDraftThreadActive(state)
+      : { state, command: null };
+  const selected = selectProductShellChoiceSurfaceRow(
+    hosted.state,
+    "provider_readiness",
+    "update_available:terminal",
+  );
+  return {
+    state: selected.state,
+    commands: [hosted.command, selected.command].filter(
+      (command): command is ProductShellBackendCommand => command !== null,
+    ),
   };
 }
 

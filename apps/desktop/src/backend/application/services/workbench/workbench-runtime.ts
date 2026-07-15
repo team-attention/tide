@@ -28,6 +28,7 @@ export interface WorkbenchTerminalOpenInput {
   title?: string;
   terminalRole?: TerminalPaneState["terminalRole"];
   expectedCompletion?: TerminalPaneState["expectedCompletion"];
+  providerReadinessKind?: TerminalPaneState["providerReadinessKind"];
 }
 
 export interface WorkbenchTerminalCommandRunInput {
@@ -144,6 +145,7 @@ export class WorkbenchRuntime {
       cwd: input.cwd,
       status: "ready",
       expectedCompletion: input.expectedCompletion,
+      providerReadinessKind: input.providerReadinessKind,
     };
     thread.workbench.panes.push(pane);
     return pane;

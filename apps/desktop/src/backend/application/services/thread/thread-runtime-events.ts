@@ -2,6 +2,7 @@ import type { AgentRuntimeState } from "../../domains/agent-runtime/agent-runtim
 import type { ProviderReadinessResult } from "../../domains/provider-readiness/provider-readiness.ts";
 import type {
   AgentSessionBlockReference,
+  ProviderCliAgentId,
   ThreadId,
   ThreadSnapshot,
 } from "../../domains/thread/thread.ts";
@@ -24,7 +25,7 @@ export type ThreadRuntimeAsyncEvent =
     }
   | {
       kind: "provider_catalog_refresh_requested";
-      agentId: "opencode";
+      agentId: ProviderCliAgentId;
     }
   | {
       kind: "agent_session_block_upserted";

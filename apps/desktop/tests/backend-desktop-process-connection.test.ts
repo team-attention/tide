@@ -927,6 +927,14 @@ test("live_backend_ignores_ambient_tide_socket_for_owned_mcp_route", () => {
   assert.doesNotMatch(source, /env\.TIDE_SOCKET\s*\?\?/);
 });
 
+test("live_backend_provider_catalog_refresh_uses_requested_agent", () => {
+  // Spec: docs_v2/specs/start-composer-provider-cli-update-refresh.md
+  const source = readRepoFile("src/backend/infrastructure/node/live/live-backend.ts");
+
+  assert.match(source, /emitProviderCatalogChanged\(event\.agentId\)/);
+  assert.match(source, /catalog: await detection\.getProviderCatalog\(\{ agentId \}\)/);
+});
+
 test("live_backend_shutdown_removes_owner_scoped_bootstrap_and_socket_artifacts", async () => {
   // Spec: docs_v2/specs/agent-runtime-process-ownership.md
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tide-owner-cleanup-"));

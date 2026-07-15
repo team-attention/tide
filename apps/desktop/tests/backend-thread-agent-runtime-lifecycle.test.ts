@@ -3694,6 +3694,62 @@ test("opencode_provider_readiness_terminal_exit_requests_catalog_refresh", async
   assert.equal(catalogEvent?.agentId, "opencode");
 });
 
+test("codex_provider_readiness_terminal_exit_requests_catalog_refresh_from_draft_thread", async () => {
+  const fakes = createFakes({
+    readiness: {
+      ready: true,
+      agentId: "codex",
+      blockers: [],
+    },
+  });
+  const asyncEvents: ThreadRuntimeAsyncEvent[] = [];
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("draft"),
+    onAsyncEvent: (event) => {
+      asyncEvents.push(event);
+    },
+  });
+  const created = await service.createDraftThread({
+    threadId: "draft-update-codex",
+    agentBinding: { agentId: "codex" },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo" },
+  });
+  assert.equal(created.ok, true);
+  const opened = await service.handleWorkbenchCommand({
+    threadId: "draft-update-codex",
+    command: "open_terminal",
+    data: {
+      command: "npm",
+      args: ["install", "-g", "@openai/codex@latest"],
+      cwd: "/repo",
+      expectedCompletion: "retry_preflight",
+      terminalRole: "provider_readiness",
+      blockerKind: "update_available",
+    },
+  });
+  assert.equal(opened.ok, true);
+  asyncEvents.length = 0;
+
+  await fakes.workbenchTerminal.emitExit(0, { exitCode: 0, signal: null });
+
+  assert.deepEqual(
+    asyncEvents.map((event) => event.kind),
+    [
+      "workbench_changed",
+      "provider_catalog_refresh_requested",
+      "provider_readiness_changed",
+    ],
+  );
+  const catalogEvent = asyncEvents.find(
+    (event): event is Extract<ThreadRuntimeAsyncEvent, { kind: "provider_catalog_refresh_requested" }> =>
+      event.kind === "provider_catalog_refresh_requested",
+  );
+  assert.equal(catalogEvent?.agentId, "codex");
+  assert.deepEqual(fakes.readiness.checks.map((check) => check.agentId), ["codex"]);
+});
+
 test("closing_running_provider_readiness_terminal_stops_readiness_terminal_process", async () => {
   // Spec: docs_v2/specs/workbench-terminal-pane-session.md
   const fakes = createFakes();
