@@ -3721,8 +3721,8 @@ test("codex_provider_readiness_terminal_exit_requests_catalog_refresh_from_draft
     threadId: "draft-update-codex",
     command: "open_terminal",
     data: {
-      command: "npm",
-      args: ["install", "-g", "@openai/codex@latest"],
+      command: "/bin/codex",
+      args: ["update"],
       cwd: "/repo",
       expectedCompletion: "retry_preflight",
       terminalRole: "provider_readiness",

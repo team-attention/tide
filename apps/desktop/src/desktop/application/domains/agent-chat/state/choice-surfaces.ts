@@ -45,8 +45,8 @@ export function selectAgentChatChoiceSurfaceRow(
 
   if (surfaceKind === "provider_readiness") {
     // The non-blocking update nudge: run the in-place CLI update through a
-    // provider-readiness Terminal Pane (npm install -g <pkg>@latest,
-    // retry_preflight). Spec: version-management.md (Lane 2).
+    // provider-readiness Terminal Pane using the resolved executable's native
+    // updater, then retry_preflight. Spec: provider-cli-executable-resolution.md.
     if (rowId === "update_available:terminal") {
       const terminalAction = state.providerReadiness?.update?.terminalAction;
       const threadId = state.thread?.threadId ?? activeThreadId;

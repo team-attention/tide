@@ -127,20 +127,33 @@ export function createLiveAgentUpdateChecker(input: {
   agentIds: ProviderCliAgentId[];
   resolveExecutable: (command: string) => string | undefined;
   onAdvisoryChanged?: (agentIds: ProviderCliAgentId[]) => void;
+  readVersionForExecutable?: (executablePath: string) => Promise<string | undefined>;
+  readLatestPublishedVersion?: (pkg: string, npmPath: string) => Promise<string | undefined>;
+  probeNativeUpdateCommand?: (input: {
+    executablePath: string;
+    agentId: ProviderCliAgentId;
+  }) => Promise<boolean>;
+  startBackgroundRefresh?: boolean;
 }): RefreshableAgentCliUpdateChecker {
   const npmPath = input.resolveExecutable("npm") ?? "npm";
+  const readVersionForExecutable =
+    input.readVersionForExecutable ?? providerVersionForExecutable;
+  const readLatestPublishedVersion =
+    input.readLatestPublishedVersion ?? latestPublishedVersion;
+  const probeNativeUpdateCommand =
+    input.probeNativeUpdateCommand ?? providerNativeUpdateCommandAvailable;
   const checker = createAgentUpdateChecker({
     agentIds: input.agentIds,
     readInstalledVersion: (agentId) => {
       const exe = input.resolveExecutable(executableForAgent(agentId));
-      return exe === undefined ? Promise.resolve(undefined) : providerVersionForExecutable(exe);
+      return exe === undefined ? Promise.resolve(undefined) : readVersionForExecutable(exe);
     },
-    readLatestVersion: (agentId) => latestPublishedVersion(installPackageForAgent(agentId), npmPath),
+    readLatestVersion: (agentId) => readLatestPublishedVersion(installPackageForAgent(agentId), npmPath),
     readUpdateTerminalAction: async (agentId) => {
       const executablePath = input.resolveExecutable(executableForAgent(agentId));
       const nativeUpdateAvailable =
         executablePath !== undefined &&
-        await providerNativeUpdateCommandAvailable({ executablePath, agentId });
+        await probeNativeUpdateCommand({ executablePath, agentId });
       const terminalAction = updateReadinessTerminalActionForAgent({
         agentId,
         cwd: "",
@@ -175,7 +188,9 @@ export function createLiveAgentUpdateChecker(input: {
   // Populate off the startup critical path. The composition root re-emits provider
   // inventory when advisory state changes, so the start composer can show/clear the
   // non-blocking update chip before a send.
-  setImmediate(refreshAndNotify);
-  setInterval(refreshAndNotify, REFRESH_INTERVAL_MS).unref?.();
+  if (input.startBackgroundRefresh !== false) {
+    setImmediate(refreshAndNotify);
+    setInterval(refreshAndNotify, REFRESH_INTERVAL_MS).unref?.();
+  }
   return checker;
 }

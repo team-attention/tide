@@ -38,8 +38,8 @@ const terminalPane = {
 };
 
 const updateTerminalAction = {
-  command: "npm",
-  args: ["install", "-g", "@openai/codex@latest"],
+  command: "/bin/codex",
+  args: ["update"],
   cwd: "/repo",
   expectedCompletion: "retry_preflight" as const,
 };
