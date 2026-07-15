@@ -292,6 +292,7 @@ export class WorkbenchCommandHandler {
           title,
           terminalRole,
           expectedCompletion: terminalInput.expectedCompletion,
+          providerReadinessKind: terminalInput.providerReadinessKind,
         });
         if (isProviderReadiness) {
           pane.transcriptPreview = providerReadinessPreview;

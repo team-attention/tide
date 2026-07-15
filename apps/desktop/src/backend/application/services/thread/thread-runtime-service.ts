@@ -1487,11 +1487,8 @@ private async replayPendingInputIfProviderReady(
     // re-checking readiness so a just-updated CLI reports its new version (otherwise the
     // "Update <Agent>" advisory reads a stale cache and lingers). Spec: version-management.
     await this.providerReadinessPort.refreshUpdateAdvisories?.();
-    if (thread.agentBinding.agentId === "opencode") {
-      this.emitAsyncEvent({
-        kind: "provider_catalog_refresh_requested",
-        agentId: "opencode",
-      });
+    if (thread.agentBinding.agentId === "opencode" || pane.providerReadinessKind === "update_available") {
+      this.emitAsyncEvent({ kind: "provider_catalog_refresh_requested", agentId: thread.agentBinding.agentId });
     }
 
     const pendingInput = thread.pendingInput;

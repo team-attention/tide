@@ -37,6 +37,7 @@ export interface WorkbenchTerminalCommandInput {
   title?: string;
   terminalRole?: TerminalPaneState["terminalRole"];
   expectedCompletion?: WorkbenchTerminalExpectedCompletion;
+  providerReadinessKind?: string;
 }
 
 export function workbenchTerminalCommandFromData(
@@ -51,6 +52,7 @@ export function workbenchTerminalCommandFromData(
     cwd: stringField(data, "cwd"),
     title: stringField(data, "title"),
     terminalRole: terminalRole === "provider_readiness" ? terminalRole : undefined,
+    providerReadinessKind: stringField(data, "blockerKind"),
     expectedCompletion:
       expectedCompletion === "process_exit" || expectedCompletion === "retry_preflight"
         ? expectedCompletion

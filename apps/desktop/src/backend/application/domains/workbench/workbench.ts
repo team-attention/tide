@@ -189,6 +189,7 @@ export interface TerminalPaneState {
   cwd?: string;
   status: "ready" | "running" | "completed" | "failed";
   expectedCompletion?: "process_exit" | "retry_preflight";
+  providerReadinessKind?: string;
   transcriptPreview?: string;
   exitCode?: number | null;
   signal?: string | null;

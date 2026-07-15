@@ -323,7 +323,7 @@ export function createLiveBackendContractMessageAdapter(
     resolveExecutable,
     onAdvisoryChanged: () => emitProviderInventoryChanged(),
   });
-  let emitOpencodeProviderCatalogChanged = () => undefined;
+  let emitProviderCatalogChanged: (agentId: ProviderCliAgentId) => void = () => undefined;
 
   let service: ThreadRuntimeService;
   const ptyLauncher = createPythonPtyProcessLauncher();
@@ -409,7 +409,7 @@ export function createLiveBackendContractMessageAdapter(
     defaultWorkbenchTerminalArgs: [],
     onAsyncEvent: (event) => {
       if (event.kind === "provider_catalog_refresh_requested") {
-        emitOpencodeProviderCatalogChanged();
+        emitProviderCatalogChanged(event.agentId);
         return;
       }
       emitBackendEvents(backendEventsFromThreadRuntimeAsyncEvent(event));
@@ -458,7 +458,7 @@ export function createLiveBackendContractMessageAdapter(
       },
     ]);
   };
-  emitOpencodeProviderCatalogChanged = () => {
+  emitProviderCatalogChanged = (agentId) => {
     void (async () => {
       try {
         emitBackendEvents([
@@ -468,14 +468,14 @@ export function createLiveBackendContractMessageAdapter(
             kind: "providerCatalog.changed",
             emittedAt: new Date().toISOString(),
             payload: {
-              catalog: await detection.getProviderCatalog({ agentId: "opencode" }),
+              catalog: await detection.getProviderCatalog({ agentId }),
             },
           },
         ]);
       } catch (error) {
         process.emitWarning(
-          error instanceof Error ? error.message : "Failed to refresh opencode provider catalog.",
-          { type: "TideOpencodeProviderCatalogWarning" },
+          error instanceof Error ? error.message : `Failed to refresh ${agentId} provider catalog.`,
+          { type: "TideProviderCatalogWarning" },
         );
       }
     })();
@@ -509,7 +509,7 @@ export function createLiveBackendContractMessageAdapter(
       // synchronously here froze the backend event loop — delaying the already-computed
       // thread.list reply (and so the cold-boot rail skeleton) by ~2.5s. Off the loop, the
       // catalog simply arrives a moment later without blocking anything.
-      emitOpencodeProviderCatalogChanged();
+      emitProviderCatalogChanged("opencode");
     });
   }
 

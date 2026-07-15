@@ -7,6 +7,7 @@ import {
   createProductShellState,
   discardProductShellDraftThread,
   ensureComposerDraftThreadActive,
+  selectProductShellProviderCliUpdateRow,
   selectProductShellLauncherAction,
   submitProductShellComposerDraft,
   toggleProductShellWorkbench,
@@ -36,6 +37,32 @@ const terminalPane = {
   status: "running" as const,
 };
 
+const updateTerminalAction = {
+  command: "npm",
+  args: ["install", "-g", "@openai/codex@latest"],
+  cwd: "/repo",
+  expectedCompletion: "retry_preflight" as const,
+};
+
+function withCodexUpdateAdvisory(state: ProductShellState): ProductShellState {
+  return {
+    ...state,
+    agentChat: {
+      ...state.agentChat,
+      providerReadiness: {
+        agentId: "codex",
+        ready: true,
+        blockers: [],
+        update: {
+          currentVersion: "0.141.0",
+          latestVersion: "0.144.4",
+          terminalAction: updateTerminalAction,
+        },
+      },
+    },
+  };
+}
+
 test("ensureComposerDraftThreadActive creates the draft and makes it the active thread", () => {
   const { state, command } = ensureComposerDraftThreadActive(composerState());
 
@@ -49,6 +76,88 @@ test("ensureComposerDraftThreadActive creates the draft and makes it the active 
   assert.equal(state.appChrome.thread?.threadId, draftId);
   // ...but the chat stays the start Composer (agentChat.thread untouched).
   assert.equal(state.agentChat.thread, null);
+});
+
+test("start_composer_update_cli_row_creates_draft_thread_then_opens_readiness_terminal", () => {
+  const result = selectProductShellProviderCliUpdateRow(
+    withCodexUpdateAdvisory(composerState()),
+  );
+  const draftId = result.state.draftThreadId;
+
+  assert.notEqual(draftId, null);
+  assert.equal(result.commands.length, 2);
+  assert.equal(result.commands[0]?.kind, "thread.createDraft");
+  assert.equal(result.commands[1]?.kind, "workbench.command");
+  assert.equal(
+    result.commands[0]?.kind === "thread.createDraft"
+      ? result.commands[0].payload.threadId
+      : undefined,
+    draftId,
+  );
+  assert.equal(
+    result.commands[1]?.kind === "workbench.command"
+      ? result.commands[1].payload.threadId
+      : undefined,
+    draftId,
+  );
+  assert.equal(
+    result.commands[1]?.kind === "workbench.command"
+      ? result.commands[1].payload.command
+      : undefined,
+    "open_terminal",
+  );
+  assert.equal(result.state.agentChat.thread, null);
+});
+
+test("start_composer_update_cli_row_reuses_existing_draft_thread", () => {
+  const draft = ensureComposerDraftThreadActive(
+    withCodexUpdateAdvisory(composerState()),
+  );
+  const result = selectProductShellProviderCliUpdateRow(draft.state);
+
+  assert.equal(result.state.draftThreadId, draft.state.draftThreadId);
+  assert.equal(result.commands.length, 1);
+  assert.equal(result.commands[0]?.kind, "workbench.command");
+  assert.equal(
+    result.commands[0]?.kind === "workbench.command"
+      ? result.commands[0].payload.threadId
+      : undefined,
+    draft.state.draftThreadId,
+  );
+});
+
+test("thread_update_cli_row_uses_existing_thread_without_creating_draft", () => {
+  const base = withCodexUpdateAdvisory(composerState());
+  const state: ProductShellState = {
+    ...base,
+    activeThreadId: "thread-1",
+    agentChat: {
+      ...base.agentChat,
+      thread: {
+        threadId: "thread-1",
+        title: "Existing Thread",
+        agentBinding: { agentId: "codex" },
+        scope: { kind: "project", projectId: "repo", cwd: "/repo" },
+        createdAt: "2026-06-16T00:00:00.000Z",
+        updatedAt: "2026-06-16T00:00:00.000Z",
+        pinned: false,
+        archived: false,
+        lastKnownState: "idle",
+      },
+    },
+  };
+
+  const result = selectProductShellProviderCliUpdateRow(state);
+
+  assert.equal(result.state.draftThreadId, null);
+  assert.equal(result.commands.length, 1);
+  assert.equal(result.commands[0]?.kind, "workbench.command");
+  assert.equal(
+    result.commands[0]?.kind === "workbench.command"
+      ? result.commands[0].payload.threadId
+      : undefined,
+    "thread-1",
+  );
 });
 
 test("draft thread hydrate keeps the visible surface on the start composer", () => {
