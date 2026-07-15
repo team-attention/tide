@@ -383,17 +383,15 @@ function codexPermissionUsesWorkspaceSandbox(permission: string | undefined): bo
   );
 }
 
-function codexGranularApprovalPolicy(): Record<string, unknown> {
-  return {
-    granular: {
-      sandbox_approval: true,
-      rules: true,
-      skill_approval: true,
-      request_permissions: true,
-      mcp_elicitations: true,
-    },
-  };
-}
+export const CODEX_GRANULAR_APPROVAL_POLICY: Record<string, unknown> = Object.freeze({
+  granular: Object.freeze({
+    sandbox_approval: true,
+    rules: true,
+    skill_approval: true,
+    request_permissions: true,
+    mcp_elicitations: true,
+  }),
+});
 
 function dedupeStrings(values: string[]): string[] {
   return Array.from(new Set(values));
@@ -426,7 +424,7 @@ function codexThreadStartParams(
     // the explicit "Full access" mode's never-ask behavior. Codex app-server
     // 0.144 replaced the previous `on-failure` policy with `granular`.
     params.sandbox = "danger-full-access";
-    params.approvalPolicy = codexGranularApprovalPolicy();
+    params.approvalPolicy = CODEX_GRANULAR_APPROVAL_POLICY;
   } else if (permission === "full-access" || permission === "dangerously-bypass-approvals-and-sandbox") {
     params.sandbox = "danger-full-access";
     params.approvalPolicy = "never";
@@ -444,7 +442,7 @@ function codexThreadStartParams(
     params.approvalPolicy = permission;
   } else if (permission === "on-failure") {
     // Legacy raw value persisted by older Tide/Codex sessions.
-    params.approvalPolicy = codexGranularApprovalPolicy();
+    params.approvalPolicy = CODEX_GRANULAR_APPROVAL_POLICY;
   }
   return params;
 }
