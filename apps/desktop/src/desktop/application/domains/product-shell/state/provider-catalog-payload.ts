@@ -71,7 +71,7 @@ export function defaultModelForProvider(agentId: ProductShellAgentIdentity): str
     case "opencode":
       return "opencode default";
     default:
-      return "gpt-5.6-sol";
+      return "gpt-5.5";
   }
 }
 

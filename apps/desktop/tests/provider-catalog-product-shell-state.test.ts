@@ -8,6 +8,7 @@ import {
   applyProductShellBackendEvent,
   createProductShellViewModel,
   createProductShellState,
+  setProductShellComposerActiveSurface,
   startNewProductShellThread,
 } from "../src/desktop/application/domains/product-shell/product-shell.ts";
 import {
@@ -15,6 +16,7 @@ import {
   providerReadinessFromInventoryPayload,
 } from "../src/desktop/application/domains/product-shell/state/provider-inventory-payload.ts";
 import type { AgentChatBackendEvent } from "../src/desktop/application/domains/agent-chat/agent-chat.ts";
+import { createCodexModelCatalog, parseCodexDebugModels } from "../src/backend/infrastructure/node/provider/codex-model-catalog.ts";
 
 // Spec: docs_v2/specs/provider-catalog-ownership-and-model-selection.md
 
@@ -162,6 +164,157 @@ test("agentRuntime.modelCatalogChanged updates the same provider catalog slice",
   );
 });
 
+test("codex debug models parser keeps only selectable local chat models", () => {
+  const models = parseCodexDebugModels(JSON.stringify({
+    models: [
+      {
+        slug: "gpt-5.5",
+        display_name: "GPT-5.5",
+        visibility: "list",
+        supported_reasoning_levels: [{ effort: "low" }, { effort: "medium" }],
+      },
+      {
+        slug: "codex-auto-review",
+        display_name: "Codex Auto Review",
+        visibility: "hide",
+        supported_reasoning_levels: [{ effort: "medium" }],
+      },
+    ],
+  }));
+
+  assert.deepEqual(models, [
+    { value: "gpt-5.5", label: "GPT-5.5", effortOptions: ["low", "medium"] },
+  ]);
+});
+
+test("codex debug models parser ignores malformed model and effort entries", () => {
+  const models = parseCodexDebugModels(JSON.stringify({
+    models: [
+      null,
+      "noise",
+      {
+        slug: "gpt-5.5",
+        display_name: "GPT-5.5",
+        visibility: "list",
+        supported_reasoning_levels: [null, false, { effort: "low" }],
+      },
+    ],
+  }));
+
+  assert.deepEqual(models, [
+    { value: "gpt-5.5", label: "GPT-5.5", effortOptions: ["low"] },
+  ]);
+});
+
+test("codex model catalog invalidate does not let an old read clear a newer read", async () => {
+  const resolvers: Array<(stdout: string) => void> = [];
+  const catalog = createCodexModelCatalog(
+    () => "/bin/codex",
+    () => new Promise<string>((resolve) => {
+      resolvers.push(resolve);
+    }),
+    async () => "0.141.0",
+  );
+
+  const first = catalog.get();
+  catalog.invalidate();
+  const second = catalog.get();
+
+  assert.equal(resolvers.length, 2);
+  resolvers[0]?.(codexDebugModelsFixture("gpt-5.5", "GPT-5.5"));
+  await first;
+  await Promise.resolve();
+
+  const third = catalog.get();
+  assert.equal(resolvers.length, 2);
+
+  resolvers[1]?.(codexDebugModelsFixture("gpt-5.4", "GPT-5.4"));
+  assert.equal((await second).defaultModel, "gpt-5.4");
+  assert.equal((await third).defaultModel, "gpt-5.4");
+});
+
+test("codex model menu uses local provider catalog instead of latest static rows", () => {
+  const withCatalog = applyProductShellBackendEvent(
+    createProductShellState({ includeFixtureData: false }),
+    {
+      kind: "providerCatalog.changed",
+      payload: {
+        catalog: {
+          agentId: "codex",
+          status: "ready",
+          models: [
+            { value: "gpt-5.5", label: "GPT-5.5" },
+            { value: "gpt-5.4", label: "GPT-5.4" },
+          ],
+          environment: { version: "0.141.0", executablePath: "/bin/codex" },
+          defaultModel: "gpt-5.5",
+        },
+      },
+    },
+  );
+  const withMenu = setProductShellComposerActiveSurface(withCatalog, "model_menu");
+  const view = createProductShellViewModel(withMenu);
+
+  assert.deepEqual(
+    view.agentChat.composer.activeSurface?.rows
+      .filter((row) => row.rowId.startsWith("model:"))
+      .map((row) => row.rowId),
+    ["model:gpt-5.5", "model:gpt-5.4"],
+  );
+});
+
+test("ready provider catalog updates untouched start composer default model", () => {
+  const state = applyProductShellBackendEvent(
+    createProductShellState({ includeFixtureData: false }),
+    {
+      kind: "providerCatalog.changed",
+      payload: {
+        catalog: {
+          agentId: "codex",
+          status: "ready",
+          models: [{ value: "gpt-5.4", label: "GPT-5.4" }],
+          defaultModel: "gpt-5.4",
+        },
+      },
+    },
+  );
+
+  assert.equal(state.agentChat.composer.startOptions.launchOptions?.model, "gpt-5.4");
+});
+
+test("ready provider catalog preserves explicit custom start composer model", () => {
+  const base = createProductShellState({ includeFixtureData: false });
+  const custom = {
+    ...base,
+    agentChat: {
+      ...base.agentChat,
+      composer: {
+        ...base.agentChat.composer,
+        startOptions: {
+          ...base.agentChat.composer.startOptions,
+          launchOptions: {
+            ...base.agentChat.composer.startOptions.launchOptions,
+            model: "custom-codex-model",
+          },
+        },
+      },
+    },
+  };
+  const state = applyProductShellBackendEvent(custom, {
+    kind: "providerCatalog.changed",
+    payload: {
+      catalog: {
+        agentId: "codex",
+        status: "ready",
+        models: [{ value: "gpt-5.4", label: "GPT-5.4" }],
+        defaultModel: "gpt-5.4",
+      },
+    },
+  });
+
+  assert.equal(state.agentChat.composer.startOptions.launchOptions?.model, "custom-codex-model");
+});
+
 test("new thread resets preserve provider catalog state", () => {
   const withCatalog = applyProductShellBackendEvent(
     createProductShellState({ includeFixtureData: false }),
@@ -195,3 +348,9 @@ test("provider catalog state has no agent-chat module-global mutation API", () =
   assert.match(opencodeProvider, /catalog\?: AgentChatProviderCatalog/);
   assert.doesNotMatch(opencodeProvider, /cliModelOptionsForAgent\("opencode"\)|getOpencodeVendors\(\)/);
 });
+
+function codexDebugModelsFixture(slug: string, displayName: string): string {
+  return JSON.stringify({
+    models: [{ slug, display_name: displayName, visibility: "list" }],
+  });
+}

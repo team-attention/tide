@@ -9,6 +9,7 @@ import type {
   ProviderInventoryDto,
   ProviderModelDto,
 } from "../../../../shared/contracts/index.ts";
+import { createCodexModelCatalog } from "./codex-model-catalog.ts";
 import { createOpencodeModelCatalog } from "./opencode-model-catalog.ts";
 import { createOpencodeVendorCatalog, reconcileVendorUsability } from "./opencode-vendor-catalog.ts";
 import { createOpencodeAuthServer } from "./opencode-auth-server.ts";
@@ -40,9 +41,6 @@ export interface ProviderDetection {
 
 const STATIC_PROVIDER_MODELS: Record<"codex" | "claude", ProviderModelDto[]> = {
   codex: [
-    { value: "gpt-5.6-sol", label: "GPT-5.6-Sol" },
-    { value: "gpt-5.6-terra", label: "GPT-5.6-Terra" },
-    { value: "gpt-5.6-luna", label: "GPT-5.6-Luna" },
     { value: "gpt-5.5", label: "GPT-5.5" },
     { value: "gpt-5.4", label: "GPT-5.4" },
     { value: "gpt-5.4-mini", label: "GPT-5.4-Mini" },
@@ -63,7 +61,7 @@ const STATIC_PROVIDER_MODELS: Record<"codex" | "claude", ProviderModelDto[]> = {
 };
 
 const DEFAULT_PROVIDER_MODEL: Record<ProviderCliAgentId, string> = {
-  codex: "gpt-5.6-sol",
+  codex: "gpt-5.5",
   claude: "Claude default",
   opencode: "opencode default",
 };
@@ -74,6 +72,7 @@ export function createProviderDetection(input: {
   defaultCwd?: string;
   updateChecker?: AgentCliUpdateChecker;
 }): ProviderDetection {
+  const codexCatalog = createCodexModelCatalog((command) => input.resolveExecutable(command));
   const opencodeCatalog = createOpencodeModelCatalog((command) => input.resolveExecutable(command));
   const opencodeVendorCatalog = createOpencodeVendorCatalog((command) => input.resolveExecutable(command));
   const opencodeAuthServer = createOpencodeAuthServer({
@@ -134,6 +133,47 @@ export function createProviderDetection(input: {
       };
     }
   };
+  const codexCatalogSnapshot = async (scope?: { cwd?: string }): Promise<ProviderCatalogSnapshotDto> => {
+    const executablePath = input.resolveExecutable("codex");
+    if (executablePath === undefined) {
+      return {
+        agentId: "codex",
+        status: "unavailable",
+        scope,
+        models: [],
+        defaultModel: DEFAULT_PROVIDER_MODEL.codex,
+        error: {
+          code: "not_installed",
+          message: "codex executable was not found.",
+          retryable: true,
+        },
+      };
+    }
+    try {
+      const catalog = await codexCatalog.get();
+      return {
+        agentId: "codex",
+        status: "ready",
+        scope,
+        models: catalog.models,
+        environment: catalog.environment,
+        defaultModel: catalog.defaultModel,
+      };
+    } catch (error) {
+      return {
+        agentId: "codex",
+        status: "error",
+        scope,
+        models: STATIC_PROVIDER_MODELS.codex,
+        defaultModel: DEFAULT_PROVIDER_MODEL.codex,
+        error: {
+          code: providerCatalogErrorCode(error),
+          message: error instanceof Error ? error.message : "codex catalog read failed.",
+          retryable: true,
+        },
+      };
+    }
+  };
   return {
     detectAvailableAgents: installedAgents,
     getProviderInventory: () => ({
@@ -161,6 +201,9 @@ export function createProviderDetection(input: {
       }),
     }),
     getProviderCatalog: async ({ agentId, scope }) => {
+      if (agentId === "codex") {
+        return codexCatalogSnapshot(scope);
+      }
       if (agentId === "opencode") {
         return opencodeCatalogSnapshot(scope);
       }

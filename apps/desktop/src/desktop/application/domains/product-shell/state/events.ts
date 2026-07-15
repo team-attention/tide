@@ -1,5 +1,5 @@
 import type { ProductShellBackendEventSource, ProductShellContentSearch, ProductShellProviderCapability, ProductShellProviderUsage, ProductShellState } from "./types.ts";
-import { applyAgentChatBackendEvent, updateComposerDraft } from "../../agent-chat/agent-chat.ts";
+import { applyAgentChatBackendEvent, updateComposerDraft, updateComposerLaunchOptions } from "../../agent-chat/agent-chat.ts";
 import type { AgentChatBackendEvent, AgentChatCommandOption, AgentChatProviderCatalog, AgentChatProviderReadiness, AgentChatThreadSummary } from "../../agent-chat/agent-chat.ts";
 import { applyAppChromeBackendEvent } from "../../app-chrome/app-chrome-state.ts";
 import type { AppChromeWorkbenchPaneRef } from "../../app-chrome/app-chrome-state.ts";
@@ -89,13 +89,14 @@ export function applyProductShellBackendEvent(
       if (catalog === null) {
         return nextState;
       }
-      return {
+      const withCatalog = {
         ...nextState,
         providerCatalogs: {
           ...nextState.providerCatalogs,
           [catalog.agentId]: catalog,
         },
       };
+      return applyProviderCatalogDefaultToStartComposer(withCatalog, catalog, nextState);
     }
     case "providerUsage.changed": {
       const usagePayload = event.payload as {
@@ -421,6 +422,38 @@ export function applyProductShellBackendEvent(
     default:
       return nextState;
   }
+}
+
+function applyProviderCatalogDefaultToStartComposer(
+  state: ProductShellState,
+  catalog: AgentChatProviderCatalog,
+  previousState: ProductShellState,
+): ProductShellState {
+  if (catalog.status !== "ready" || state.agentChat.thread !== null) {
+    return state;
+  }
+  const startOptions = state.agentChat.composer.startOptions;
+  const agentId = startOptions.agentBinding.agentId;
+  if (agentId !== catalog.agentId) {
+    return state;
+  }
+  const currentModel =
+    typeof startOptions.launchOptions?.model === "string"
+      ? startOptions.launchOptions.model
+      : undefined;
+  const previousDefault = defaultModelForProvider(catalog.agentId);
+  const previousCatalogDefault = previousState.providerCatalogs[catalog.agentId]?.defaultModel;
+  const stillAutomatic =
+    currentModel === undefined ||
+    currentModel === previousDefault ||
+    currentModel === previousCatalogDefault;
+  if (!stillAutomatic || currentModel === catalog.defaultModel) {
+    return state;
+  }
+  return {
+    ...state,
+    agentChat: updateComposerLaunchOptions(state.agentChat, { model: catalog.defaultModel }).state,
+  };
 }
 
 function activeWorkspaceFileTreeCwd(state: ProductShellState): string | null {

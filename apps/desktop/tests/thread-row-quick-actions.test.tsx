@@ -12,6 +12,7 @@ import {
   applyProductShellBackendEvent,
   createProductShellState,
   openProductShellLeftRailMenu,
+  type ProductShellBackendCommand,
 } from "../src/desktop/application/domains/product-shell/product-shell.ts";
 import type { AgentChatThreadSummary } from "../src/desktop/application/domains/agent-chat/agent-chat.ts";
 
@@ -143,7 +144,7 @@ test("thread_menu_contains_secondary_utilities_not_duplicate_hover_actions", () 
     },
   });
   assert.match(markup, /data-left-rail-menu-kind="thread"/);
-  assert.match(markup, /Review changes/);
+  assert.match(markup, /View changes/);
   assert.match(markup, /Rename task/);
   assert.match(markup, /Reveal in Finder/);
   assert.match(markup, /Copy working directory/);
@@ -152,6 +153,51 @@ test("thread_menu_contains_secondary_utilities_not_duplicate_hover_actions", () 
   assert.doesNotMatch(markup, /data-left-rail-menu-item="Pin"/);
   assert.doesNotMatch(markup, /data-left-rail-menu-item="Archive"/);
   assert.doesNotMatch(markup, /data-left-rail-menu-item="Delete worktree/);
+});
+
+test("thread_menu_view_changes_opens_diff_pane", async () => {
+  const commands: ProductShellBackendCommand[] = [];
+  const seeded = applyProductShellBackendEvent(
+    createProductShellState({ includeFixtureData: false }),
+    {
+      kind: "thread.listed",
+      payload: { threads: [threadSummary("t1", false, "/Users/you/repo")] },
+    },
+  );
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(
+      <TideProductShell
+        initialState={openProductShellLeftRailMenu(seeded, { kind: "thread", threadId: "t1" })}
+        onBackendCommand={(command) => {
+          commands.push(command);
+          return [];
+        }}
+      />,
+    );
+  });
+
+  const button = container.querySelector<HTMLButtonElement>(
+    '[data-left-rail-menu-item="View changes"]',
+  );
+  assert.ok(button);
+  await act(async () => {
+    button.click();
+  });
+
+  assert.ok(
+    commands.some(
+      (command) =>
+        command.kind === "workbench.command" &&
+        command.payload.threadId === "t1" &&
+        command.payload.command === "open_diff",
+    ),
+  );
+
+  await act(async () => root.unmount());
+  container.remove();
 });
 
 test("thread_menu_copy_session_id_writes_provider_session_ref", async () => {

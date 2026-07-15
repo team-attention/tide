@@ -68,7 +68,7 @@ export function buildProvidersHubViewModel(input: {
         value: option.value,
         label: option.label,
       })),
-      defaultModel: defaultModelValueForAgent(agentId),
+      defaultModel: catalog?.status === "ready" ? catalog.defaultModel : defaultModelValueForAgent(agentId),
       multiVendor: models.some((model) => model.vendor !== undefined),
       ...(agentId === "opencode"
         ? {

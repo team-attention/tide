@@ -2149,10 +2149,10 @@ test("codex_model_chip_renders_polished_label_but_stores_provider_native_value",
   assert.equal(view.composer.modelLabel, "GPT-5.5 · Medium");
 });
 
-test("codex_default_model_chip_uses_latest_cli_default_reasoning", () => {
+test("codex_default_model_chip_uses_conservative_fallback_default_reasoning", () => {
   const view = createAgentChatShellViewModel(createAgentChatShellState());
 
-  assert.equal(view.composer.modelLabel, "GPT-5.6-Sol · Low");
+  assert.equal(view.composer.modelLabel, "GPT-5.5 · Medium");
 });
 
 test("codex_reasoning_effort_row_sets_launch_option_and_updates_chip_label", () => {
@@ -2169,7 +2169,7 @@ test("codex_reasoning_effort_row_sets_launch_option_and_updates_chip_label", () 
   const view = createAgentChatShellViewModel(high);
 
   assert.equal(high.composer.startOptions.launchOptions?.reasoning, "high");
-  assert.equal(view.composer.modelLabel, "GPT-5.6-Sol · High");
+  assert.equal(view.composer.modelLabel, "GPT-5.5 · High");
 });
 
 test("selecting_opencode_uses_provider_cli_model_and_permission_defaults", () => {
@@ -2710,18 +2710,16 @@ test("claude_model_menu_lists_latest_named_models", () => {
   assert.match(html, /Haiku 4\.5/);
 });
 
-test("codex_model_menu_lists_latest_cli_models_and_gpt56_max_effort", () => {
+test("codex_model_menu_uses_conservative_fallback_until_runtime_catalog_arrives", () => {
   const state = setComposerActiveSurface(createAgentChatShellState(), "model_menu").state;
   const rows = createAgentChatShellViewModel(state).composer.activeSurface?.rows ?? [];
   const rowIds = rows.map((entry) => entry.rowId);
 
-  assert.ok(rowIds.includes("model:gpt-5.6-sol"));
-  assert.ok(rowIds.includes("model:gpt-5.6-terra"));
-  assert.ok(rowIds.includes("model:gpt-5.6-luna"));
   assert.ok(rowIds.includes("model:gpt-5.5"));
-  assert.ok(rowIds.includes("reasoning-max"));
+  assert.ok(!rowIds.includes("model:gpt-5.6-sol"));
+  assert.ok(!rowIds.includes("reasoning-max"));
   assert.ok(!rowIds.includes("reasoning-ultra"));
-  assert.equal(rows.find((entry) => entry.rowId === "reasoning-low")?.selected, true);
+  assert.equal(rows.find((entry) => entry.rowId === "reasoning-medium")?.selected, true);
 });
 
 test("provider_cli_readiness_mentions_readiness_action_without_dropping_draft", () => {
