@@ -10,7 +10,8 @@ import { createSettingsModal, loadListSettings, loadPreferredStartComposer, load
 import { useDeleteDialogs } from "./support/use-delete-dialogs.ts";
 import { createProductShellFileDialogs } from "./product-shell-file-dialogs.tsx";
 import { createProductShellGitDialogs } from "./product-shell-git-dialogs.tsx";
-import { loadPersistedProviderCatalogs, persistReadyProviderCatalogs } from "./provider-catalog-cache.ts";
+import { loadPersistedProviderCatalogs } from "./provider-catalog-cache.ts";
+import { useProviderCatalogCache } from "./support/use-provider-catalog-cache.ts";
 import { routeProductShellTerminalOutput } from "./workbench/terminal-pane.tsx";
 import { WorktreeNameInput } from "./dialogs/worktree-name-input.tsx";
 import { fitColumnsToWidth, useColumnPresence } from "./support/layout.ts";
@@ -120,11 +121,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     setPreferredStartComposer(preference);
     persistPreferredStartComposer(preference);
   }, [startPreferenceKey]);
-  // Restore is synchronous at boot; every subsequent ready live catalog refresh
-  // replaces and records that seed for the next launch.
-  useEffect(() => {
-    persistReadyProviderCatalogs(shellState.providerCatalogs);
-  }, [shellState.providerCatalogs]);
+  useProviderCatalogCache(shellState.providerCatalogs);
   // Resizable column widths (agent chat is the flexible middle track). Drag
   // handles on column edges update these via pointer capture.
   const bodyRef = useRef<HTMLDivElement | null>(null);

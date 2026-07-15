@@ -23,6 +23,8 @@ function clearPrefs(): void {
   for (const key of Object.keys(uiPrefs)) {
     delete uiPrefs[key];
   }
+  // Reset the adapter's in-memory persistence mirror between cases.
+  loadPersistedProviderCatalogs();
 }
 
 function readyCodexCatalog(

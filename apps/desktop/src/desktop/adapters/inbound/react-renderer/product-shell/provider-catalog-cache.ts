@@ -6,6 +6,9 @@ export const PROVIDER_CATALOG_CACHE_STORAGE_KEY = "tide.providerCatalogs";
 
 const PROVIDER_CATALOG_CACHE_SCHEMA = 1;
 
+let lastPersistedCatalogs: Record<string, AgentChatProviderCatalog> = {};
+let lastWrittenSerialized: string | null = null;
+
 interface PersistedProviderCatalogs {
   schema: number;
   catalogs: Record<string, unknown>;
@@ -18,10 +21,14 @@ export function loadPersistedProviderCatalogs(): Record<string, AgentChatProvide
   try {
     const raw = getStoredPref(PROVIDER_CATALOG_CACHE_STORAGE_KEY);
     if (raw === null) {
+      lastPersistedCatalogs = {};
+      lastWrittenSerialized = null;
       return {};
     }
     const parsed = JSON.parse(raw) as Partial<PersistedProviderCatalogs>;
     if (parsed.schema !== PROVIDER_CATALOG_CACHE_SCHEMA || !isRecord(parsed.catalogs)) {
+      lastPersistedCatalogs = {};
+      lastWrittenSerialized = null;
       return {};
     }
     const catalogs: Record<string, AgentChatProviderCatalog> = {};
@@ -31,36 +38,43 @@ export function loadPersistedProviderCatalogs(): Record<string, AgentChatProvide
         catalogs[agentId] = catalogWithoutScope(catalog);
       }
     }
+    lastPersistedCatalogs = catalogs;
+    lastWrittenSerialized = raw;
     return catalogs;
   } catch {
+    lastPersistedCatalogs = {};
+    lastWrittenSerialized = null;
     return {};
   }
 }
 
-// Merge only successful results. A transient error must never wipe the last
-// usable snapshot for the next app launch.
+// Merge only successful results. The in-memory mirror is initialized by the
+// synchronous boot read, so updates do not need to synchronously read/parse the
+// preferences file again. A transient error therefore cannot erase an earlier
+// success before the next app launch.
 export function persistReadyProviderCatalogs(
   catalogs: Record<string, AgentChatProviderCatalog>,
 ): void {
   try {
-    const persisted = loadPersistedProviderCatalogs();
-    let changed = false;
+    const nextCatalogs = { ...lastPersistedCatalogs };
     for (const catalog of Object.values(catalogs)) {
-      if (!isPersistableCatalog(catalog)) {
-        continue;
-      }
-      const next = catalogWithoutScope(catalog);
-      if (JSON.stringify(persisted[catalog.agentId]) !== JSON.stringify(next)) {
-        persisted[catalog.agentId] = next;
-        changed = true;
+      if (isPersistableCatalog(catalog)) {
+        nextCatalogs[catalog.agentId] = catalogWithoutScope(catalog);
       }
     }
-    if (changed) {
-      setStoredPref(
-        PROVIDER_CATALOG_CACHE_STORAGE_KEY,
-        JSON.stringify({ schema: PROVIDER_CATALOG_CACHE_SCHEMA, catalogs: persisted }),
-      );
+    if (Object.keys(nextCatalogs).length === 0 && lastWrittenSerialized === null) {
+      return;
     }
+    const serialized = JSON.stringify({
+      schema: PROVIDER_CATALOG_CACHE_SCHEMA,
+      catalogs: nextCatalogs,
+    });
+    if (serialized === lastWrittenSerialized) {
+      return;
+    }
+    setStoredPref(PROVIDER_CATALOG_CACHE_STORAGE_KEY, serialized);
+    lastPersistedCatalogs = nextCatalogs;
+    lastWrittenSerialized = serialized;
   } catch {
     // Persistence is a best-effort UI optimization; the live catalog flow remains usable.
   }
@@ -71,7 +85,9 @@ function isPersistableCatalog(catalog: AgentChatProviderCatalog): boolean {
 }
 
 function catalogWithoutScope(catalog: AgentChatProviderCatalog): AgentChatProviderCatalog {
-  const { scope: _scope, error: _error, ...persisted } = catalog;
+  const persisted = { ...catalog };
+  delete persisted.scope;
+  delete persisted.error;
   return persisted;
 }
 
