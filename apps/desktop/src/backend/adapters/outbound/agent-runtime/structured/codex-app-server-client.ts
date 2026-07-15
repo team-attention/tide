@@ -286,6 +286,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       this.pendingSteerText.push(text);
       return;
     }
+    this.clearStreamingTextBuffers();
     this.turnStartInFlight = true;
     this.request("turn/start", {
       threadId: this.codexThreadId,
@@ -612,6 +613,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       this.toolCalls.failPendingForTurnEnd(status);
       this.activeTurnId = undefined;
       this.turnStartInFlight = false;
+      this.clearStreamingTextBuffers();
       // Any input parked for a steer that never found a live turn (e.g. the turn
       // errored before its id landed) carries over as the next turn — the client
       // owns delivering input the service already handed it.
@@ -742,6 +744,12 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     this.flushScheduled = true;
     // Coalesce token deltas into ~50ms UI updates (avoid one event per token).
     setTimeout(() => this.flushStream(), 50).unref();
+  }
+
+  private clearStreamingTextBuffers(): void {
+    this.streamBodies.clear();
+    this.reasoningBodies.clear();
+    this.flushScheduled = false;
   }
 
   private flushStream(): void {
