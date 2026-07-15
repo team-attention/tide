@@ -340,13 +340,11 @@ export function createComposerHandlers(ctx: ProductShellHandlerContext): Pick<Pr
         return;
       }
       if (surfaceKind === "provider_readiness" && rowId === "update_available:terminal") {
-        setShellState((state) => {
-          const result = selectProductShellProviderCliUpdateRow(state);
-          for (const command of result.commands) {
-            dispatchBackendCommand(command);
-          }
-          return result.state;
-        });
+        const result = selectProductShellProviderCliUpdateRow(getShellState());
+        setShellState(result.state);
+        for (const command of result.commands) {
+          dispatchBackendCommand(command);
+        }
         return;
       }
       // Selecting an agent slot: select it, ensure a Draft Thread to host any readiness terminal,
