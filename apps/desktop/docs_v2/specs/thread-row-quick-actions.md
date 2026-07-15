@@ -39,7 +39,7 @@ and copy identifiers.
    - Archive uses the **existing** inline Confirm flow (`onThreadArchiveIntent` →
      `archiveConfirming` → Confirm → `onThreadArchiveConfirm`); that flow is unchanged.
 2. **Right-click opens a utility menu, not a duplicate action menu.** It includes
-   Review changes, Rename task, Reveal in Finder, Copy working directory, Copy
+   View changes, Rename task, Reveal in Finder, Copy working directory, Copy
    session ID, and Copy thread ID. Pin/archive/delete stay in the hover slot.
 3. **Delete worktree is direct only on worktree rows.** It uses the existing confirm
    dialog/safety path; non-worktree rows do not render the button.

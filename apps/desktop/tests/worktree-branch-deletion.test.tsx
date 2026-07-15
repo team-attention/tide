@@ -144,7 +144,7 @@ test("worktree_thread_menu_keeps_secondary_utilities_and_omits_direct_hover_acti
   // D1: a thread living in a `<repo>.worktree/<branch>` worktree exposes both
   // direct Delete worktree as a hover action and keeps the menu for utilities.
   const markup = renderThreadContextMenu("/Users/you/repo.worktree/fix-login");
-  assert.match(markup, /Review changes/);
+  assert.match(markup, /View changes/);
   assert.match(markup, /Copy working directory/);
   assert.match(markup, /Copy session ID/);
   assert.doesNotMatch(markup, /Delete worktree \(fix-login\)/);
@@ -155,12 +155,12 @@ test("non_worktree_thread_menu_omits_delete_worktree", () => {
   // Invariant 4: a thread in the main repo (not a worktree) cannot delete a
   // worktree — its menu offers secondary utilities, but no "Delete worktree".
   const markup = renderThreadContextMenu("/Users/you/repo");
-  assert.match(markup, /Review changes/);
+  assert.match(markup, /View changes/);
   assert.match(markup, /Copy working directory/);
   assert.doesNotMatch(markup, /Delete worktree/);
 });
 
-test("thread_menu_review_changes_opens_review_pane_for_that_thread", async () => {
+test("thread_menu_view_changes_opens_diff_pane_for_that_thread", async () => {
   const { createRoot } = await import("react-dom/client");
   const container = dom.window.document.createElement("div");
   dom.window.document.body.appendChild(container);
@@ -183,7 +183,7 @@ test("thread_menu_review_changes_opens_review_pane_for_that_thread", async () =>
   });
 
   const button = container.querySelector(
-    'button[data-left-rail-menu-item="Review changes"]',
+    'button[data-left-rail-menu-item="View changes"]',
   ) as HTMLButtonElement | null;
   assert.ok(button);
 
@@ -191,10 +191,10 @@ test("thread_menu_review_changes_opens_review_pane_for_that_thread", async () =>
     button.click();
   });
 
-  const reviewCommand = commands.find(
-    (command) => command.kind === "workbench.command" && command.payload.command === "open_review",
+  const diffCommand = commands.find(
+    (command) => command.kind === "workbench.command" && command.payload.command === "open_diff",
   );
-  assert.equal(reviewCommand?.kind === "workbench.command" ? reviewCommand.payload.threadId : null, "t1");
+  assert.equal(diffCommand?.kind === "workbench.command" ? diffCommand.payload.threadId : null, "t1");
 
   await act(async () => {
     root.unmount();

@@ -1,4 +1,4 @@
-import type { AgentChatAgentId, AgentChatAgentRuntimeSource, AgentChatChoiceSurfaceRowView, AgentChatChoiceSurfaceView, AgentChatCommandOption, AgentChatProjectOption, AgentChatShellState, AgentChatShellUpdateResult, AgentChatThreadScope } from "./types.ts";
+import type { AgentChatAgentId, AgentChatAgentRuntimeSource, AgentChatChoiceSurfaceRowView, AgentChatChoiceSurfaceView, AgentChatCommandOption, AgentChatProjectOption, AgentChatProviderModelOption, AgentChatShellState, AgentChatShellUpdateResult, AgentChatThreadScope } from "./types.ts";
 import { activeComposerTrigger, selectComposerAgent, setComposerActiveSurface } from "./composer.ts";
 import { CODEX_MODELS, PERMISSION_OPTIONS, REASONING_LEVELS, cliModelOptionsForAgent, defaultModelValueForAgent, defaultPermissionForAgent, defaultReasoningValueForAgent, formatAgentLabel, isAgentAvailable, isAgentAvailabilityKnown, isAgentComingSoon, normalizePermissionValue, permissionConfigForAgent, runtimeSourceForBinding } from "./agent-vocab.ts";
 import { branchMenuRows, defaultBranchName, worktreeForBranch, worktreeMenuRows } from "./branch-environment-menu-rows.ts";
@@ -559,9 +559,8 @@ function reasoningForRow(rowId: string): "low" | "medium" | "high" | "xhigh" | "
   }
 }
 
-// Codex has a curated visible list plus free-form `--model` support. GPT-5.6
-// rows expose `max` in the latest CLI; `ultra` stays out until the runtime mapping
-// is explicitly verified.
+// Codex uses the local runtime catalog when available, with a conservative fallback
+// list while the provider catalog request is still loading or failed.
 function codexModelMenuRows(
   state: AgentChatShellState,
   selectedModel: string,
@@ -576,7 +575,7 @@ function codexModelMenuRows(
   const rows: AgentChatChoiceSurfaceRowView[] = [
     row("model-section", "Model", "Codex Agent Integration", "source", "source"),
   ];
-  for (const model of CODEX_MODELS) {
+  for (const model of codexModelOptionsForState(state)) {
     rows.push(
       row(
         `model:${model.value}`,
@@ -593,6 +592,13 @@ function codexModelMenuRows(
     ...effortRows(reasoning, reasoningLevels),
   );
   return rows;
+}
+
+function codexModelOptionsForState(state: AgentChatShellState): AgentChatProviderModelOption[] {
+  const catalog = state.availableProviderCatalogs?.codex;
+  return catalog?.status === "ready" && catalog.models.length > 0
+    ? catalog.models
+    : CODEX_MODELS;
 }
 
 function permissionForRow(rowId: string): string | undefined {

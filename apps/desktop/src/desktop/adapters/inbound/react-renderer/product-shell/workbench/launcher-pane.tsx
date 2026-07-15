@@ -20,7 +20,7 @@ export function emptyWorkbenchLauncherPane(): NonNullable<
       { actionId: "open_browser", label: "Browser", description: "Open a Browser Pane", enabled: true },
       { actionId: "open_editor", label: "Editor", description: "Pick a file from the FileTree to edit", enabled: true },
       { actionId: "open_terminal", label: "Terminal", description: "Open a Terminal Pane", enabled: true },
-      { actionId: "open_diff", label: "Diff", description: "Available after a file edit or review target", enabled: false },
+      { actionId: "open_diff", label: "Diff", description: "View working-tree changes (git)", enabled: true },
     ],
   } as NonNullable<ProductShellViewModel["appChrome"]["activeWorkbenchPane"]>;
 }

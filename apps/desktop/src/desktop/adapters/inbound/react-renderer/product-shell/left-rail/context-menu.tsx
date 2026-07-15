@@ -2,7 +2,7 @@ import type { ProductShellLeftRailMenu, ProductShellListSettings } from "../../.
 import type { MenuAnchorRect, ProductShellHandlers } from "../support/types.ts";
 import type { CSSProperties, ReactElement, ReactNode } from "react";
 import { createListSettingsMenu } from "./section-header.tsx";
-import { Archive, Clipboard, ClipboardCheck, FolderOpen, GitBranchPlus, Pencil, Pin, Trash2 } from "lucide-react";
+import { Archive, Clipboard, FolderOpen, GitBranchPlus, Pencil, Pin, Trash2 } from "lucide-react";
 import {
   FloatingMenuBackdrop,
   FloatingMenuIcon,
@@ -69,9 +69,9 @@ function createLeftRailContextMenu(
     menu.kind === "thread"
       ? [
           {
-            label: "Review changes",
-            icon: <ClipboardCheck size={15} strokeWidth={1.9} />,
-            onClick: () => handlers.onOpenThreadReview(menu.threadId),
+            label: "View changes",
+            icon: <GitBranchPlus size={15} strokeWidth={1.9} />,
+            onClick: () => handlers.onOpenThreadChanges(menu.threadId),
           },
           {
             label: "Rename task",
