@@ -160,10 +160,9 @@ test("update checker: advisory only after refresh, only when installed < latest"
     agentIds: ["claude", "codex"],
     readInstalledVersion: async (id) => (id === "claude" ? "1.0.0" : "2.0.0"),
     readLatestVersion: async (id) => (id === "claude" ? "1.2.0" : "2.0.0"),
-    buildUpdateTerminalAction: (id, cwd) => ({
+    readUpdateTerminalAction: async (id) => ({
       command: "npm",
       args: ["install", "-g", `${id}@latest`],
-      cwd,
       expectedCompletion: "retry_preflight",
     }),
   });
@@ -181,6 +180,22 @@ test("update checker: advisory only after refresh, only when installed < latest"
   assert.equal(checker.advisoryFor("codex", "."), undefined);
 });
 
+test("update checker: stale CLI advisory can omit one-click action when updater is unknown", async () => {
+  const checker = createAgentUpdateChecker({
+    agentIds: ["codex"],
+    readInstalledVersion: async () => "1.0.0",
+    readLatestVersion: async () => "1.2.0",
+    readUpdateTerminalAction: async () => undefined,
+  });
+
+  await checker.refresh();
+
+  const advisory = checker.advisoryFor("codex", "/work");
+  assert.equal(advisory?.currentVersion, "1.0.0");
+  assert.equal(advisory?.latestVersion, "1.2.0");
+  assert.equal(advisory?.terminalAction, undefined);
+});
+
 test("readiness port: refreshUpdateAdvisories clears a stale advisory after an in-place update", async () => {
   // The bug: after an in-place CLI update completes, readiness re-checks but reads a
   // stale version cache, so the "Update <Agent>" chip lingers. The readiness terminal
@@ -191,10 +206,9 @@ test("readiness port: refreshUpdateAdvisories clears a stale advisory after an i
     agentIds: ["claude"],
     readInstalledVersion: async () => installedClaude,
     readLatestVersion: async () => "1.2.0",
-    buildUpdateTerminalAction: (id, cwd) => ({
+    readUpdateTerminalAction: async (id) => ({
       command: "npm",
       args: ["install", "-g", `${id}@latest`],
-      cwd,
       expectedCompletion: "retry_preflight",
     }),
   });
@@ -236,7 +250,7 @@ test("update checker: not installed or unknown latest yields no advisory", async
     agentIds: ["claude", "codex"],
     readInstalledVersion: async (id) => (id === "claude" ? undefined : "1.0.0"),
     readLatestVersion: async (id) => (id === "claude" ? "9.9.9" : undefined),
-    buildUpdateTerminalAction: (id, cwd) => ({ command: "npm", args: [`${id}@latest`], cwd, expectedCompletion: "retry_preflight" }),
+    readUpdateTerminalAction: async (id) => ({ command: "npm", args: [`${id}@latest`], expectedCompletion: "retry_preflight" }),
   });
   const changed = await checker.refresh();
   assert.deepEqual(changed, []);
@@ -255,10 +269,9 @@ test("update checker: refresh failures clear stale advisories without rejecting"
       return "1.0.0";
     },
     readLatestVersion: async () => "1.2.0",
-    buildUpdateTerminalAction: (id, cwd) => ({
+    readUpdateTerminalAction: async (id) => ({
       command: "npm",
       args: [`${id}@latest`],
-      cwd,
       expectedCompletion: "retry_preflight",
     }),
   });

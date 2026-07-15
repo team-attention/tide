@@ -53,9 +53,9 @@ export interface ProviderReadinessResult {
 export interface ProviderUpdateAdvisory {
   currentVersion: string;
   latestVersion: string;
-  // Updates the CLI in place (npm install -g <pkg>@latest, retry_preflight) —
-  // the same readiness terminal handoff used to install a missing CLI.
-  terminalAction: ProviderReadinessTerminalAction;
+  // Updates the CLI in place when Tide can prove a safe updater for the resolved
+  // executable. Absent when the CLI is stale but its install method is unknown.
+  terminalAction?: ProviderReadinessTerminalAction;
 }
 
 export interface ProviderReadinessCheckInput {

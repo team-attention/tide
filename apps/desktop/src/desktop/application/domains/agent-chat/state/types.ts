@@ -387,7 +387,7 @@ export interface AgentChatProviderReadiness {
 export interface AgentChatProviderUpdateAdvisory {
   currentVersion: string;
   latestVersion: string;
-  terminalAction: AgentChatProviderReadinessTerminalAction;
+  terminalAction?: AgentChatProviderReadinessTerminalAction;
 }
 
 export interface AgentChatProviderReadinessBlocker {

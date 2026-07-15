@@ -33,9 +33,9 @@ export function createAgentChatShellViewModel(
         ? formatAgentLabel(state.providerReadiness.agentId)
         : undefined,
     providerReadinessActionPending: state.providerReadinessActionPending,
-    // The update advisory shows regardless of `ready` (an outdated CLI still works),
-    // so it is derived straight from the readiness state, not gated on blockers.
-    providerUpdateAdvisory: state.providerReadiness?.update
+    // The update chip shows regardless of `ready`, but only when the backend has a
+    // proven-safe terminal action for the resolved provider executable.
+    providerUpdateAdvisory: state.providerReadiness?.update?.terminalAction
       ? {
           agentLabel: formatAgentLabel(state.providerReadiness.agentId),
           currentVersion: state.providerReadiness.update.currentVersion,

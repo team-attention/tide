@@ -66,21 +66,77 @@ export function resolveExecutable(command: string): string | undefined {
   return resolved.length > 0 ? resolved : undefined;
 }
 
-// Build the provider readiness terminal action that updates an installed CLI in place:
-// `npm install -g <package>@latest` in the visible terminal, re-running preflight
-// on exit so the update advisory clears once the new version is on PATH. The
-// update counterpart of npmInstallReadinessTerminalAction. Spec: version-management.md.
-export function npmUpdateReadinessTerminalAction(input: {
-  npmPath: string;
+export function updateReadinessTerminalActionForAgent(input: {
   agentId: "codex" | "claude" | "opencode";
   cwd: string;
-}): ProviderReadinessTerminalAction {
-  return {
-    command: input.npmPath,
-    args: ["install", "-g", `${installPackageForAgent(input.agentId)}@latest`],
-    cwd: input.cwd,
-    expectedCompletion: "retry_preflight",
-  };
+  executablePath?: string;
+  nativeUpdateAvailable?: boolean;
+}): ProviderReadinessTerminalAction | undefined {
+  const providerNativeUpdateArgs = providerNativeUpdateArgsForAgent(input.agentId);
+  if (
+    input.executablePath !== undefined &&
+    providerNativeUpdateArgs !== undefined &&
+    input.nativeUpdateAvailable === true
+  ) {
+    return {
+      command: input.executablePath,
+      args: providerNativeUpdateArgs,
+      cwd: input.cwd,
+      expectedCompletion: "retry_preflight",
+    };
+  }
+  return undefined;
+}
+
+export async function providerNativeUpdateCommandAvailable(input: {
+  executablePath: string;
+  agentId: "codex" | "claude" | "opencode";
+}): Promise<boolean> {
+  const providerNativeUpdateArgs = providerNativeUpdateArgsForAgent(input.agentId);
+  if (providerNativeUpdateArgs === undefined) {
+    return false;
+  }
+  try {
+    const { stdout, stderr } = await execFileAsync(input.executablePath, ["--help"], {
+      encoding: "utf8",
+      timeout: 5000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    return helpOutputAdvertisesProviderNativeUpdate({
+      agentId: input.agentId,
+      helpOutput: `${stdout ?? ""}\n${stderr ?? ""}`,
+    });
+  } catch {
+    return false;
+  }
+}
+
+export function helpOutputAdvertisesProviderNativeUpdate(input: {
+  agentId: "codex" | "claude" | "opencode";
+  helpOutput: string;
+}): boolean {
+  const providerNativeUpdateArgs = providerNativeUpdateArgsForAgent(input.agentId);
+  const subcommand = providerNativeUpdateArgs?.[0];
+  if (subcommand === undefined) {
+    return false;
+  }
+  return new RegExp(`\\b${escapeRegExp(subcommand)}\\b`).test(input.helpOutput);
+}
+
+export function providerNativeUpdateArgsForAgent(
+  agentId: "codex" | "claude" | "opencode",
+): string[] | undefined {
+  if (agentId === "codex" || agentId === "claude") {
+    return ["update"];
+  }
+  if (agentId === "opencode") {
+    return ["upgrade"];
+  }
+  return undefined;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 // The first semver-looking token in a CLI's `--version` / `npm view` output.

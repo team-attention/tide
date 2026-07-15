@@ -70,7 +70,7 @@ This spec is the missing connection between:
    `terminalRole: "provider_readiness"` and `expectedCompletion:
    "retry_preflight"`.
 
-4. **No app reload.** After `npm install -g <package>@latest` exits, Tide updates
+4. **No app reload.** After the provider-native update command exits, Tide updates
    state through backend events. The app window is not reloaded and the backend
    process is not restarted as part of this slice.
 
@@ -227,5 +227,6 @@ Existing contracts reused:
   ordering.
 - Do not add a forced app reload. If the updated CLI executable path changes in a
   way `which` cannot see from the current backend environment, the terminal output
-  and remaining advisory are the honest state; a future spec can address PATH
-  mutation.
+  and remaining advisory are the honest state. Installed provider CLI updates
+  should run the resolved executable's own update command only when that command
+  is advertised.
