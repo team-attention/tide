@@ -38,6 +38,7 @@ domWindow.ResizeObserver = TestResizeObserver;
 // bind to the jsdom document.
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
+const { EditorView } = await import("@codemirror/view");
 const {
   applyProductShellBackendEvent,
   createProductShellState,
@@ -520,6 +521,37 @@ test("markdown_live_preview_task_checkbox_edits_the_shared_source_document", asy
     });
 
     assert.match(dom.window.document.querySelector(".cm-content")?.textContent ?? "", /- \[ \] Complete me/);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+  }
+});
+
+test("markdown_live_preview_reuses_a_task_checkbox_after_edits_above_it", async () => {
+  const root = await mountShell(editorState("- [x] Complete me\n", "notes.md"));
+  try {
+    const editor = dom.window.document.querySelector(".cm-editor") as HTMLElement | null;
+    const checkboxBefore = dom.window.document.querySelector(".cm-md-task-checkbox") as HTMLInputElement | null;
+    assert.ok(editor);
+    assert.ok(checkboxBefore);
+    const view = EditorView.findFromDOM(editor);
+    assert.ok(view);
+
+    await act(async () => {
+      view.dispatch({ changes: { from: 0, insert: "Intro\n\n" }, userEvent: "input" });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    const checkboxAfter = dom.window.document.querySelector(".cm-md-task-checkbox") as HTMLInputElement | null;
+    assert.equal(checkboxAfter, checkboxBefore, "position shifts should reuse the task widget DOM");
+
+    await act(async () => {
+      checkboxAfter.click();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    assert.equal(view.state.doc.toString(), "Intro\n\n- [ ] Complete me\n");
   } finally {
     await act(async () => {
       root.unmount();

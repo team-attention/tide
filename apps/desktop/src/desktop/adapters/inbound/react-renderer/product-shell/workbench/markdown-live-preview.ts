@@ -32,7 +32,6 @@ class ListMarkerWidget extends WidgetType {
 
 class TaskCheckboxWidget extends WidgetType {
   constructor(
-    private readonly from: number,
     private readonly checked: boolean,
     private readonly readOnly: boolean,
   ) {
@@ -41,7 +40,6 @@ class TaskCheckboxWidget extends WidgetType {
 
   eq(other: TaskCheckboxWidget): boolean {
     return (
-      this.from === other.from &&
       this.checked === other.checked &&
       this.readOnly === other.readOnly
     );
@@ -58,8 +56,12 @@ class TaskCheckboxWidget extends WidgetType {
       if (this.readOnly) {
         return;
       }
+      const from = view.posAtDOM(input);
+      if (!/^\[[ xX]\]$/.test(view.state.sliceDoc(from, from + 3))) {
+        return;
+      }
       view.dispatch({
-        changes: { from: this.from + 1, to: this.from + 2, insert: input.checked ? "x" : " " },
+        changes: { from: from + 1, to: from + 2, insert: input.checked ? "x" : " " },
         userEvent: "input",
       });
       view.focus();
@@ -279,7 +281,7 @@ function buildMarkdownDecorations(view: EditorView): DecorationSet {
           const checked = /x/i.test(doc.sliceString(node.from, node.to));
           ranges.push(
             Decoration.replace({
-              widget: new TaskCheckboxWidget(node.from, checked, !view.state.facet(EditorView.editable)),
+              widget: new TaskCheckboxWidget(checked, !view.state.facet(EditorView.editable)),
             }).range(node.from, node.to),
           );
         }
@@ -384,8 +386,7 @@ const markdownLivePreviewPlugin = ViewPlugin.fromClass(
         update.docChanged ||
         update.selectionSet ||
         update.viewportChanged ||
-        update.focusChanged ||
-        update.geometryChanged
+        update.focusChanged
       ) {
         this.decorations = buildMarkdownDecorations(update.view);
       }
