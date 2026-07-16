@@ -38,6 +38,7 @@ domWindow.ResizeObserver = TestResizeObserver;
 // bind to the jsdom document.
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
+const { EditorView } = await import("@codemirror/view");
 const {
   applyProductShellBackendEvent,
   createProductShellState,
@@ -359,23 +360,19 @@ test("workbench_editor_cmd_f_opens_tide_find_bar_not_codemirror_default_panel", 
   }
 });
 
-test("markdown_preview_cmd_f_searches_the_rendered_preview_surface", async () => {
-  // Spec: read-only rendered panes do not have a CodeMirror focus target, so the
-  // last interacted pane still owns Cmd/Ctrl+F.
+test("markdown_live_preview_cmd_f_searches_the_shared_editor_document", async () => {
+  // Spec: docs_v2/specs/workbench-editor-ui-ux-refresh.md (D4, D7)
   const root = await mountShell(editorState("# Title\n\nSome body text.\n", "notes.md"));
   try {
-    const preview = dom.window.document.querySelector("[data-md-preview]") as HTMLElement | null;
-    assert.ok(preview, "preview renders by default");
-    await act(async () => {
-      preview.dispatchEvent(new dom.window.MouseEvent("mousedown", { bubbles: true }));
-    });
+    const content = dom.window.document.querySelector("[data-code-editor-host] .cm-content") as HTMLElement | null;
+    assert.ok(content, "Live Preview should be the editable CodeMirror document");
+    content.focus();
 
     await pressFindShortcut();
 
     const input = dom.window.document.querySelector("[data-in-pane-find-input]") as HTMLInputElement | null;
-    assert.ok(input, "preview find input should open");
-    assert.equal(input.placeholder, "Find in preview");
-    assert.equal(dom.window.document.querySelector("[data-code-editor-host] .cm-editor"), null);
+    assert.ok(input, "Markdown editor find input should open");
+    assert.equal(input.placeholder, "Find in file");
 
     await setFindInputValue("body");
     assert.match(dom.window.document.querySelector("[data-in-pane-find-count]")?.textContent ?? "", /1 \/ 1/);
@@ -386,30 +383,175 @@ test("markdown_preview_cmd_f_searches_the_rendered_preview_surface", async () =>
   }
 });
 
-test("markdown_editor_pane_toggle_shows_source_editor", async () => {
-  // Spec: docs_v2/specs/workbench-markdown-preview-editor.md (UC-1, UC-2)
+test("markdown_editor_pane_keeps_one_editor_for_live_preview_and_source", async () => {
+  // Spec: docs_v2/specs/workbench-editor-ui-ux-refresh.md (D4, D7)
   const root = await mountShell(editorState("# Title\n\nSome body text.\n", "notes.md"));
   try {
-    // Default: rendered Preview (a real <h1>), no CodeMirror source surface.
-    assert.ok(dom.window.document.querySelector("[data-md-preview]"), "preview renders by default");
-    assert.ok(dom.window.document.querySelector("[data-md-preview] h1"), "heading is rendered");
-    assert.equal(dom.window.document.querySelector("[data-code-editor-host] .cm-editor"), null);
+    const liveEditor = dom.window.document.querySelector("[data-code-editor-host] .cm-editor");
+    assert.ok(liveEditor, "Markdown opens in editable Live Preview");
+    assert.equal(
+      dom.window.document.querySelector("[data-code-editor-surface]")?.getAttribute("data-editor-presentation"),
+      "markdown-live",
+    );
+    assert.ok(dom.window.document.querySelector(".cm-md-marker-hidden"), "inactive Markdown syntax is hidden");
 
-    const editButton = Array.from(
+    const sourceButton = Array.from(
       dom.window.document.querySelectorAll("[data-md-mode-option]"),
-    ).find((button) => (button.textContent ?? "").trim() === "Edit");
-    assert.ok(editButton, "Edit toggle present");
+    ).find((button) => (button.textContent ?? "").trim() === "Source");
+    assert.ok(sourceButton, "Source toggle present");
 
     await act(async () => {
-      editButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+      sourceButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
     });
     await new Promise((resolve) => setTimeout(resolve, 30));
 
-    // Edit mode shows the real source editor.
-    assert.ok(
-      dom.window.document.querySelector("[data-code-editor-host] .cm-editor"),
-      "source editor appears after toggling to Edit",
+    const sourceEditor = dom.window.document.querySelector("[data-code-editor-host] .cm-editor");
+    assert.equal(sourceEditor, liveEditor, "presentation changes preserve the CodeMirror instance");
+    assert.equal(
+      dom.window.document.querySelector("[data-code-editor-surface]")?.getAttribute("data-editor-presentation"),
+      "markdown-source",
     );
+    assert.equal(dom.window.document.querySelector(".cm-md-marker-hidden"), null);
+    assert.match(dom.window.document.querySelector(".cm-content")?.textContent ?? "", /# Title/);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+  }
+});
+
+test("markdown_live_preview_decorates_common_and_gfm_blocks_in_place", async () => {
+  // Spec: docs_v2/specs/workbench-editor-ui-ux-refresh.md (D5, D6, D8)
+  const markdown = [
+    "# Heading",
+    "",
+    "**strong** and *emphasis* and `inline` and [link](https://example.com)",
+    "",
+    "> quote",
+    "",
+    "- [x] task",
+    "1. ordered",
+    "",
+    "---",
+    "",
+    "```ts",
+    "const value = 1;",
+    "```",
+    "",
+    "| Name | Value |",
+    "| --- | --- |",
+    "| Tide | 1 |",
+    "",
+    "![remote](https://example.com/image.png)",
+    "",
+    "<script>window.__markdownExecuted = true</script>",
+  ].join("\n");
+  const root = await mountShell(editorState(markdown, "notes.md"));
+  try {
+    assert.ok(dom.window.document.querySelector(".cm-md-heading-1"));
+    assert.ok(dom.window.document.querySelector(".cm-md-strong"));
+    assert.ok(dom.window.document.querySelector(".cm-md-emphasis"));
+    assert.ok(dom.window.document.querySelector(".cm-md-inline-code"));
+    assert.ok(dom.window.document.querySelector(".cm-md-link"));
+    assert.ok(dom.window.document.querySelector(".cm-md-blockquote"));
+    assert.ok(dom.window.document.querySelector(".cm-md-list-marker"));
+    assert.ok(dom.window.document.querySelector(".cm-md-task-checkbox"));
+    assert.ok(dom.window.document.querySelector(".cm-md-horizontal-rule"));
+    assert.ok(dom.window.document.querySelector(".cm-md-fence-code"));
+    assert.ok(dom.window.document.querySelector(".cm-md-fence-code .tok-keyword"));
+    assert.ok(dom.window.document.querySelector(".cm-md-table-header"));
+    assert.ok(dom.window.document.querySelector(".cm-md-table-cell"));
+    assert.match(
+      dom.window.document.querySelector(".cm-md-image-preview")?.textContent ?? "",
+      /Image preview unavailable: remote/,
+    );
+    assert.equal(dom.window.document.querySelector("[data-code-editor-host] script"), null);
+    assert.equal((dom.window as unknown as { __markdownExecuted?: boolean }).__markdownExecuted, undefined);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+  }
+});
+
+test("markdown_live_preview_reveals_the_active_heading_source_marker", async () => {
+  const root = await mountShell(editorState("# Heading\n", "notes.md"));
+  try {
+    const content = dom.window.document.querySelector(".cm-content") as HTMLElement | null;
+    assert.ok(content);
+    assert.ok(dom.window.document.querySelector(".cm-md-marker-hidden"));
+
+    await act(async () => {
+      content.focus();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    assert.equal(
+      dom.window.document.querySelector(".cm-md-marker-hidden"),
+      null,
+      "the initial caret is inside the heading, so its source marker should reveal on focus",
+    );
+    assert.match(content.textContent ?? "", /# Heading/);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+  }
+});
+
+test("markdown_live_preview_task_checkbox_edits_the_shared_source_document", async () => {
+  const root = await mountShell(editorState("- [x] Complete me\n", "notes.md"));
+  try {
+    const checkbox = dom.window.document.querySelector(".cm-md-task-checkbox") as HTMLInputElement | null;
+    assert.ok(checkbox);
+    assert.equal(checkbox.checked, true);
+
+    await act(async () => {
+      checkbox.click();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    const sourceButton = Array.from(
+      dom.window.document.querySelectorAll("[data-md-mode-option]"),
+    ).find((button) => (button.textContent ?? "").trim() === "Source");
+    assert.ok(sourceButton);
+    await act(async () => {
+      sourceButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    assert.match(dom.window.document.querySelector(".cm-content")?.textContent ?? "", /- \[ \] Complete me/);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+  }
+});
+
+test("markdown_live_preview_reuses_a_task_checkbox_after_edits_above_it", async () => {
+  const root = await mountShell(editorState("- [x] Complete me\n", "notes.md"));
+  try {
+    const editor = dom.window.document.querySelector(".cm-editor") as HTMLElement | null;
+    const checkboxBefore = dom.window.document.querySelector(".cm-md-task-checkbox") as HTMLInputElement | null;
+    assert.ok(editor);
+    assert.ok(checkboxBefore);
+    const view = EditorView.findFromDOM(editor);
+    assert.ok(view);
+
+    await act(async () => {
+      view.dispatch({ changes: { from: 0, insert: "Intro\n\n" }, userEvent: "input" });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    const checkboxAfter = dom.window.document.querySelector(".cm-md-task-checkbox") as HTMLInputElement | null;
+    assert.equal(checkboxAfter, checkboxBefore, "position shifts should reuse the task widget DOM");
+
+    await act(async () => {
+      checkboxAfter.click();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    assert.equal(view.state.doc.toString(), "Intro\n\n- [ ] Complete me\n");
   } finally {
     await act(async () => {
       root.unmount();

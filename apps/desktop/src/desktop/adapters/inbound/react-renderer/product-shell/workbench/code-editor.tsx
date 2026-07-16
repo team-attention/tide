@@ -11,6 +11,7 @@ import { editorLanguageExtensions } from "./editor-pane.tsx";
 import { codeIntelligenceExtensions } from "./code-intel-extensions.ts";
 import type { CodeIntelContext } from "./code-intel-extensions.ts";
 import { createGitDiffLineDecorations, parseUnifiedDiffLineMarkers } from "./git-diff-lines.ts";
+import { markdownLivePreviewExtensions } from "./markdown-live-preview.ts";
 import { CornerDownRight, FileSearch, ListTree, Save, Search as SearchIcon } from "lucide-react";
 import { InPaneFindBar, useInPaneFindState, usePaneFindIntent } from "../../support/in-pane-find.tsx";
 import {
@@ -50,6 +51,7 @@ export function WorkbenchCodeEditor(props: {
     ProductShellViewModel["appChrome"]["activeWorkbenchPane"]
   >["navigationTarget"];
   relativePath?: string;
+  presentation?: "code" | "markdown-live" | "markdown-source";
   handlers: ProductShellHandlers;
 }): ReactElement {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -66,6 +68,7 @@ export function WorkbenchCodeEditor(props: {
     { x: number; y: number; text: string; fromLine: number; toLine: number } | null
   >(null);
   const nav = props.navigationTarget;
+  const presentation = props.presentation ?? "code";
   // Latest props for the intel extensions (built once, see useMemo below).
   const propsRef = useRef(props);
   propsRef.current = props;
@@ -167,13 +170,13 @@ export function WorkbenchCodeEditor(props: {
   // through propsRef, so draft/save/cursor/agent-edit behavior is unchanged.
   const basicSetup = useMemo(
     () => ({
-      lineNumbers: true,
+      lineNumbers: presentation !== "markdown-live",
       foldGutter: false,
-      highlightActiveLine: !props.readOnly,
+      highlightActiveLine: !props.readOnly && presentation !== "markdown-live",
       // Replaced by the explicit autocompletion({override}) extension below.
       autocompletion: false,
     }),
-    [props.readOnly],
+    [presentation, props.readOnly],
   );
   // Reconfigure only when the language (grammar) actually changes — a different
   // file type loading into the pane — not on every render. The Cmd/Ctrl+S keymap
@@ -194,8 +197,9 @@ export function WorkbenchCodeEditor(props: {
       gitDiffExtensions,
       ...codeIntelExtensions,
       ...editorLanguageExtensions(props.language),
+      ...(presentation === "markdown-live" ? markdownLivePreviewExtensions() : []),
     ],
-    [props.language, codeIntelExtensions, gitDiffExtensions],
+    [props.language, presentation, codeIntelExtensions, gitDiffExtensions],
   );
   const onEditorChange = useCallback((next: string) => {
     propsRef.current.handlers.onEditorDraftChange(propsRef.current.paneId, next);
@@ -359,6 +363,7 @@ export function WorkbenchCodeEditor(props: {
       aria-label="Editor Pane text"
       data-code-editor-surface="true"
       data-editor-language={props.language}
+      data-editor-presentation={presentation}
       data-navigation-target={nav?.label}
       onContextMenu={openContextMenu}
       onMouseDownCapture={onCmdClick}
@@ -381,25 +386,29 @@ export function WorkbenchCodeEditor(props: {
         >
           <SearchIcon size={14} strokeWidth={1.9} aria-hidden />
         </CodeEditorCommandButton>
-        <CodeEditorCommandSeparator aria-hidden />
-        <CodeEditorCommandButton
-          type="button"
-          title="Go to Definition"
-          aria-label="Go to Definition"
-          disabled={props.readOnly}
-          onClick={() => props.handlers.onEditorGoToDefinition(props.paneId, currentEditorPosition())}
-        >
-          <FileSearch size={14} strokeWidth={1.9} aria-hidden />
-        </CodeEditorCommandButton>
-        <CodeEditorCommandButton
-          type="button"
-          title="Find References"
-          aria-label="Find References"
-          disabled={props.readOnly}
-          onClick={() => props.handlers.onEditorGoToReferences(props.paneId, currentEditorPosition())}
-        >
-          <ListTree size={14} strokeWidth={1.9} aria-hidden />
-        </CodeEditorCommandButton>
+        {props.language === "markdown" ? null : (
+          <>
+            <CodeEditorCommandSeparator aria-hidden />
+            <CodeEditorCommandButton
+              type="button"
+              title="Go to Definition"
+              aria-label="Go to Definition"
+              disabled={props.readOnly}
+              onClick={() => props.handlers.onEditorGoToDefinition(props.paneId, currentEditorPosition())}
+            >
+              <FileSearch size={14} strokeWidth={1.9} aria-hidden />
+            </CodeEditorCommandButton>
+            <CodeEditorCommandButton
+              type="button"
+              title="Find References"
+              aria-label="Find References"
+              disabled={props.readOnly}
+              onClick={() => props.handlers.onEditorGoToReferences(props.paneId, currentEditorPosition())}
+            >
+              <ListTree size={14} strokeWidth={1.9} aria-hidden />
+            </CodeEditorCommandButton>
+          </>
+        )}
       </CodeEditorCommandBar>
       {find.open ? (
         <InPaneFindBar
@@ -414,7 +423,10 @@ export function WorkbenchCodeEditor(props: {
           onClose={find.closeFind}
         />
       ) : null}
-      <CodeMirrorHost data-code-editor-host="true">
+      <CodeMirrorHost
+        data-code-editor-host="true"
+        data-editor-presentation={presentation}
+      >
         <CodeMirror
           ref={editorRef}
           value={props.value}

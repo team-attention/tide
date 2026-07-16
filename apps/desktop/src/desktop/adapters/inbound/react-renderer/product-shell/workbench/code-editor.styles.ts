@@ -1,16 +1,38 @@
 import { styled } from "styled-components";
+import { markdownLivePreviewStyles } from "./markdown-live-preview.styles.ts";
 
 export const CodeEditorSurface = styled.div`
-  --tide-code-bg: #171716;
-  --tide-code-chrome: #20201f;
-  --tide-code-gutter: #131312;
-  --tide-code-line: #31302d;
-  --tide-code-line-soft: #272623;
-  --tide-code-text: #dbd9d2;
-  --tide-code-muted: #77746c;
-  --tide-code-selection: rgba(48, 116, 197, 0.42);
-  --tide-code-active-line: rgba(57, 112, 240, 0.12);
-  --tide-code-cursor: #efe7c8;
+  --tide-code-bg: var(--tide-bg);
+  --tide-code-chrome: var(--tide-surface);
+  --tide-code-gutter: color-mix(in srgb, var(--tide-surface) 76%, var(--tide-bg));
+  --tide-code-line: var(--tide-line);
+  --tide-code-line-soft: color-mix(in srgb, var(--tide-line) 72%, transparent);
+  --tide-code-text: var(--tide-text);
+  --tide-code-muted: var(--tide-muted);
+  --tide-code-selection: var(--tide-editor-selection);
+  --tide-code-active-line: var(--tide-editor-active-line);
+  --tide-code-cursor: var(--tide-text);
+  --tide-code-keyword: #a626a4;
+  --tide-code-string: #397c3d;
+  --tide-code-comment: #8a8781;
+  --tide-code-number: #986801;
+  --tide-code-type: #0184bc;
+  --tide-code-function: #326dcc;
+  --tide-code-property: #c83d51;
+  --tide-code-punctuation: #5c5c62;
+  --tide-code-link: #326dcc;
+
+  [data-theme="dark"] & {
+    --tide-code-keyword: #c678dd;
+    --tide-code-string: #98c379;
+    --tide-code-comment: #7f848e;
+    --tide-code-number: #d19a66;
+    --tide-code-type: #e5c07b;
+    --tide-code-function: #61afef;
+    --tide-code-property: #e06c75;
+    --tide-code-punctuation: #828997;
+    --tide-code-link: #61afef;
+  }
   position: relative;
   width: 100%;
   min-width: 0;
@@ -32,6 +54,10 @@ export const CodeEditorCommandBar = styled.div`
   border-top: 1px solid var(--tide-code-line);
   border-bottom: 1px solid var(--tide-code-line);
   background: var(--tide-code-chrome);
+
+  [data-editor-language="markdown"] & {
+    border-top: 0;
+  }
 `;
 
 export const CodeEditorCommandButton = styled.button`
@@ -84,8 +110,9 @@ export const CodeMirrorHost = styled.div`
     height: 100%;
     background: var(--tide-code-bg);
     color: var(--tide-code-text);
-    font: 12.5px/1.62 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font: 12px/1.55 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-variant-ligatures: contextual;
+    letter-spacing: normal;
   }
 
   .cm-scroller {
@@ -118,7 +145,7 @@ export const CodeMirrorHost = styled.div`
   }
 
   .cm-tide-cmdlink {
-    color: #7dcfff;
+    color: var(--tide-code-link);
     cursor: pointer;
     text-decoration: underline;
     text-underline-offset: 2px;
@@ -239,70 +266,72 @@ export const CodeMirrorHost = styled.div`
   .tok-controlKeyword,
   .tok-moduleKeyword,
   .tok-operatorKeyword {
-    color: #c792ea;
+    color: var(--tide-code-keyword);
   }
 
   .tok-string,
   .tok-string2,
   .tok-special.tok-string {
-    color: #8bdc8b;
+    color: var(--tide-code-string);
   }
 
   .tok-comment,
   .tok-lineComment,
   .tok-blockComment {
-    color: #77746c;
+    color: var(--tide-code-comment);
     font-style: italic;
   }
 
   .tok-number,
   .tok-bool,
   .tok-atom {
-    color: #f6bd60;
+    color: var(--tide-code-number);
   }
 
   .tok-typeName,
   .tok-className,
   .tok-namespace {
-    color: #82aaff;
+    color: var(--tide-code-type);
   }
 
   .tok-function,
   .tok-function.tok-variableName,
   .tok-macroName {
-    color: #7dcfff;
+    color: var(--tide-code-function);
   }
 
   .tok-propertyName {
-    color: #ff8f8f;
+    color: var(--tide-code-property);
   }
 
   .tok-variableName,
   .tok-definition.tok-variableName {
-    color: #dbd9d2;
+    color: var(--tide-code-text);
   }
 
   .tok-operator,
   .tok-punctuation,
   .tok-bracket,
   .tok-separator {
-    color: #8e8a82;
+    color: var(--tide-code-punctuation);
   }
 
   .tok-meta,
   .tok-annotation {
-    color: #f6bd60;
+    color: var(--tide-code-number);
   }
 
   .tok-link,
   .tok-url {
-    color: #7dcfff;
+    color: var(--tide-code-link);
   }
 
   .tok-heading {
-    color: #ff8f8f;
+    color: var(--tide-code-text);
     font-weight: 650;
   }
+
+  ${markdownLivePreviewStyles}
 `;
 
 export const CodeEditorSelectionToolbar = styled.button`

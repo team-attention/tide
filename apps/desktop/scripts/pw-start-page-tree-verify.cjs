@@ -79,16 +79,13 @@ function check(label, ok, detail = "") {
   check("the workbench column opens with the file", (await workbench.count()) > 0);
   const tab = page.locator("[data-workbench-tab-title]", { hasText: fileName });
   check("a workbench editor tab shows the file name", (await tab.count()) > 0, fileName);
-  // Content renders via the code editor OR the markdown preview.
+  // Code and Markdown both render through the shared editable CodeMirror surface.
   const editorText =
-    ((await workbench.locator(".cm-content").first().innerText().catch(() => "")) || "") ||
-    ((await workbench.locator("[data-md-preview]").first().innerText().catch(() => "")) || "");
+    (await workbench.locator(".cm-content").first().innerText().catch(() => "")) || "";
   check("the editor renders file content", editorText.trim().length > 10, `${editorText.trim().length} chars`);
-  // Editable affordance: markdown shows an Edit toggle; code shows a contenteditable
-  // CodeMirror (NOT cm-readonly). Either proves the pane is editable, not a viewer.
-  const hasEditToggle = (await workbench.locator("[data-md-mode-option]", { hasText: "Edit" }).count()) > 0;
+  // Markdown Live Preview and regular code files are both editable CodeMirror documents.
   const editableCm = (await workbench.locator(".cm-content[contenteditable='true']").count()) > 0;
-  check("the pane is editable (not read-only)", hasEditToggle || editableCm, hasEditToggle ? "markdown Edit toggle" : "editable code editor");
+  check("the pane is editable (not read-only)", editableCm, "editable code editor");
 
   // Code intelligence (autocomplete) works on the start page too: it is
   // thread-independent (workspace.codeIntel, keyed by cwd). Open a real .ts file

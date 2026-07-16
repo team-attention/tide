@@ -10,7 +10,7 @@ import { javascript } from "@codemirror/lang-javascript";
 import { json as jsonLanguage } from "@codemirror/lang-json";
 import { rust } from "@codemirror/lang-rust";
 import { css as cssLanguage } from "@codemirror/lang-css";
-import { markdown as markdownLang } from "@codemirror/lang-markdown";
+import { markdown as markdownLang, markdownLanguage } from "@codemirror/lang-markdown";
 import { python } from "@codemirror/lang-python";
 import { go } from "@codemirror/lang-go";
 import { html as htmlLang } from "@codemirror/lang-html";
@@ -19,7 +19,7 @@ import { sql } from "@codemirror/lang-sql";
 import { xml as xmlLang } from "@codemirror/lang-xml";
 import { cpp } from "@codemirror/lang-cpp";
 import { java } from "@codemirror/lang-java";
-import { StreamLanguage } from "@codemirror/language";
+import { StreamLanguage, type Language } from "@codemirror/language";
 import { shell as shellMode } from "@codemirror/legacy-modes/mode/shell";
 import { toml as tomlMode } from "@codemirror/legacy-modes/mode/toml";
 import { X } from "lucide-react";
@@ -69,8 +69,8 @@ export function WorkbenchEditorPane(props: {
       cancelled = true;
     };
   }, [gitDiffTarget?.changeKey, gitDiffTargetId, props.handlers]);
-  // The file-path breadcrumb. For markdown/html it rides INSIDE the view's header row
-  // (alongside the Preview/Code toggle) so the controls sit in the path bar — one row,
+  // The file-path breadcrumb. For Markdown/HTML it rides inside the view's header row
+  // (alongside the presentation toggle) so the controls sit in one path-bar row,
   // like the Browser Pane's address bar. For code it stays a standalone path bar.
   const breadcrumb = createEditorBreadcrumb(props.pane, props.draft?.dirty === true, props.handlers);
   return (
@@ -355,7 +355,12 @@ export function editorLanguageExtensions(language: string) {
     case "css":
       return [cssLanguage()];
     case "markdown":
-      return [markdownLang()];
+      return [
+        markdownLang({
+          base: markdownLanguage,
+          codeLanguages: markdownFencedCodeLanguage,
+        }),
+      ];
     case "python":
       return [python()];
     case "go":
@@ -380,6 +385,55 @@ export function editorLanguageExtensions(language: string) {
     default:
       return [];
   }
+}
+
+const markdownFencedCodeLanguageFactories: Record<string, () => Language> = {
+  typescript: () => javascript({ jsx: true, typescript: true }).language,
+  javascript: () => javascript({ jsx: true }).language,
+  json: () => jsonLanguage().language,
+  rust: () => rust().language,
+  css: () => cssLanguage().language,
+  python: () => python().language,
+  go: () => go().language,
+  html: () => htmlLang().language,
+  yaml: () => yamlLang().language,
+  sql: () => sql().language,
+  xml: () => xmlLang().language,
+  cpp: () => cpp().language,
+  java: () => java().language,
+};
+const markdownFencedCodeLanguageAliases: Record<string, string> = {
+  ts: "typescript",
+  tsx: "typescript",
+  js: "javascript",
+  jsx: "javascript",
+  rs: "rust",
+  py: "python",
+  htm: "html",
+  yml: "yaml",
+  svg: "xml",
+  c: "cpp",
+  cc: "cpp",
+  cxx: "cpp",
+  h: "cpp",
+  hpp: "cpp",
+};
+const markdownFencedCodeLanguageCache = new Map<string, Language>();
+
+function markdownFencedCodeLanguage(info: string): Language | null {
+  const requested = info.trim().toLowerCase();
+  const language = markdownFencedCodeLanguageAliases[requested] ?? requested;
+  const factory = markdownFencedCodeLanguageFactories[language];
+  if (factory === undefined) {
+    return null;
+  }
+  const cached = markdownFencedCodeLanguageCache.get(language);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const created = factory();
+  markdownFencedCodeLanguageCache.set(language, created);
+  return created;
 }
 
 const EditorPaneSurface = styled(WorkbenchPaneSurface)``;
