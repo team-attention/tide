@@ -203,7 +203,8 @@ export interface TidePreloadSurface {
   applyAppUpdate(): void;
   checkForAppUpdate(): void;
   getAppVersion(): Promise<string>;
-  // Renderer UI prefs (theme, rail order, list/worktree settings, start composer), read
+  // Renderer UI prefs (theme, rail order, list/worktree settings, start composer, last-known
+  // provider catalogs), read
   // synchronously from Main at preload (sync IPC) so the renderer never touches localStorage
   // on the boot path (that first sync access stalls ~3.8s). Raw string values keyed by the
   // legacy storage key. saveUiPref persists a change to the Main-owned file. See ui-prefs.ts.

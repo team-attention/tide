@@ -89,6 +89,14 @@ export function applyProductShellBackendEvent(
       if (catalog === null) {
         return nextState;
       }
+      // A restored last-known-successful catalog is a useful option-list seed at
+      // boot. Do not replace it with a transient failed/empty refresh: keep it
+      // until the provider reports a newer ready catalog. The live request still
+      // runs on every launch and remains the source of the next replacement.
+      const previousCatalog = nextState.providerCatalogs[catalog.agentId];
+      if (hasReadyModels(previousCatalog) && !hasReadyModels(catalog)) {
+        return nextState;
+      }
       const withCatalog = {
         ...nextState,
         providerCatalogs: {
@@ -422,6 +430,12 @@ export function applyProductShellBackendEvent(
     default:
       return nextState;
   }
+}
+
+function hasReadyModels(
+  catalog: AgentChatProviderCatalog | undefined,
+): catalog is AgentChatProviderCatalog {
+  return catalog?.status === "ready" && catalog.models.length > 0;
 }
 
 function applyProviderCatalogDefaultToStartComposer(

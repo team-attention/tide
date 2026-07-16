@@ -527,6 +527,9 @@ export interface CreateProductShellStateInput {
   // Seed the persisted settings (renderer loads from localStorage).
   listSettings?: ProductShellListSettings;
   worktreeSettings?: ProductShellWorktreeSettings;
+  // Last-known ready provider catalogs restored by the renderer before first paint.
+  // They remain app/provider state, never Thread state.
+  providerCatalogs?: Record<string, AgentChatProviderCatalog>;
   // Seed the persisted Left Rail manual order (spec: left-rail-manual-ordering).
   pinnedItemOrder?: ProductShellPinnedItemRef[];
   projectOrder?: string[];
