@@ -10,7 +10,7 @@ import { javascript } from "@codemirror/lang-javascript";
 import { json as jsonLanguage } from "@codemirror/lang-json";
 import { rust } from "@codemirror/lang-rust";
 import { css as cssLanguage } from "@codemirror/lang-css";
-import { markdown as markdownLang } from "@codemirror/lang-markdown";
+import { markdown as markdownLang, markdownLanguage } from "@codemirror/lang-markdown";
 import { python } from "@codemirror/lang-python";
 import { go } from "@codemirror/lang-go";
 import { html as htmlLang } from "@codemirror/lang-html";
@@ -69,8 +69,8 @@ export function WorkbenchEditorPane(props: {
       cancelled = true;
     };
   }, [gitDiffTarget?.changeKey, gitDiffTargetId, props.handlers]);
-  // The file-path breadcrumb. For markdown/html it rides INSIDE the view's header row
-  // (alongside the Preview/Code toggle) so the controls sit in the path bar — one row,
+  // The file-path breadcrumb. For Markdown/HTML it rides inside the view's header row
+  // (alongside the presentation toggle) so the controls sit in one path-bar row,
   // like the Browser Pane's address bar. For code it stays a standalone path bar.
   const breadcrumb = createEditorBreadcrumb(props.pane, props.draft?.dirty === true, props.handlers);
   return (
@@ -355,7 +355,12 @@ export function editorLanguageExtensions(language: string) {
     case "css":
       return [cssLanguage()];
     case "markdown":
-      return [markdownLang()];
+      return [
+        markdownLang({
+          base: markdownLanguage,
+          codeLanguages: markdownFencedCodeLanguage,
+        }),
+      ];
     case "python":
       return [python()];
     case "go":
@@ -380,6 +385,24 @@ export function editorLanguageExtensions(language: string) {
     default:
       return [];
   }
+}
+
+function markdownFencedCodeLanguage(info: string) {
+  const language = info.trim().toLowerCase();
+  if (["ts", "tsx", "typescript"].includes(language)) return javascript({ jsx: true, typescript: true }).language;
+  if (["js", "jsx", "javascript"].includes(language)) return javascript({ jsx: true }).language;
+  if (language === "json") return jsonLanguage().language;
+  if (language === "rust" || language === "rs") return rust().language;
+  if (language === "css") return cssLanguage().language;
+  if (language === "python" || language === "py") return python().language;
+  if (language === "go") return go().language;
+  if (["html", "htm"].includes(language)) return htmlLang().language;
+  if (["yaml", "yml"].includes(language)) return yamlLang().language;
+  if (language === "sql") return sql().language;
+  if (["xml", "svg"].includes(language)) return xmlLang().language;
+  if (["c", "cc", "cpp", "cxx", "h", "hpp"].includes(language)) return cpp().language;
+  if (language === "java") return java().language;
+  return null;
 }
 
 const EditorPaneSurface = styled(WorkbenchPaneSurface)``;

@@ -214,7 +214,7 @@ const check = (name, ok, detail) => {
       await shot(page, "12-two-editors");
       check("opening two files opens two editor tabs (no replace)", editorTabs === 2, `editorTabs=${editorTabs}`);
 
-      // Markdown preview: the Preview/Edit/Pick controls live IN the file-path header
+      // Markdown presentation controls live IN the file-path header
       // row (one bar), not a separate floating toolbar.
       await fileA.click(); // back to README.md (markdown)
       await page.waitForTimeout(700);

@@ -47,6 +47,7 @@ Each spec must be narrow enough to test and implement as one slice.
 | [Tide MCP Browser Action Tool](tide-mcp-browser-action-tool.md) | Drafted | Let Agents schedule bounded Browser Pane click/type actions and receive Desktop WebView execution evidence. |
 | [Desktop Workbench Pane Content Rendering](desktop-workbench-pane-content-rendering.md) | Drafted | Render Browser, Editor, Diff, and Terminal Workbench Pane contract previews in Product Shell. |
 | [Workbench Editor Pane Editing](workbench-editor-pane-editing.md) | Drafted | Let humans edit and save Thread-scoped files through visible Workbench Editor Panes without broadening Agent edit tools. |
+| [Workbench Editor UI/UX Refresh](workbench-editor-ui-ux-refresh.md) | Implemented | Make Editor surfaces theme-aware, align code and prose typography, and provide editable Markdown Live Preview and Source presentations over one document. |
 | [Workbench Editor Code Navigation](workbench-editor-code-navigation.md) | Drafted | Add the first Backend-owned go-to-definition path for Workbench Editor Panes. |
 | [Workbench Browser WebView Pane](workbench-browser-webview-pane.md) | Drafted | Render Browser Workbench Pane URLs through an Electron-hosted page surface. |
 | [Workbench Browser Pane Evidence Loop](workbench-browser-pane-evidence-loop.md) | Drafted | Store WebView title, URL, and bounded page text in Backend Workbench state for MCP observation. |

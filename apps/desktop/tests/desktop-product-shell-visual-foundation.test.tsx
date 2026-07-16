@@ -10,8 +10,6 @@ import { fileURLToPath } from "node:url";
 
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { highlightToHtml } from "../src/desktop/adapters/inbound/react-renderer/support/code-highlight.ts";
-
 import {
   addProductShellComposerContextChip,
   applyProductShellBackendEvent,
@@ -1505,17 +1503,19 @@ test("code_editor_pane_has_no_markdown_preview_toggle", () => {
   assert.match(html, /aria-label="Editor Pane text"/);
 });
 
-test("workbench_code_editor_skin_uses_dark_readable_code_surface", () => {
-  // Spec: docs_v2/specs/workbench-editor-pane-editing.md (D8)
+test("workbench_code_editor_skin_uses_theme_aware_compact_surface", () => {
+  // Spec: docs_v2/specs/workbench-editor-ui-ux-refresh.md (D1, D2)
   const source = readRendererSource("product-shell/workbench/code-editor.styles.ts");
 
-  assert.match(source, /--tide-code-bg:\s*#171716/);
-  assert.match(source, /--tide-code-text:\s*#dbd9d2/);
-  assert.match(source, /--tide-code-selection:\s*rgba\(48,\s*116,\s*197,\s*0\.42\)/);
+  assert.match(source, /--tide-code-bg:\s*var\(--tide-bg\)/);
+  assert.match(source, /--tide-code-text:\s*var\(--tide-text\)/);
+  assert.match(source, /--tide-code-selection:\s*var\(--tide-editor-selection\)/);
   assert.match(source, /\.cm-content\s*{[\s\S]*padding:\s*12px 0 28px/s);
   assert.match(source, /\.cm-line\s*{[\s\S]*padding:\s*0 28px 0 18px/s);
-  assert.match(source, /\.tok-keyword[\s\S]*#c792ea/s);
-  assert.doesNotMatch(source, /background:\s*var\(--tide-bg\);\s*\n\s*color:\s*var\(--tide-text\);\s*\n\s*font:\s*12px\/1\.55/s);
+  assert.match(source, /font:\s*12px\/1\.55\s+"Roboto Mono"/);
+  assert.match(source, /letter-spacing:\s*normal/);
+  assert.match(source, /\[data-theme="dark"\]\s*&\s*\{/);
+  assert.doesNotMatch(source, /--tide-code-bg:\s*#171716/);
 });
 
 test("editor_breadcrumb_without_relative_path_is_static", () => {
@@ -1535,8 +1535,8 @@ test("editor_breadcrumb_without_relative_path_is_static", () => {
   assert.doesNotMatch(html, /aria-label="Reveal Scratch in FileTree"/);
 });
 
-test("markdown_editor_pane_renders_preview_with_rendered_headings", () => {
-  // Spec: docs_v2/specs/workbench-markdown-preview-editor.md (UC-1)
+test("markdown_editor_pane_defaults_to_live_preview_on_one_shared_editor", () => {
+  // Spec: docs_v2/specs/workbench-editor-ui-ux-refresh.md (UC-2, D3)
   const html = renderProductShell(
     editorPaneState({
       title: "CLAUDE.md",
@@ -1548,109 +1548,36 @@ test("markdown_editor_pane_renders_preview_with_rendered_headings", () => {
       truncated: false,
     }),
   );
-  // Markdown renders to a Preview (rendered headings), not raw "# " source.
-  assert.match(html, /aria-label="Markdown preview"/);
-  assert.match(html, /<h1 id="tide-project-rules">/);
-  assert.match(html, /href="#tide-project-rules"/);
-  assert.match(html, /Tide — Project Rules<\/h1>/);
-  assert.match(html, /<h2 id="evidence-first">/);
-  assert.match(html, /Evidence-First<\/h2>/);
-  assert.doesNotMatch(html, /# Tide — Project Rules/);
-  // A Preview/Edit toggle is present for markdown.
-  assert.match(html, /Markdown view mode/);
-  // Breadcrumb includes the workspace root, like the Figma (`tide › CLAUDE.md`).
+  assert.match(html, /data-md-mode="live-preview"/);
+  assert.match(html, /aria-label="Markdown presentation"/);
+  assert.match(html, />Live Preview<\/button>/);
+  assert.match(html, />Source<\/button>/);
+  assert.match(html, /data-editor-presentation="markdown-live"/);
+  assert.match(html, /data-editor-language="markdown"/);
+  assert.equal(html.match(/data-code-editor-surface="true"/g)?.length, 1);
+  assert.doesNotMatch(html, /aria-label="Markdown preview"/);
   assert.match(html, /data-editor-breadcrumb="true"/);
 });
 
-test("markdown_preview_escapes_raw_html", () => {
-  // Spec: docs_v2/specs/workbench-markdown-preview-editor.md (D1)
-  const html = renderProductShell(
-    editorPaneState({
-      title: "evil.md",
-      filePath: "/Users/you/Workspace/tide/evil.md",
-      relativePath: "evil.md",
-      bodyText: "# Hi\n\n<img src=x onerror=alert(1)>\n",
-      bodyTextPreview: "# Hi\n\n<img src=x onerror=alert(1)>\n",
-      byteLength: 36,
-      truncated: false,
-    }),
-  );
-  // Raw HTML in the file is escaped, never emitted as a live element.
-  assert.doesNotMatch(html, /<img src=x onerror/);
-  assert.match(html, /&lt;img/);
-});
+test("markdown_live_preview_uses_safe_in_place_decorations_for_common_and_gfm_syntax", () => {
+  // Spec: docs_v2/specs/workbench-editor-ui-ux-refresh.md (UC-3, D4, D5)
+  const source = readRendererSource("product-shell/workbench/markdown-live-preview.ts");
 
-test("markdown_editor_pane_renders_gfm_table", () => {
-  // Spec: docs_v2/specs/workbench-markdown-preview-editor.md (UC-4, UC-5)
-  const body = "# T\n\n| A | B |\n| - | - |\n| 1 | 2 |\n";
-  const html = renderProductShell(
-    editorPaneState({
-      title: "table.md",
-      filePath: "/Users/you/Workspace/tide/table.md",
-      relativePath: "table.md",
-      bodyText: body,
-      bodyTextPreview: body,
-      byteLength: body.length,
-      truncated: false,
-    }),
-  );
-  // The pipe table renders as a real table, not raw "| A | B |" source.
-  assert.match(html, /<table>/);
-  assert.match(html, /<th>A<\/th>/);
-  assert.match(html, /<td>1<\/td>/);
-  assert.doesNotMatch(html, /\| A \| B \|/);
-});
-
-test("markdown_editor_pane_renders_task_list_checkboxes", () => {
-  // Spec: docs_v2/specs/workbench-markdown-preview-editor.md (UC-4, Invariant 1)
-  const body = "# Todo\n\n- [ ] open item\n- [x] done item\n";
-  const html = renderProductShell(
-    editorPaneState({
-      title: "todo.md",
-      filePath: "/Users/you/Workspace/tide/todo.md",
-      relativePath: "todo.md",
-      bodyText: body,
-      bodyTextPreview: body,
-      byteLength: body.length,
-      truncated: false,
-    }),
-  );
-  // Markers become real (read-only) checkboxes, not literal "[ ]"/"[x]" text.
-  assert.match(html, /class="contains-task-list"/);
-  assert.match(html, /class="task-list-item-checkbox"[^>]*type="checkbox"/);
-  assert.match(html, /checked=""/); // the [x] item
-  assert.match(html, /disabled=""/); // read-only
-  assert.doesNotMatch(html, /\[ \] open item/);
-  assert.doesNotMatch(html, /\[x\] done item/);
-});
-
-test("markdown_editor_pane_renders_fenced_code_highlighted_on_view", () => {
-  // Spec: docs_v2/specs/workbench-markdown-preview-editor.md (UC-4, D6)
-  // Fences render as plain, PENDING code up front so a code-heavy markdown file
-  // opens without paying every fence's highlight parse; WorkbenchMarkdownView
-  // then upgrades each fence to tok-* spans once it scrolls into view (an
-  // IntersectionObserver effect, which the static server render does not run).
-  const body = "# Code\n\n```ts\nconst x = 1;\n```\n";
-  const html = renderProductShell(
-    editorPaneState({
-      title: "code.md",
-      filePath: "/Users/you/Workspace/tide/code.md",
-      relativePath: "code.md",
-      bodyText: body,
-      bodyTextPreview: body,
-      byteLength: body.length,
-      truncated: false,
-    }),
-  );
-  // The fence is emitted pending (marked for deferred highlight), tagged with its
-  // language, carrying the plain code — inside the md-fence block.
-  assert.match(html, /class="md-fence"/);
-  assert.match(html, /data-tide-fence/);
-  assert.match(html, /data-tide-lang="ts"/);
-  assert.match(html, /const x = 1;/);
-  // The deferred upgrade applies real tok-* highlight spans from the bundled
-  // highlighter (the function the IntersectionObserver effect runs per fence).
-  assert.match(highlightToHtml("const x = 1;", "ts"), /class="tok-/);
+  for (const syntaxNode of [
+    "HeaderMark",
+    "StrongEmphasis",
+    "InlineCode",
+    "TaskMarker",
+    "FencedCode",
+    "TableCell",
+    "Image",
+  ]) {
+    assert.match(source, new RegExp(`name === "${syntaxNode}"`));
+  }
+  assert.match(source, /Decoration\.replace\(\{\s*widget: new TaskCheckboxWidget/s);
+  assert.match(source, /data:image\\\/\[a-z0-9\.\+\-\]\+;base64/);
+  assert.match(source, /Image preview unavailable/);
+  assert.doesNotMatch(source, /dangerouslySetInnerHTML|\.innerHTML\s*=/);
 });
 
 test("editing_workbench_editor_pane_marks_draft_dirty", () => {
