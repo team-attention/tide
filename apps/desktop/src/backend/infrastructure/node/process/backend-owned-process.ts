@@ -230,6 +230,7 @@ export interface CreateBackendOwnedProcessSpawnerInput {
   manifestPath?: string;
   spawnImpl?: typeof nodeSpawn;
   platform?: NodeJS.Platform;
+  onManifestError?: (error: unknown) => void;
   policy?: Partial<{
     beforeSignalMs: number;
     naturalExitMs: number;
@@ -253,7 +254,13 @@ export function createBackendOwnedProcessSpawner(
   const registry = input.registry ?? new BackendOwnedProcessRegistry(
     input.manifestPath === undefined
       ? undefined
-      : (snapshots) => writeOwnedProcessManifest(input.manifestPath!, input.backendInstanceId, ownerPid, snapshots),
+      : (snapshots) => writeOwnedProcessManifest(
+        input.manifestPath!,
+        input.backendInstanceId,
+        ownerPid,
+        snapshots,
+        input.onManifestError,
+      ),
   );
   const spawnImpl = input.spawnImpl ?? nodeSpawn;
   const policy = { ...DEFAULT_POLICY, ...input.policy };
@@ -434,10 +441,10 @@ async function observeExit(
 }
 
 function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, Math.max(0, ms));
-    timer.unref?.();
-  });
+  // Stop deadlines deliberately keep the Backend event loop alive. Main waits
+  // for the shutdown acknowledgement, and allowing the owner to disappear
+  // before TERM/KILL escalation completes can strand the exact child tree.
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
 }
 
 interface OwnedProcessManifest {
@@ -453,23 +460,41 @@ function writeOwnedProcessManifest(
   backendInstanceId: string,
   ownerPid: number,
   snapshots: readonly BackendOwnedProcessSnapshot[],
+  onError: (error: unknown) => void = defaultManifestErrorReporter,
 ): void {
-  const active = snapshots.filter((snapshot) =>
-    snapshot.state === "planned" || snapshot.state === "active" || snapshot.state === "stopping" || snapshot.state === "indeterminate"
-  );
-  if (active.length === 0) {
-    rmSync(path, { force: true });
-    return;
-  }
-  const manifest: OwnedProcessManifest = {
-    schemaVersion: 1,
-    backendInstanceId,
-    ownerPid,
-    updatedAt: new Date().toISOString(),
-    processes: active.map((snapshot) => ({ ...snapshot })),
-  };
-  mkdirSync(dirname(path), { recursive: true });
   const temporaryPath = `${path}.${process.pid}.tmp`;
-  writeFileSync(temporaryPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
-  renameSync(temporaryPath, path);
+  try {
+    const active = snapshots.filter((snapshot) =>
+      snapshot.state === "planned" || snapshot.state === "active" || snapshot.state === "stopping" || snapshot.state === "indeterminate"
+    );
+    if (active.length === 0) {
+      rmSync(path, { force: true });
+      return;
+    }
+    const manifest: OwnedProcessManifest = {
+      schemaVersion: 1,
+      backendInstanceId,
+      ownerPid,
+      updatedAt: new Date().toISOString(),
+      processes: active.map((snapshot) => ({ ...snapshot })),
+    };
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(temporaryPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
+    renameSync(temporaryPath, path);
+  } catch (error) {
+    try {
+      rmSync(temporaryPath, { force: true });
+    } catch {
+      // The original manifest error is the actionable failure.
+    }
+    try {
+      onError(error);
+    } catch {
+      // Diagnostics must never turn a recovery-file failure into Backend death.
+    }
+  }
+}
+
+function defaultManifestErrorReporter(error: unknown): void {
+  console.warn("Failed to persist Backend-owned process manifest.", error);
 }

@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { listProcessesWithEnvironment } from "../process/process-observation.ts";
 
 // Compatibility cleanup for children launched before exact owner manifests.
 // New managed processes carry TIDE_PROCESS_OWNER_TOKEN and are exclusively
@@ -17,7 +17,7 @@ export function reapOrphanedTideAgentProcesses(deps: ReapOrphanedAgentsDeps = {}
   if (process.platform === "win32" && deps.listProcesses === undefined) {
     return 0;
   }
-  const listProcesses = deps.listProcesses ?? defaultListProcesses;
+  const listProcesses = deps.listProcesses ?? listProcessesWithEnvironment;
   const kill = deps.kill ?? ((pid: number) => process.kill(pid, "SIGKILL"));
   const selfPid = deps.selfPid ?? process.pid;
 
@@ -47,18 +47,4 @@ export function reapOrphanedTideAgentProcesses(deps: ReapOrphanedAgentsDeps = {}
     }
   }
   return reaped;
-}
-
-function defaultListProcesses(): string {
-  try {
-    // -E appends each process's environment to the command column (macOS/BSD), so
-    // the TIDE_RUNTIME_ID tag is visible; -ww prevents truncation.
-    const result = spawnSync("ps", ["-axwwE", "-o", "pid=,ppid=,command="], {
-      encoding: "utf8",
-      timeout: 4000,
-    });
-    return typeof result.stdout === "string" ? result.stdout : "";
-  } catch {
-    return "";
-  }
 }

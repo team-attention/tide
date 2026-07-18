@@ -14,6 +14,9 @@ import {
 import {
   reapOwnedProcessManifest,
 } from "../src/backend/infrastructure/node/process/reap-owned-process-manifests.ts";
+import {
+  processListArgsWithEnvironment,
+} from "../src/backend/infrastructure/node/process/process-observation.ts";
 
 class FakeChild extends EventEmitter {
   readonly pid: number;
@@ -161,6 +164,43 @@ test("owner_manifest_contains_no_process_environment_or_command_output", () => {
   assert.doesNotMatch(text, /SUPER_SECRET_KEY|secret-not-recorded/);
   assert.match(text, /helper:opencode-auth/);
   rmSync(root, { recursive: true, force: true });
+});
+
+test("manifest_persistence_failure_is_reported_without_crashing_registry_transitions", () => {
+  const root = mkdtempSync(join(tmpdir(), "tide-owned-manifest-failure-test-"));
+  const blockingFile = join(root, "not-a-directory");
+  writeFileSync(blockingFile, "block");
+  const errors: unknown[] = [];
+  const child = new FakeChild(4302);
+  const spawner = createBackendOwnedProcessSpawner({
+    backendInstanceId: "backend-manifest-failure",
+    manifestPath: join(blockingFile, "backend.json"),
+    spawnImpl: fakeSpawn(child),
+    platform: "win32",
+    onManifestError: (error) => errors.push(error),
+  });
+
+  assert.doesNotThrow(() => spawner.spawn({
+    resourceId: "helper:manifest-failure",
+    kind: "provider_helper",
+    scope: { kind: "backend" },
+    command: "/bin/fake",
+    args: [],
+    options: {},
+  }));
+  assert.ok(errors.length >= 1);
+  assert.equal(spawner.registry.activeSnapshots().length, 1);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("process_observation_uses_platform_specific_environment_flags", () => {
+  assert.deepEqual(processListArgsWithEnvironment("darwin"), [
+    "-axwwE", "-o", "pid=,ppid=,pgid=,command=",
+  ]);
+  assert.deepEqual(processListArgsWithEnvironment("linux"), [
+    "axwwe", "-o", "pid=,ppid=,pgid=,command=",
+  ]);
+  assert.equal(processListArgsWithEnvironment("win32"), undefined);
 });
 
 test("manifest_reaper_requires_dead_owner_and_exact_owner_token", () => {

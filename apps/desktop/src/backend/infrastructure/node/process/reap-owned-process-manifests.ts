@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
+
+import { listProcessesWithEnvironment } from "./process-observation.ts";
 
 interface ManifestProcess {
   resourceId: string;
@@ -51,7 +52,7 @@ export function reapOwnedProcessManifest(
   if (isAlive(manifest.ownerPid)) return 0;
 
   const observations = parseProcessObservations(
-    (deps.listProcesses ?? defaultListProcesses)(),
+    (deps.listProcesses ?? listProcessesWithEnvironment)(),
   );
   const kill = deps.kill ?? ((pid, signal) => process.kill(pid, signal));
   const platform = deps.platform ?? process.platform;
@@ -141,19 +142,6 @@ function parseProcessObservations(output: string): ProcessObservation[] {
       command: match[4],
     }];
   });
-}
-
-function defaultListProcesses(): string {
-  if (process.platform === "win32") return "";
-  try {
-    const result = spawnSync("ps", ["-axwwE", "-o", "pid=,ppid=,pgid=,command="], {
-      encoding: "utf8",
-      timeout: 4_000,
-    });
-    return typeof result.stdout === "string" ? result.stdout : "";
-  } catch {
-    return "";
-  }
 }
 
 function defaultIsAlive(pid: number): boolean {
