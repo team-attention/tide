@@ -130,6 +130,11 @@ import {
 
 import { createOpencodeAgentIntegration } from "../../../adapters/outbound/agent-integrations/opencode/opencode-agent-integration.ts";
 import { createProviderDetection } from "../provider/provider-detection.ts";
+import {
+  createBackendOwnedProcessSpawner,
+  type BackendOwnedProcessSpawner,
+} from "../process/backend-owned-process.ts";
+import { ownedProcessManifestPath } from "../process/reap-owned-process-manifests.ts";
 
 import { codexRolloutTurnEnded as codexRolloutTurnEndedFromText } from "../../../adapters/outbound/agent-integrations/codex/codex-rollout-turn-detection.ts";
 
@@ -194,6 +199,7 @@ export interface CreateLiveBackendContractMessageAdapterInput {
   startMcpSocket?: boolean;
   browserRuntimePort?: BrowserRuntimePort;
   backendInstanceId?: string;
+  processSpawner?: BackendOwnedProcessSpawner;
   tideCommand?: string;
   tideMcpEntrypoint?: string;
   preloadProviderCatalog?: boolean;
@@ -238,6 +244,10 @@ export function createLiveBackendContractMessageAdapter(
   // TIDE_SOCKET is a child MCP bridge value, not Backend ownership input. Always
   // mint the route from this Backend owner instance.
   const tideSocket = processBoundTideMcpSocketPath({ appDataRoot, backendInstanceId });
+  const processSpawner = input.processSpawner ?? createBackendOwnedProcessSpawner({
+    backendInstanceId,
+    manifestPath: ownedProcessManifestPath(appDataRoot, backendInstanceId),
+  });
   const bootstrapScopeId = createProviderBootstrapScopeId({
     appDataRoot,
     backendInstanceId,
@@ -326,7 +336,8 @@ export function createLiveBackendContractMessageAdapter(
   let emitProviderCatalogChanged: (agentId: ProviderCliAgentId) => void = () => undefined;
 
   let service: ThreadRuntimeService;
-  const ptyLauncher = createPythonPtyProcessLauncher();
+  const ptyLauncher = createPythonPtyProcessLauncher({ processSpawner });
+  const workspaceCodeIntelligencePort = createWorkspaceCodeIntelligenceRouter({ processSpawner });
   const nativeEvidenceStore = createInMemoryNativeEvidenceStore({
     keepRawFrames: process.env.TIDE_NATIVE_RAW_EVIDENCE === "1",
   });
@@ -350,6 +361,7 @@ export function createLiveBackendContractMessageAdapter(
   const readinessRegistry = createRuntimeReadinessRegistry();
   const providerCliRuntimePort = createAgentIntegrationAgentRuntimePort({
     integrations,
+    processSpawner,
     resolveRuntimeEnvironment: ({ cwd, planEnv }) =>
       resolveAugmentedEnvironment({ currentEnv: { ...env, ...planEnv }, cwd }),
     // The projector serializes ingestion per thread (see serializeIngest), so a
@@ -403,7 +415,7 @@ export function createLiveBackendContractMessageAdapter(
     },
     // TS in-process + LSP-on-PATH engines behind one router (spec:
     // workbench-editor-language-intelligence).
-    workspaceCodeIntelligencePort: createWorkspaceCodeIntelligenceRouter(),
+    workspaceCodeIntelligencePort,
     browserRuntimePort: input.browserRuntimePort,
     defaultWorkbenchTerminalCommand: defaultWorkbenchTerminalCommand({ env }),
     defaultWorkbenchTerminalArgs: [],
@@ -446,6 +458,7 @@ export function createLiveBackendContractMessageAdapter(
     resolveExecutable,
     defaultCwd: process.cwd(),
     updateChecker: agentUpdateChecker,
+    processSpawner,
   });
   emitProviderInventoryChanged = () => {
     emitBackendEvents([
@@ -532,6 +545,12 @@ export function createLiveBackendContractMessageAdapter(
   return {
     ...persistentAdapter,
     async shutdown(): Promise<void> {
+      await Promise.allSettled([
+        providerCliRuntimePort.shutdown?.(),
+        detection.shutdown(),
+        workspaceCodeIntelligencePort.dispose?.(),
+      ]);
+      await processSpawner.shutdown();
       await persistentAdapter.flushPendingPersists();
       await mcpSocketListenSettled;
       if (mcpSocketServer !== undefined && mcpSocketListening) {

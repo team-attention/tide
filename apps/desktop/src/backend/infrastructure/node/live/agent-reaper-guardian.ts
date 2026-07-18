@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 
 import { reapOrphanedTideAgentProcesses } from "./reap-orphaned-agents.ts";
+import { reapOwnedProcessManifest } from "../process/reap-owned-process-manifests.ts";
 
 // A detached watchdog that OUTLIVES the backend. A clean quit already reaps agents via
 // the backend's own shutdown (SIGTERM -> closed stdio -> providers exit on EOF), but a
@@ -79,7 +80,17 @@ export async function runAgentReaperGuardianFromEnv(
   if (!Number.isInteger(targetPid) || targetPid <= 0) {
     return undefined;
   }
-  return runAgentReaperGuardian({ targetPid });
+  const manifestPath = env.TIDE_GUARDIAN_MANIFEST_PATH;
+  return runAgentReaperGuardian({
+    targetPid,
+    reap: () =>
+      reapOrphanedTideAgentProcesses() +
+      // This guardian just observed its exact watched Backend exit. Do not let a
+      // rapidly reused PID make the manifest look live again.
+      (manifestPath === undefined
+        ? 0
+        : reapOwnedProcessManifest(manifestPath, { isAlive: () => false })),
+  });
 }
 
 export interface SpawnAgentReaperGuardianInput {
@@ -87,6 +98,7 @@ export interface SpawnAgentReaperGuardianInput {
   // the same self-relaunch recipe the Tide MCP stdio bridge uses.
   entrypointPath: string;
   targetPid: number;
+  manifestPath?: string;
   command?: string;
   env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
@@ -121,6 +133,9 @@ export function spawnAgentReaperGuardian(input: SpawnAgentReaperGuardianInput): 
         // Run the Electron binary as a plain Node runtime (matches the MCP bridge).
         ELECTRON_RUN_AS_NODE: "1",
         TIDE_GUARDIAN_TARGET_PID: String(input.targetPid),
+        ...(input.manifestPath === undefined
+          ? {}
+          : { TIDE_GUARDIAN_MANIFEST_PATH: input.manifestPath }),
       },
     });
     // A failed launch (missing binary, bad path) emits 'error' asynchronously; with no

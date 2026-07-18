@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
+import type { ChildProcess } from "node:child_process";
 
 import {
   buildOpencodeVendors,
@@ -10,6 +13,10 @@ import {
 } from "../src/backend/infrastructure/node/provider/opencode-vendor-catalog.ts";
 import { createOpencodeAuthServer } from "../src/backend/infrastructure/node/provider/opencode-auth-server.ts";
 import { parseOpencodeProviderOptions } from "../src/backend/infrastructure/node/provider/opencode-auth-server.ts";
+import type {
+  BackendOwnedProcessSpawner,
+  ManagedBackendOwnedProcess,
+} from "../src/backend/infrastructure/node/process/backend-owned-process.ts";
 import {
   buildOpencodeConnectSurface,
   createAgentChatShellState,
@@ -436,4 +443,62 @@ test("auth server listProviderOptions keeps provider search available when auth 
   const options = await server.listProviderOptions();
   assert.equal(options[0].id, "abacus");
   assert.equal(options[0].authMethods, undefined);
+});
+
+test("opencode auth helper shares concurrent leases and stops after the idle deadline", async () => {
+  let spawnCount = 0;
+  let stopCount = 0;
+  const processSpawner = {
+    registry: {} as BackendOwnedProcessSpawner["registry"],
+    spawn(input) {
+      spawnCount += 1;
+      const child = new EventEmitter() as EventEmitter & ChildProcess;
+      Object.assign(child, {
+        pid: 7000 + spawnCount,
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        stdin: null,
+        stdio: [],
+      });
+      let resolveExit!: (value: { exitCode: number | null; signal: NodeJS.Signals | null }) => void;
+      const exited = new Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+        resolveExit = resolve;
+      });
+      const managed: ManagedBackendOwnedProcess = {
+        child,
+        snapshot: {} as ManagedBackendOwnedProcess["snapshot"],
+        exited,
+        async stop() {
+          stopCount += 1;
+          const value = { exitCode: 0, signal: null };
+          child.emit("exit", value.exitCode, value.signal);
+          resolveExit(value);
+          return { resourceId: input.resourceId, outcome: "exited", exit: value };
+        },
+      };
+      queueMicrotask(() => child.stdout?.emit("data", Buffer.from("listening on http://127.0.0.1:43210\n")));
+      return managed;
+    },
+    async shutdown() { return []; },
+  } as BackendOwnedProcessSpawner;
+  const server = createOpencodeAuthServer({
+    resolveExecutable: () => "/fake/opencode",
+    processSpawner,
+    idleMs: 5,
+    fetchImpl: async (url) => fakeResponse({
+      ok: true,
+      status: 200,
+      json: String(url).endsWith("/provider") ? { all: [], connected: [] } : {},
+    }),
+  });
+
+  await Promise.all(Array.from({ length: 20 }, () => server.listProviderOptions()));
+  assert.equal(spawnCount, 1);
+  await delay(25);
+  assert.equal(stopCount, 1);
+
+  await server.listProviderOptions();
+  assert.equal(spawnCount, 2);
+  await server.stop();
+  assert.equal(stopCount, 2);
 });

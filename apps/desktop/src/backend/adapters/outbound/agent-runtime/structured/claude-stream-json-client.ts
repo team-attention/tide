@@ -1,6 +1,6 @@
 // Claude Code stream-json client. Uses native `/goal`, not Tide-side preambles.
 import { randomUUID } from "node:crypto";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 
 import { createNodeSubagentActivityWatcher, type SubagentActivityWatcher } from "./subagent-activity-watcher.ts";
 
@@ -32,6 +32,11 @@ import { answerAskUserQuestion } from "./claude-ask-user-question.ts";
 import { handleClaudeControlRequest } from "./claude-control-request-handler.ts";
 import { claudeGoalEventsFromMessage, claudeGoalEventsFromText, claudeGoalSetEvent, claudeGoalUserMessage } from "./claude-goal.ts";
 import { claudeUserContent } from "./claude-user-content.ts";
+import {
+  spawnStructuredOwnedProcess,
+  type ManagedBackendOwnedProcess,
+  type StructuredProcessOwnershipInput,
+} from "./structured-owned-process.ts";
 export { claudeUserContent } from "./claude-user-content.ts";
 
 // How long applyConfig waits for claude's control_response ack before treating
@@ -40,7 +45,7 @@ export { claudeUserContent } from "./claude-user-content.ts";
 const CONFIG_ACK_TIMEOUT_MS = 2500;
 const DELIVERY_ACK_TIMEOUT_MS = 15_000;
 
-export interface CreateClaudeStreamJsonClientInput extends StructuredClientCallbacks {
+export interface CreateClaudeStreamJsonClientInput extends StructuredClientCallbacks, StructuredProcessOwnershipInput {
   plan: ProviderLaunchPlan;
   threadId: string;
   runtimeId: string;
@@ -59,6 +64,7 @@ export function createClaudeStreamJsonClient(input: CreateClaudeStreamJsonClient
 
 class ClaudeStreamJsonClient implements StructuredRuntimeClient {
   private readonly child: ChildProcessWithoutNullStreams;
+  private readonly managedProcess: ManagedBackendOwnedProcess;
   private readonly onEvent: StructuredClientCallbacks["onEvent"];
   private readonly threadId: string;
   private readonly runtimeId: string;
@@ -106,13 +112,21 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
           this.onEvent({ kind: "live_activity", nestedAgents, nestedToolCalls }),
       });
     }
-    this.child = spawn(input.plan.command, input.plan.args, {
-      cwd: input.plan.cwd,
-      // The runtime port resolves the cwd shell env before this point, so this
-      // spawn must not re-merge the backend process env and leak Tide ownership.
-      env: input.plan.env,
-      stdio: ["pipe", "pipe", "pipe"],
+    this.managedProcess = spawnStructuredOwnedProcess({
+      ...input,
+      providerId: "claude",
+      command: input.plan.command,
+      args: input.plan.args,
+      options: {
+        cwd: input.plan.cwd,
+        // The runtime port resolves the cwd shell env before this point, so this
+        // spawn must not re-merge the backend process env and leak Tide ownership.
+        env: input.plan.env,
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+      beforeSignal: () => this.prepareForProcessStop(),
     });
+    this.child = this.managedProcess.child as ChildProcessWithoutNullStreams;
     this.child.stdout.setEncoding("utf8");
     this.child.once("spawn", () => {
       this.resolveReadiness();
@@ -412,6 +426,10 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
   }
 
   async stop(): Promise<void> {
+    await this.managedProcess.stop("runtime_stop");
+  }
+
+  private prepareForProcessStop(): void {
     this.exited = true;
     this.subagentWatcher?.stop();
     // Settle any in-flight applyConfig acks (the process is going away) so a
@@ -428,14 +446,6 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     } catch {
       // best-effort
     }
-    this.child.kill("SIGTERM");
-    setTimeout(() => {
-      try {
-        this.child.kill("SIGKILL");
-      } catch {
-        // already gone
-      }
-    }, 1500).unref();
   }
 
   private writeLine(value: unknown): void {

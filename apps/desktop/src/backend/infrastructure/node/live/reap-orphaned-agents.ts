@@ -1,12 +1,10 @@
-import { spawnSync } from "node:child_process";
+import { listProcessesWithEnvironment } from "../process/process-observation.ts";
 
-// Belt-and-suspenders for the PTY-bridge parent-death watchdog: on a hard kill
-// (force quit / crash / power loss) the watchdog may not get to run, leaving a
-// Tide-spawned agent reparented to launchd (ppid 1) 
-// then spins CPU on its dead PTY. Every agent launch is tagged with TIDE_RUNTIME_ID
-// in its environment, so at backend startup any process that BOTH carries that tag
-// AND is orphaned (ppid 1) is a leftover from a dead session — never a live agent
-// (a live one still has its PTY-bridge/backend parent, so ppid != 1). Reap them.
+// Compatibility cleanup for children launched before exact owner manifests.
+// New managed processes carry TIDE_PROCESS_OWNER_TOKEN and are exclusively
+// reclaimed by their owner-scoped manifest. Keeping the two authorities disjoint
+// prevents this broad legacy sweep from killing a managed descendant merely
+// because it inherited TIDE_RUNTIME_ID.
 
 export interface ReapOrphanedAgentsDeps {
   // One line per process: "<pid> <ppid> <command + environment>".
@@ -19,15 +17,15 @@ export function reapOrphanedTideAgentProcesses(deps: ReapOrphanedAgentsDeps = {}
   if (process.platform === "win32" && deps.listProcesses === undefined) {
     return 0;
   }
-  const listProcesses = deps.listProcesses ?? defaultListProcesses;
+  const listProcesses = deps.listProcesses ?? listProcessesWithEnvironment;
   const kill = deps.kill ?? ((pid: number) => process.kill(pid, "SIGKILL"));
   const selfPid = deps.selfPid ?? process.pid;
 
   let reaped = 0;
   for (const line of listProcesses().split("\n")) {
-    // The tag is injected only into agent launch environments (see the agent
-    // runtime port), so a line carrying it is one of our spawned processes.
-    if (!line.includes("TIDE_RUNTIME_ID=")) {
+    // TIDE_RUNTIME_ID is sufficient only for pre-manifest children. A process
+    // with the new owner token must be validated by the exact manifest reaper.
+    if (!line.includes("TIDE_RUNTIME_ID=") || line.includes("TIDE_PROCESS_OWNER_TOKEN=")) {
       continue;
     }
     const match = line.trim().match(/^(\d+)\s+(\d+)\b/);
@@ -49,18 +47,4 @@ export function reapOrphanedTideAgentProcesses(deps: ReapOrphanedAgentsDeps = {}
     }
   }
   return reaped;
-}
-
-function defaultListProcesses(): string {
-  try {
-    // -E appends each process's environment to the command column (macOS/BSD), so
-    // the TIDE_RUNTIME_ID tag is visible; -ww prevents truncation.
-    const result = spawnSync("ps", ["-axwwE", "-o", "pid=,ppid=,command="], {
-      encoding: "utf8",
-      timeout: 4000,
-    });
-    return typeof result.stdout === "string" ? result.stdout : "";
-  } catch {
-    return "";
-  }
 }

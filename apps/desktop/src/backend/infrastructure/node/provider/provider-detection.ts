@@ -14,6 +14,7 @@ import { createOpencodeModelCatalog } from "./opencode-model-catalog.ts";
 import { createOpencodeVendorCatalog, reconcileVendorUsability } from "./opencode-vendor-catalog.ts";
 import { createOpencodeAuthServer } from "./opencode-auth-server.ts";
 import type { AgentCliUpdateChecker } from "../../../adapters/outbound/agent-runtime/runtime-ports/agent-integration-agent-runtime-port.ts";
+import type { BackendOwnedProcessSpawner } from "../process/backend-owned-process.ts";
 
 // The local-system provider detection surfaced on thread.listed: which provider-CLI
 // agents are installed (executable resolves + an integration exists) and opencode's
@@ -37,6 +38,7 @@ export interface ProviderDetection {
   // Set an opencode vendor's API key via opencode's own server (the canonical path), then
   // drop the cached vendor/model catalogs so the next thread.listed reflects it.
   connectOpencodeApiKey: (vendorId: string, key: string) => Promise<void>;
+  shutdown: () => Promise<void>;
 }
 
 const STATIC_PROVIDER_MODELS: Record<"codex" | "claude", ProviderModelDto[]> = {
@@ -71,12 +73,14 @@ export function createProviderDetection(input: {
   resolveExecutable: (command: string) => string | undefined;
   defaultCwd?: string;
   updateChecker?: AgentCliUpdateChecker;
+  processSpawner?: BackendOwnedProcessSpawner;
 }): ProviderDetection {
   const codexCatalog = createCodexModelCatalog((command) => input.resolveExecutable(command));
   const opencodeCatalog = createOpencodeModelCatalog((command) => input.resolveExecutable(command));
   const opencodeVendorCatalog = createOpencodeVendorCatalog((command) => input.resolveExecutable(command));
   const opencodeAuthServer = createOpencodeAuthServer({
     resolveExecutable: (command) => input.resolveExecutable(command),
+    processSpawner: input.processSpawner,
   });
   const installedAgents = (): ProviderCliAgentId[] =>
     PROVIDER_CLI_AGENT_IDS.filter(
@@ -226,6 +230,7 @@ export function createProviderDetection(input: {
       opencodeCatalog.invalidate();
       opencodeVendorCatalog.invalidate();
     },
+    shutdown: () => opencodeAuthServer.stop(),
   };
 }
 
