@@ -1,7 +1,6 @@
 // Claude Code stream-json client. Uses native `/goal`, not Tide-side preambles.
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { readFileSync } from "node:fs";
 
 import { createNodeSubagentActivityWatcher, type SubagentActivityWatcher } from "./subagent-activity-watcher.ts";
 
@@ -13,6 +12,7 @@ import type {
   StructuredRuntimeClient,
   StructuredRuntimeWrite,
 } from "./structured-runtime-events.ts";
+import { normalizeProviderTerminalStatus } from "./structured-runtime-events.ts";
 import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/agent-runtime.ts";
 import { claudeUsage } from "./claude-usage.ts";
 import { usageWithRememberedRateLimits, type StructuredUsagePayload } from "./structured-usage.ts";
@@ -22,68 +22,35 @@ import {
   STRUCTURED_ALLOW_ALWAYS_TOKEN,
   STRUCTURED_ALLOW_TOKEN,
   STRUCTURED_DENY_TOKEN,
-  addRulesOnlySuggestions,
   bounded,
   isRecord,
   stringField,
   toolResultText,
 } from "./claude-stream-json-shared.ts";
-import { buildPermissionPrompt } from "./claude-permission-prompt.ts";
 import type { AskUserQuestionContext, PendingPermission } from "./claude-ask-user-question.ts";
-import { answerAskUserQuestion, surfaceAskUserQuestion, surfaceAskUserQuestionWizard } from "./claude-ask-user-question.ts";
-import { writeUnsupportedClaudeControlRequest } from "./claude-control-request.ts";
+import { answerAskUserQuestion } from "./claude-ask-user-question.ts";
+import { handleClaudeControlRequest } from "./claude-control-request-handler.ts";
 import { claudeGoalEventsFromMessage, claudeGoalEventsFromText, claudeGoalSetEvent, claudeGoalUserMessage } from "./claude-goal.ts";
+import { claudeUserContent } from "./claude-user-content.ts";
+export { claudeUserContent } from "./claude-user-content.ts";
 
 // How long applyConfig waits for claude's control_response ack before treating
 // a mid-thread change as failed; fires only if the process is wedged/dead.
 // See docs_v2/specs/claude-bypass-live-capability.md.
 const CONFIG_ACK_TIMEOUT_MS = 2500;
+const DELIVERY_ACK_TIMEOUT_MS = 15_000;
 
 export interface CreateClaudeStreamJsonClientInput extends StructuredClientCallbacks {
   plan: ProviderLaunchPlan;
   threadId: string;
   runtimeId: string;
   initialPrompt?: string;
+  initialDeliveryId?: string;
   initialGoal?: string;
   initialAttachments?: ComposerAttachmentRef[];
   // Resolves a session id to its `subagents/` dir, enabling the live Task fan-out
   // watcher. Absent ⇒ no watcher. Spec: live-turn-activity-visibility.md (Slice B).
   locateSubagentsDir?: (sessionId: string) => string | undefined;
-}
-
-// Build a claude user-message content array: the text plus a NATIVE inline image
-// block per attachment ({type:"image", source:{type:"base64", media_type, data}},
-// the Anthropic Messages shape — VERIFIED accepted by `claude --print
-// --input-format stream-json`). The bytes go inline on the wire, so claude never
-// reads a file — no on-disk attachment, no repo pollution. The "[Attached image:
-// <path>]" marker that fed the old file-read path is stripped (it's now dead text
-// claude would otherwise try to open). With no attachments the content is exactly
-// the text block — byte-identical to before.
-const ATTACHED_IMAGE_LINE_RE = /\n*\[Attached image:[^\]]*\]/g;
-export function claudeUserContent(
-  text: string,
-  attachments?: ComposerAttachmentRef[],
-): Array<Record<string, unknown>> {
-  if (attachments === undefined || attachments.length === 0) {
-    return [{ type: "text", text }];
-  }
-  const cleaned = text.replace(ATTACHED_IMAGE_LINE_RE, "").trim();
-  const content: Array<Record<string, unknown>> = [];
-  if (cleaned.length > 0) {
-    content.push({ type: "text", text: cleaned });
-  }
-  for (const attachment of attachments) {
-    try {
-      const data = readFileSync(attachment.path).toString("base64");
-      content.push({
-        type: "image",
-        source: { type: "base64", media_type: attachment.mediaType, data },
-      });
-    } catch {
-      // Unreadable attachment — skip it rather than fail the whole turn.
-    }
-  }
-  return content.length > 0 ? content : [{ type: "text", text }];
 }
 
 export function createClaudeStreamJsonClient(input: CreateClaudeStreamJsonClientInput): StructuredRuntimeClient {
@@ -113,8 +80,20 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
   private readonly pendingConfigAcks = new Map<string, (ok: boolean) => void>();
   private lastRateLimits?: AgentRuntimeRateLimitDto[];
   private goalObjective = "";
+  private activeDeliveryId?: string;
+  private readonly pendingDeliveryAcks = new Map<
+    string,
+    { resolve: (result: { deliveryId: string; state: "working_unconfirmed" | "acknowledged"; providerMessageId?: string }) => void; timer: NodeJS.Timeout }
+  >();
+  private readonly readiness: Promise<void>;
+  private resolveReadiness!: () => void;
+  private rejectReadiness!: (error: Error) => void;
 
   constructor(input: CreateClaudeStreamJsonClientInput) {
+    this.readiness = new Promise<void>((resolve, reject) => {
+      this.resolveReadiness = resolve;
+      this.rejectReadiness = reject;
+    });
     this.onEvent = input.onEvent;
     this.threadId = input.threadId;
     this.runtimeId = input.runtimeId;
@@ -135,6 +114,16 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       stdio: ["pipe", "pipe", "pipe"],
     });
     this.child.stdout.setEncoding("utf8");
+    this.child.once("spawn", () => {
+      this.resolveReadiness();
+      // Claude emits no init before input, but waiting for OS spawn keeps the
+      // initial delivery from racing ahead of runtime-handle adoption.
+      if (this.goalObjective.length > 0) {
+        this.sendGoalCommand(this.goalObjective);
+      } else if (input.initialPrompt !== undefined && input.initialPrompt.length > 0) {
+        void this.sendUserText(input.initialPrompt, input.initialAttachments, input.initialDeliveryId);
+      }
+    });
     this.child.stdout.on("data", (chunk: string) => this.ingest(chunk));
     this.child.stderr.setEncoding("utf8");
     this.child.stderr.on("data", (chunk: string) => {
@@ -154,41 +143,50 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
         return;
       }
       this.exited = true;
-      this.onEvent({ kind: "runtime_exited", exitCode: null });
+      this.rejectReadiness(error instanceof Error ? error : new Error(String(error)));
+      this.resolvePendingDeliveriesAsUnconfirmed();
+      this.onEvent({ kind: "runtime_exited", exitCode: null, activeDeliveryId: this.activeDeliveryId });
     });
     this.child.on("exit", (code) => {
       if (this.exited) {
         return;
       }
       this.exited = true;
-      this.onEvent({ kind: "runtime_exited", exitCode: code });
+      this.resolvePendingDeliveriesAsUnconfirmed();
+      this.onEvent({ kind: "runtime_exited", exitCode: code, activeDeliveryId: this.activeDeliveryId });
     });
-    // Deliver the first turn IMMEDIATELY: claude emits NOTHING (not even the
-    // init line) until its first stdin message arrives — verified live with a
-    // delayed-write probe (init at 6.0s == the moment input was written).
-    // Waiting for init before writing would deadlock both sides. stdin is
-    // buffered, so writing before the process reads is safe; and claude
-    // registers its MCP tools before running the turn (the PTY-era plan
-    // delivered the first prompt via launch argv for the same reason).
-    if (this.goalObjective.length > 0) {
-      this.sendGoalCommand(this.goalObjective);
-    } else if (input.initialPrompt !== undefined && input.initialPrompt.length > 0) {
-      this.sendUserText(input.initialPrompt, input.initialAttachments);
-    }
+    // The first turn is dispatched from the spawn listener above. Waiting for
+    // a Claude init frame would deadlock; waiting for OS spawn does not.
   }
 
   get pid(): number | undefined { return this.child.pid ?? undefined; }
 
-  private sendUserText(text: string, attachments?: ComposerAttachmentRef[]): void {
+  ready(): Promise<void> { return this.readiness; }
+
+  private sendUserText(
+    text: string,
+    attachments?: ComposerAttachmentRef[],
+    deliveryId: string = randomUUID(),
+  ): Promise<{ deliveryId: string; state: "working_unconfirmed" | "acknowledged"; providerMessageId?: string }> {
+    this.activeDeliveryId = deliveryId;
     this.writeLine({
       type: "user",
+      uuid: deliveryId,
       message: {
         role: "user",
         content: claudeUserContent(text, attachments),
       },
     });
-    this.onEvent({ kind: "turn_started" });
+    this.onEvent({ kind: "turn_started", deliveryId });
     this.subagentWatcher?.start(Date.now());
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.pendingDeliveryAcks.delete(deliveryId);
+        resolve({ deliveryId, state: "working_unconfirmed" });
+      }, DELIVERY_ACK_TIMEOUT_MS);
+      timer.unref();
+      this.pendingDeliveryAcks.set(deliveryId, { resolve, timer });
+    });
   }
 
   private sendGoalCommand(objective: string): void {
@@ -205,14 +203,13 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
     this.subagentWatcher?.start(Date.now());
   }
 
-  async write(input: StructuredRuntimeWrite): Promise<void> {
+  async write(input: StructuredRuntimeWrite) {
     if (input.kind === "goal_set") {
       this.sendGoalCommand(input.objective);
       return;
     }
     if (input.kind === "composer_input") {
-      this.sendUserText(input.value, input.attachments);
-      return;
+      return this.sendUserText(input.value, input.attachments, input.deliveryId);
     }
     const promptId = input.promptId ?? "";
     const pending = this.pendingPermissions.get(promptId);
@@ -517,6 +514,20 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       return;
     }
     if (type === "assistant" || type === "user") {
+      if (type === "user") {
+        const deliveryId = stringField(message, "uuid");
+        const pending = deliveryId !== undefined ? this.pendingDeliveryAcks.get(deliveryId) : undefined;
+        if (deliveryId !== undefined && pending !== undefined) {
+          clearTimeout(pending.timer);
+          this.pendingDeliveryAcks.delete(deliveryId);
+          this.onEvent({
+            kind: "delivery_acknowledged",
+            deliveryId,
+            providerMessageId: deliveryId,
+          });
+          pending.resolve({ deliveryId, state: "acknowledged", providerMessageId: deliveryId });
+        }
+      }
       this.handleGoalEvents(claudeGoalEventsFromMessage(message, this.goalObjective));
       // The complete message finalizes whatever streamed (same blockId scheme),
       // so flush any pending delta first, then persist.
@@ -553,11 +564,20 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       const aborted =
         message.subtype === "error_during_execution" &&
         (message.terminal_reason === "aborted_streaming" || message.terminal_reason === "aborted");
+      const nativeTerminal = aborted
+        ? String(message.terminal_reason)
+        : isError
+          ? String(message.subtype ?? "error")
+          : "completed";
+      const terminal = normalizeProviderTerminalStatus("claude", nativeTerminal);
       this.onEvent({
         kind: "turn_completed",
+        ...terminal,
+        deliveryId: this.activeDeliveryId,
         ...(isError && !aborted && resultText !== undefined ? { notice: resultText } : {}),
         usage: this.withLastRateLimits(claudeUsage(message)),
       });
+      this.activeDeliveryId = undefined;
       return;
     }
     if (type === "rate_limit_event") {
@@ -568,6 +588,14 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
       return;
     }
     // keep_alive: ignored.
+  }
+
+  private resolvePendingDeliveriesAsUnconfirmed(): void {
+    for (const [deliveryId, pending] of this.pendingDeliveryAcks) {
+      clearTimeout(pending.timer);
+      pending.resolve({ deliveryId, state: "working_unconfirmed" });
+    }
+    this.pendingDeliveryAcks.clear();
   }
 
   // Carry the most recent rate-limit windows forward onto later usage events that omit
@@ -734,60 +762,10 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
   }
 
   private handleControlRequest(message: Record<string, unknown>): void {
-    const requestId = stringField(message, "request_id");
-    if (requestId === undefined) {
-      return;
-    }
-    const request = isRecord(message.request) ? message.request : undefined;
-    if (request?.subtype !== "can_use_tool") {
-      writeUnsupportedClaudeControlRequest({
-        requestId,
-        subtype: request === undefined ? "malformed" : String(request.subtype ?? "unknown"),
-        writeLine: (value) => this.writeLine(value),
-        onEvent: this.onEvent,
-      });
-      return;
-    }
-    const toolName = stringField(request, "tool_name") ?? "tool";
-    const toolInput = isRecord(request.input) ? request.input : {};
-    const promptId = `claude-perm-${requestId}`;
-
-    // AskUserQuestion's can_use_tool carries the FULL set of questions, each with
-    // options. claude requires EVERY question answered. A multi-question set surfaces
-    // as ONE navigable wizard (all steps at once, answered together); a single question
-    // (or a degenerate set the wizard can't build) falls back to one card at a time.
-    if (toolName === "AskUserQuestion") {
-      const questions = Array.isArray(toolInput.questions) ? toolInput.questions : [];
-      const ctx = this.askUserQuestionContext();
-      if (questions.length > 1 && surfaceAskUserQuestionWizard(ctx, requestId, toolInput, questions)) {
-        return;
-      }
-      if (questions.length > 0 && surfaceAskUserQuestion(ctx, requestId, toolInput, questions, {}, 0, {})) {
-        return;
-      }
-    }
-
-    // The CLI ships a "don't ask again" rule with each request (permission_suggestions). Surface
-    // it as an Allow-always choice ONLY for the pure-addRules case (persistent allow-rule); echo
-    // it back as updatedPermissions on allow so the CLI persists it. See
-    // docs_v2/specs/claude-permission-allow-always.md.
-    const ruleUpdates = addRulesOnlySuggestions(request.permission_suggestions);
-    this.pendingPermissions.set(promptId, {
-      requestId,
-      toolInput,
-      ...(ruleUpdates !== undefined ? { permissionRuleUpdates: ruleUpdates } : {}),
-    });
-
-    this.onEvent({
-      kind: "prompt",
-      promptState: buildPermissionPrompt({
-        promptId,
-        threadId: this.threadId,
-        agentId: this.agentId,
-        toolName,
-        toolInput,
-        ruleUpdates,
-      }),
+    handleClaudeControlRequest({
+      message,
+      context: this.askUserQuestionContext(),
+      pendingPermissions: this.pendingPermissions,
     });
   }
 }

@@ -55,6 +55,7 @@ export function normalizeThreadSeed(seed: ThreadSeed): ThreadRecord {
     // never seeded from a persisted seed. See spec hydrate-live-streaming-tail.md.
     streamingBlocks: [],
     pendingInput: clonePendingInput(seed.pendingInput),
+    pendingInputQueue: seed.pendingInputQueue?.map((pending) => clonePendingInput(pending)!),
     promptState: clonePromptState(seed.promptState),
     activeRuntimeHandle: cloneRuntimeHandle(seed.activeRuntimeHandle),
     rawFrameSequence: seed.rawFrameSequence ?? 0,
@@ -92,6 +93,10 @@ export function snapshotThread(
       ? thread.cachedBlocks
       : cloneBlocks(thread.cachedBlocks),
     pendingInput: clonePendingInput(thread.pendingInput),
+    pendingInputs: [
+      ...(thread.pendingInput ? [thread.pendingInput] : []),
+      ...(thread.pendingInputQueue ?? []),
+    ].map((pending) => clonePendingInput(pending)!),
     // Publish the real follow-up queue (head + tail) as texts so the renderer can
     // display it authoritatively instead of guessing from events.
     queuedInputs: [

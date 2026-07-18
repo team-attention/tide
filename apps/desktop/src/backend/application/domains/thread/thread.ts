@@ -154,6 +154,10 @@ export interface ComposerAttachmentRef {
 
 export interface PendingInput {
   kind: "composer_input";
+  // Stable across edits, queue promotion, provider dispatch, and restart.
+  // Optional only for persisted pre-lifecycle records; normalization mints one
+  // before such an entry is dispatched.
+  deliveryId?: string;
   value: string;
   capturedAt: string;
   launchOptions?: Record<string, unknown>;
@@ -262,6 +266,9 @@ export interface ThreadSnapshot {
   live: boolean;
   cachedBlocks: AgentSessionBlockReference[];
   pendingInput?: PendingInput;
+  // Full durable queue projection. `queuedInputs` remains the renderer-friendly
+  // text list; this preserves delivery identity and attachments for persistence.
+  pendingInputs: PendingInput[];
   // The Composer follow-up queue as plain texts, head-first (pendingInput then the
   // tail). This is what the renderer DISPLAYS — the backend is authoritative, so the
   // renderer never guesses the queue. See docs_v2/specs/backend-authoritative-composer-queue.md.
@@ -288,6 +295,7 @@ export interface ThreadSeed {
   updatedAt: string;
   cachedBlocks?: AgentSessionBlockReference[];
   pendingInput?: PendingInput;
+  pendingInputQueue?: PendingInput[];
   promptState?: PromptState;
   activeRuntimeHandle?: AgentRuntimeHandle;
   rawFrameSequence?: number;

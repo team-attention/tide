@@ -59,6 +59,8 @@ function conversationBlock(input: {
   body: string;
   timestamp: string;
   blockId?: string;
+  deliveryId?: string;
+  providerMessageId?: string;
 }): AgentSessionBlock {
   return {
     blockId: input.blockId ?? `provider:${input.threadId}:${input.sessionId}:${input.index}`,
@@ -67,6 +69,16 @@ function conversationBlock(input: {
     kind: input.isUser ? "user_message" : "agent_message",
     role: input.isUser ? "user" : "agent",
     sourceFrameIds: [],
+    ...(input.isUser && (input.deliveryId !== undefined || input.providerMessageId !== undefined)
+      ? {
+          localProvenance: {
+            kind: "provider_user_message",
+            deliveryState: "acknowledged",
+            ...(input.deliveryId !== undefined ? { deliveryId: input.deliveryId } : {}),
+            ...(input.providerMessageId !== undefined ? { providerMessageId: input.providerMessageId } : {}),
+          },
+        }
+      : {}),
     status: "complete",
     body: input.body,
     createdAt: input.timestamp,
@@ -157,7 +169,19 @@ export function rebuildCodexConversation(
       if (body === undefined || body.length === 0) {
         continue;
       }
-      blocks.push(conversationBlock({ threadId, sessionId, index, agentId, isUser, body, timestamp }));
+      blocks.push(conversationBlock({
+        threadId,
+        sessionId,
+        index,
+        agentId,
+        isUser,
+        body,
+        timestamp,
+        deliveryId:
+          stringField(payload, "clientUserMessageId") ??
+          stringField(payload, "client_user_message_id") ??
+          stringField(payload, "client_id"),
+      }));
       continue;
     }
     if (record?.type !== "response_item" || payload === undefined) {
@@ -244,7 +268,17 @@ export function rebuildClaudeConversation(
     }
     const body = isUser ? joinTextContent(message.content) : claudeAssistantTextContent(message.content);
     if (body !== undefined && body.length > 0) {
-      blocks.push(conversationBlock({ threadId, sessionId, index, agentId, isUser, body, timestamp }));
+      blocks.push(conversationBlock({
+        threadId,
+        sessionId,
+        index,
+        agentId,
+        isUser,
+        body,
+        timestamp,
+        deliveryId: isUser ? stringField(record, "uuid") : undefined,
+        providerMessageId: stringField(message, "id"),
+      }));
     }
     if (isUser) {
       for (const result of claudeToolResultItems(message.content)) {
@@ -322,6 +356,10 @@ export function rebuildOpencodeConversationFromExport(
               body,
               timestamp,
               blockId: `provider:${threadId}:${sessionId}:${messageIndex}:${partIndex}`,
+              providerMessageId: stringField(message.info, "id"),
+              deliveryId:
+                stringField(message.info, "messageId") ??
+                stringField(message.info, "clientMessageId"),
             }),
           );
         }

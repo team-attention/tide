@@ -30,6 +30,12 @@ import {
   nativeVisibleSemanticBlockKinds,
 } from "./live-native-runtime-projector.ts";
 import { createLiveProviderCapabilityEmitter } from "./live-provider-capabilities.ts";
+import {
+  projectDeliveryAcknowledged,
+  recordDeliveryTerminal,
+  recordExitedDeliveryIndeterminate,
+} from "./live-delivery-lifecycle.ts";
+import { emitTurnComplete } from "./live-turn-complete.ts";
 
 export function createLiveAgentSessionEventProjector(input: {
   service: () => ThreadRuntimeService;
@@ -344,6 +350,15 @@ export function createLiveAgentSessionEventProjector(input: {
         await nativeRuntimeProjector.recordProjectedRuntimeStateBlocks(eventInput.threadId, nativeBlocks, new Set(["config_state"]));
         return;
       }
+      if (event.kind === "delivery_acknowledged") {
+        await projectDeliveryAcknowledged({
+          threadId: eventInput.threadId,
+          event,
+          service,
+          onEvent: input.onEvent,
+        });
+        return;
+      }
       if (event.kind === "turn_started") {
         await emitProviderTurnStarted({
           threadId: eventInput.threadId,
@@ -560,6 +575,7 @@ export function createLiveAgentSessionEventProjector(input: {
         return;
       }
       if (event.kind === "turn_completed") {
+        await recordDeliveryTerminal({ threadId: eventInput.threadId, event, service });
         if (event.usage !== undefined) {
           const usage = emitStructuredUsage({
             threadId: eventInput.threadId,
@@ -611,6 +627,7 @@ export function createLiveAgentSessionEventProjector(input: {
         return;
       }
       if (event.kind === "runtime_exited") {
+        await recordExitedDeliveryIndeterminate({ threadId: eventInput.threadId, event, service });
         // A crash mid-turn must not strand the thread "Working": settle it.
         // (recordTurnComplete is a no-op when the thread is already idle.) The runtime
         // is genuinely gone, so force the settle even past an open prompt — that card
@@ -631,49 +648,6 @@ export function createLiveAgentSessionEventProjector(input: {
       await flushAllPersists();
     },
   };
-}
-
-// On a turn-end signal, return the runtime to idle (so the UI stops showing
-// "working") or flush a queued Composer input into the next turn.
-async function emitTurnComplete(input: {
-  threadId: string;
-  service: ThreadRuntimeService;
-  onEvent?: (event: BackendEventEnvelope) => void;
-  // Settle even if the thread is still blocked on an unanswered prompt. Set ONLY for a
-  // genuine runtime exit (the card is then truly dead). A turn-end NEVER forces — a
-  // spurious/empty turn-end (or the AskUserQuestion text+question shape) must not drop a
-  // live, never-answered card. An answered card settles via promptAnsweredPendingSettle.
-  force?: boolean;
-}): Promise<void> {
-  const result = await input.service.recordTurnComplete({ threadId: input.threadId, force: input.force });
-  if (!result.ok) {
-    return;
-  }
-  // If a queued input was flushed into the next turn, surface its user-message
-  // block so the conversation shows the queued message (then the new turn runs).
-  if (result.submittedBlock !== undefined) {
-    input.onEvent?.({
-      contractVersion: CONTRACT_VERSION,
-      eventId: nextEventId(),
-      kind: "agentSessionBlock.upserted",
-      emittedAt: new Date().toISOString(),
-      payload: {
-        block: toAgentSessionBlockDto(result.thread, result.submittedBlock),
-      },
-    });
-  }
-  input.onEvent?.({
-    contractVersion: CONTRACT_VERSION,
-    eventId: nextEventId(),
-    kind: "agentRuntime.stateChanged",
-    emittedAt: new Date().toISOString(),
-    payload: {
-      threadId: result.thread.threadId,
-      state: result.runtimeState,
-      changedAt: result.thread.updatedAt,
-      queuedInputs: result.thread.queuedInputs,
-    },
-  });
 }
 
 async function emitPromptState(input: {

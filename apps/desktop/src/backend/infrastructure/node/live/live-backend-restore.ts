@@ -239,14 +239,55 @@ export function reconcileReopenedThreadBlocks(
   cachedBlocks: AgentSessionBlock[],
 ): AgentSessionBlock[] {
   if (providerBlocks.length === 0) {
-    return cachedBlocks;
+    return cachedBlocks.map(markUnsettledDeliveryIndeterminate);
   }
   if (!providerBlocks.every(isFailedProviderImportDiagnostic)) {
-    return providerBlocks;
+    const cachedByDeliveryId = new Map<string, AgentSessionBlock>();
+    const cachedByProviderMessageId = new Map<string, AgentSessionBlock>();
+    for (const cached of cachedBlocks) {
+      const deliveryId = cached.localProvenance?.deliveryId;
+      const providerMessageId = cached.localProvenance?.providerMessageId;
+      if (typeof deliveryId === "string") cachedByDeliveryId.set(deliveryId, cached);
+      if (typeof providerMessageId === "string") cachedByProviderMessageId.set(providerMessageId, cached);
+    }
+    return providerBlocks.map((provider) => {
+      const deliveryId = provider.localProvenance?.deliveryId;
+      const providerMessageId = provider.localProvenance?.providerMessageId;
+      const cached =
+        (typeof deliveryId === "string" ? cachedByDeliveryId.get(deliveryId) : undefined) ??
+        (typeof providerMessageId === "string" ? cachedByProviderMessageId.get(providerMessageId) : undefined);
+      if (cached === undefined) return provider;
+      return {
+        ...provider,
+        localProvenance: {
+          ...cached.localProvenance,
+          ...provider.localProvenance,
+          deliveryState: "acknowledged",
+        },
+      };
+    });
   }
   return cachedBlocks.length > 0
-    ? [...cachedBlocks, ...providerBlocks]
+    ? [...cachedBlocks.map(markUnsettledDeliveryIndeterminate), ...providerBlocks]
     : providerBlocks;
+}
+
+function markUnsettledDeliveryIndeterminate(block: AgentSessionBlock): AgentSessionBlock {
+  const state = block.localProvenance?.deliveryState;
+  if (
+    block.role !== "user" ||
+    (state !== "dispatching" && state !== "working_unconfirmed" && state !== "acknowledged")
+  ) {
+    return block;
+  }
+  return {
+    ...block,
+    localProvenance: {
+      ...block.localProvenance,
+      deliveryState: "indeterminate",
+      recoveryReason: "restart_without_provider_delivery_evidence",
+    },
+  };
 }
 
 function providerHistoryNeedsCacheFallback(blocks: AgentSessionBlock[]): boolean {
@@ -333,7 +374,9 @@ export function threadSeedFromStorageRecord(record: ThreadStorageRecord): Thread
   const lastKnownState =
     record.archived || record.lastKnownState === "archived"
       ? "archived"
-      : record.lastKnownState === "running"
+      : record.lastKnownState === "running" ||
+          record.lastKnownState === "waiting_for_input" ||
+          record.lastKnownState === "waiting_for_approval"
         ? "idle"
         : record.lastKnownState;
 
@@ -366,6 +409,20 @@ export function threadSeedFromStorageRecord(record: ThreadStorageRecord): Thread
     goalState: record.goalState,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
+    pendingInput: record.queuedDeliveries?.[0] === undefined
+      ? undefined
+      : {
+          kind: "composer_input",
+          ...record.queuedDeliveries[0],
+          launchOptions: cloneLaunchOptions(record.queuedDeliveries[0].launchOptions),
+          attachments: record.queuedDeliveries[0].attachments?.map((attachment) => ({ ...attachment })),
+        },
+    pendingInputQueue: record.queuedDeliveries?.slice(1).map((pending) => ({
+      kind: "composer_input" as const,
+      ...pending,
+      launchOptions: cloneLaunchOptions(pending.launchOptions),
+      attachments: pending.attachments?.map((attachment) => ({ ...attachment })),
+    })),
   };
 }
 
@@ -436,6 +493,13 @@ export function threadStorageRecordFromThreadSummary(
             observedAt: thread.updatedAt,
           },
     lastKnownState: thread.archived ? "archived" : thread.lastKnownState,
+    queuedDeliveries: thread.queuedDeliveries?.map((pending) => ({
+      deliveryId: pending.deliveryId,
+      value: pending.value,
+      capturedAt: pending.capturedAt,
+      launchOptions: cloneLaunchOptions(pending.launchOptions),
+      attachments: pending.attachments?.map((attachment) => ({ ...attachment })),
+    })),
   };
 }
 

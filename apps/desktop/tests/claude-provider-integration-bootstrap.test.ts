@@ -97,6 +97,8 @@ test("claude_build_start_plan_returns_structured_stream_json_plan", async () => 
   assert.ok(joined.includes("--print"));
   assert.ok(joined.includes("--input-format stream-json"));
   assert.ok(joined.includes("--output-format stream-json"));
+  // Stable UUID replay lets Tide correlate accepted user frames after restart.
+  assert.ok(joined.includes("--replay-user-messages"));
   // REQUIRED for can_use_tool permission requests (hidden flag; the official
   // Agent SDK passes exactly this).
   assert.ok(joined.includes("--permission-prompt-tool stdio"));

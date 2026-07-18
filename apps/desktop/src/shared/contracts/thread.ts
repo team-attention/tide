@@ -33,6 +33,17 @@ export interface ThreadSummaryDto {
   // The Composer follow-up queue (head-first pending message texts), authoritative
   // from the backend. Absent on older payloads → treat as empty.
   queuedInputs?: string[];
+  // Backend persistence projection. The UI may ignore this; it exists so an
+  // undispatched FIFO survives restart with the same delivery UUID.
+  queuedDeliveries?: QueuedDeliveryDto[];
+}
+
+export interface QueuedDeliveryDto {
+  deliveryId: string;
+  value: string;
+  capturedAt: string;
+  launchOptions?: JsonObject;
+  attachments?: Array<{ path: string; mediaType: string }>;
 }
 
 export type ThreadScopeDto =

@@ -4,6 +4,7 @@ import type {
   AgentRuntimeStartInput,
   AgentRuntimeCapabilityInvocationInput,
   AgentRuntimeCapabilityInvocationResult,
+  AgentRuntimeDispatchResult,
   AgentSessionConfigInput,
   AgentSessionConfigResult,
   TerminalInput,
@@ -21,7 +22,7 @@ export interface DiscoveredCommand {
 export interface AgentRuntimePort {
   start(input: AgentRuntimeStartInput): Promise<AgentRuntimeHandle>;
   resume(input: AgentRuntimeResumeInput): Promise<AgentRuntimeHandle>;
-  writeInput(handle: AgentRuntimeHandle, input: TerminalInput): Promise<void>;
+  writeInput(handle: AgentRuntimeHandle, input: TerminalInput): Promise<AgentRuntimeDispatchResult | void>;
   // Apply a mid-thread Launch Options change to the LIVE session when the
   // provider protocol supports it; "restart_required" tells the caller to
   // restart the runtime before the next turn instead. See

@@ -11,6 +11,7 @@ import type {
   StructuredRuntimeClient,
   StructuredRuntimeWrite,
 } from "./structured-runtime-events.ts";
+import { normalizeProviderTerminalStatus } from "./structured-runtime-events.ts";
 import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/agent-runtime.ts";
 import { acpUsageFromRecord } from "./acp-usage.ts";
 import { usageWithRememberedRateLimits, type StructuredUsagePayload } from "./structured-usage.ts";
@@ -20,6 +21,16 @@ import { cancelAcpPermissionRequest, writeUnsupportedAcpServerRequest } from "./
 import { planActivityFromEntries, planActivityFromTodoToolOutput } from "./plan-activity.ts";
 import { acpPlanContentRecord, withGoalPreamble } from "./structured-plan-goal.ts";
 import { acpProviderCapabilitiesEvent } from "./acp-provider-capabilities.ts";
+import {
+  acpToolOutput,
+  bounded,
+  isRecord,
+  mergeConfigOptions,
+  parseAcpModelCatalog,
+  parseConfigOptions,
+  stringField,
+} from "./acp-client-shared.ts";
+export { mergeConfigOptions, parseAcpModelCatalog } from "./acp-client-shared.ts";
 
 export const ACP_OPTION_PREFIX = "structured:acp-option:";
 
@@ -30,15 +41,13 @@ export interface CreateAcpClientInput extends StructuredClientCallbacks {
   agentId: ProviderCliAgentId;
   sessionRefKind: DiscoveredProviderSessionRef["kind"];
   initialPrompt?: string;
+  initialDeliveryId?: string;
   initialGoal?: string;
   initialAttachments?: ComposerAttachmentRef[];
   resumeSessionId?: string;
 }
 
-interface AcpQueuedPrompt {
-  text: string;
-  attachments?: ComposerAttachmentRef[];
-}
+const ACP_REQUEST_TIMEOUT_MS = 15_000;
 
 // Build the ACP session/prompt content blocks: the text plus a NATIVE image
 // ContentBlock per attachment ({type:"image", mimeType, data:<base64>} — the
@@ -90,12 +99,22 @@ class AcpClient implements StructuredRuntimeClient {
   private messageBlockId?: string;
   private thoughtBuffer = "";
   private thoughtBlockId?: string;
-  private readonly pendingResponses = new Map<number, (message: Record<string, unknown>) => void>();
+  private readonly pendingResponses = new Map<
+    number,
+    { onResponse: (message: Record<string, unknown>) => void; timer?: NodeJS.Timeout }
+  >();
   private readonly pendingPermissions = new Map<string, number | string>();
-  private readonly queuedPrompts: AcpQueuedPrompt[] = [];
   private lastRateLimits?: AgentRuntimeRateLimitDto[];
+  private activeDeliveryId?: string;
+  private readonly readiness: Promise<void>;
+  private resolveReadiness!: () => void;
+  private rejectReadiness!: (error: Error) => void;
 
   constructor(input: CreateAcpClientInput) {
+    this.readiness = new Promise<void>((resolve, reject) => {
+      this.resolveReadiness = resolve;
+      this.rejectReadiness = reject;
+    });
     this.onEvent = input.onEvent;
     this.tideThreadId = input.threadId;
     this.runtimeId = input.runtimeId;
@@ -120,19 +139,25 @@ class AcpClient implements StructuredRuntimeClient {
     this.child.on("error", () => {
       if (!this.exited) {
         this.exited = true;
-        this.onEvent({ kind: "runtime_exited", exitCode: null });
+        this.rejectReadiness(new Error("ACP runtime failed to start."));
+        this.clearPendingResponses();
+        this.onEvent({ kind: "runtime_exited", exitCode: null, activeDeliveryId: this.activeDeliveryId });
       }
     });
     this.child.on("exit", (code) => {
       if (!this.exited) {
         this.exited = true;
-        this.onEvent({ kind: "runtime_exited", exitCode: code });
+        this.rejectReadiness(new Error("ACP runtime exited before session adoption."));
+        this.clearPendingResponses();
+        this.onEvent({ kind: "runtime_exited", exitCode: code, activeDeliveryId: this.activeDeliveryId });
       }
     });
     this.bootstrap(input);
   }
 
   get pid(): number | undefined { return this.child.pid ?? undefined; }
+
+  ready(): Promise<void> { return this.readiness; }
 
   private bootstrap(input: CreateAcpClientInput): void {
     this.request("initialize", {
@@ -155,7 +180,7 @@ class AcpClient implements StructuredRuntimeClient {
         return;
       }
       this.request("session/new", sessionParams, (response) => {
-        this.adoptSession(response, undefined, input.initialPrompt, input.initialAttachments);
+        this.adoptSession(response, undefined, input.initialPrompt, input.initialAttachments, input.initialDeliveryId);
       });
     });
   }
@@ -165,13 +190,17 @@ class AcpClient implements StructuredRuntimeClient {
     knownSessionId?: string,
     initialPrompt?: string,
     initialAttachments?: ComposerAttachmentRef[],
+    initialDeliveryId?: string,
   ): void {
     if (response.error !== undefined) {
       const error = isRecord(response.error) ? response.error : {};
       this.onEvent({
         kind: "turn_completed",
+        status: "failed",
+        nativeStatus: "session_error",
         notice: stringField(error, "message") ?? "ACP session could not be started.",
       });
+      this.rejectReadiness(new Error(stringField(error, "message") ?? "ACP session could not be started."));
       return;
     }
     const result = isRecord(response.result) ? response.result : {};
@@ -180,6 +209,7 @@ class AcpClient implements StructuredRuntimeClient {
       return;
     }
     this.sessionId = sessionId;
+    this.resolveReadiness();
     this.onEvent({
       kind: "session_ref",
       ref: { agentId: this.agentId, kind: this.sessionRefKind, value: sessionId },
@@ -204,9 +234,12 @@ class AcpClient implements StructuredRuntimeClient {
     this.pendingConfigOptions = undefined;
     this.sendConfigOptions(sessionId, initialConfigOptions);
     if (initialPrompt !== undefined && initialPrompt.length > 0) {
-      this.queuedPrompts.push({ text: withGoalPreamble(this.goalObjective, initialPrompt), attachments: initialAttachments });
+      void this.startTurn(
+        withGoalPreamble(this.goalObjective, initialPrompt),
+        initialAttachments,
+        initialDeliveryId,
+      );
     }
-    this.flushQueuedPrompt();
   }
 
   // Mid-thread Launch Options change. opencode delivers model / effort / mode as
@@ -281,31 +314,37 @@ class AcpClient implements StructuredRuntimeClient {
     }
   }
 
-  private flushQueuedPrompt(): void {
-    if (this.turnOpen || this.sessionId === undefined) {
-      return;
-    }
-    const next = this.queuedPrompts.shift();
-    if (next === undefined) {
-      return;
-    }
-    this.startTurn(next.text, next.attachments);
-  }
-
-  private startTurn(text: string, attachments?: ComposerAttachmentRef[]): void {
+  private startTurn(
+    text: string,
+    attachments?: ComposerAttachmentRef[],
+    deliveryId?: string,
+  ): { deliveryId: string; state: "working_unconfirmed" } {
     if (this.sessionId === undefined) {
-      this.queuedPrompts.push({ text, attachments });
-      return;
+      throw new Error("ACP session is not ready for dispatch.");
     }
+    if (this.turnOpen) {
+      throw new Error("ACP already has an active turn; queue in the application service.");
+    }
+    const stableDeliveryId = deliveryId ?? `${this.runtimeId}:delivery:${this.requestId + 1}`;
+    this.activeDeliveryId = stableDeliveryId;
     this.turnOpen = true;
+    this.onEvent({ kind: "turn_started", deliveryId: stableDeliveryId });
     this.request("session/prompt", {
       sessionId: this.sessionId,
+      messageId: stableDeliveryId,
       prompt: acpPromptBlocks(text, attachments),
     }, (response) => {
       this.turnOpen = false;
       this.flushStreams();
       const result = isRecord(response.result) ? response.result : {};
-      const stopReason = stringField(result, "stopReason");
+      const stopReason = stringField(result, "stopReason") ?? (response.error !== undefined ? "error" : "end_turn");
+      const userMessageId = stringField(result, "userMessageId");
+      this.onEvent({
+        kind: "delivery_acknowledged",
+        deliveryId: stableDeliveryId,
+        ...(userMessageId !== undefined ? { providerMessageId: userMessageId } : {}),
+      });
+      const terminal = normalizeProviderTerminalStatus(this.agentId, stopReason);
       const usage = this.withLastRateLimits(acpUsageFromRecord(result));
       let notice: string | undefined;
       if (response.error !== undefined) {
@@ -318,25 +357,24 @@ class AcpClient implements StructuredRuntimeClient {
       }
       this.onEvent({
         kind: "turn_completed",
+        ...terminal,
+        deliveryId: stableDeliveryId,
         ...(notice !== undefined ? { notice } : {}),
         ...(usage !== undefined ? { usage } : {}),
       });
-      this.flushQueuedPrompt();
-    });
+      this.activeDeliveryId = undefined;
+    }, null);
+    return { deliveryId: stableDeliveryId, state: "working_unconfirmed" };
   }
 
-  async write(input: StructuredRuntimeWrite): Promise<void> {
+  async write(input: StructuredRuntimeWrite) {
     if (input.kind === "goal_set") {
       this.goalObjective = input.objective.trim();
       return;
     }
     if (input.kind === "composer_input") {
       const value = withGoalPreamble(this.goalObjective, input.value);
-      if (this.turnOpen || this.sessionId === undefined) {
-        return void this.queuedPrompts.push({ text: value, attachments: input.attachments });
-      }
-      this.startTurn(value, input.attachments);
-      return;
+      return this.startTurn(value, input.attachments, input.deliveryId);
     }
     const promptId = input.promptId ?? "";
     const serverRequestId = this.pendingPermissions.get(promptId);
@@ -371,6 +409,7 @@ class AcpClient implements StructuredRuntimeClient {
 
   async stop(): Promise<void> {
     this.exited = true;
+    this.clearPendingResponses();
     this.child.kill("SIGTERM");
     setTimeout(() => {
       try {
@@ -385,9 +424,19 @@ class AcpClient implements StructuredRuntimeClient {
     method: string,
     params: Record<string, unknown>,
     onResponse: (message: Record<string, unknown>) => void,
+    timeoutMs: number | null = ACP_REQUEST_TIMEOUT_MS,
   ): void {
     this.requestId += 1;
-    this.pendingResponses.set(this.requestId, onResponse);
+    const requestId = this.requestId;
+    const pending: { onResponse: (message: Record<string, unknown>) => void; timer?: NodeJS.Timeout } = { onResponse };
+    if (timeoutMs !== null) {
+      pending.timer = setTimeout(() => {
+        if (!this.pendingResponses.delete(requestId)) return;
+        onResponse({ error: { message: `ACP request timed out: ${method}` } });
+      }, timeoutMs);
+      pending.timer.unref();
+    }
+    this.pendingResponses.set(requestId, pending);
     this.writeLine({ jsonrpc: "2.0", id: this.requestId, method, params });
   }
 
@@ -433,7 +482,8 @@ class AcpClient implements StructuredRuntimeClient {
       const handler = this.pendingResponses.get(id);
       if (handler !== undefined) {
         this.pendingResponses.delete(id);
-        handler(message);
+        if (handler.timer !== undefined) clearTimeout(handler.timer);
+        handler.onResponse(message);
       }
       return;
     }
@@ -462,6 +512,13 @@ class AcpClient implements StructuredRuntimeClient {
     if (method === "session/update") {
       this.handleSessionUpdate(isRecord(params.update) ? params.update : {});
     }
+  }
+
+  private clearPendingResponses(): void {
+    for (const pending of this.pendingResponses.values()) {
+      if (pending.timer !== undefined) clearTimeout(pending.timer);
+    }
+    this.pendingResponses.clear();
   }
 
   private handleSessionUpdate(update: Record<string, unknown>): void {
@@ -680,116 +737,4 @@ class AcpClient implements StructuredRuntimeClient {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-// Parse opencode's `configOptions` launch/apply param (an array of {configId, value})
-// from an unknown protocolParams field. Returns undefined when absent.
-function parseConfigOptions(value: unknown): Array<{ configId: string; value: string }> | undefined {
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-  const options: Array<{ configId: string; value: string }> = [];
-  for (const entry of value) {
-    if (isRecord(entry) && typeof entry.configId === "string" && typeof entry.value === "string") {
-      options.push({ configId: entry.configId, value: entry.value });
-    }
-  }
-  return options;
-}
-
-// Merge config-option changes by configId (incoming wins), preserving order: a later
-// pre-adoption change carries only its changed keys, so it must not drop earlier ones.
-export function mergeConfigOptions(
-  existing: Array<{ configId: string; value: string }> | undefined,
-  incoming: Array<{ configId: string; value: string }>,
-): Array<{ configId: string; value: string }> {
-  const merged = new Map<string, string>();
-  for (const option of existing ?? []) {
-    merged.set(option.configId, option.value);
-  }
-  for (const option of incoming) {
-    merged.set(option.configId, option.value);
-  }
-  return Array.from(merged, ([configId, value]) => ({ configId, value }));
-}
-
-export interface AcpModelCatalog {
-  models: Array<{ value: string; label: string; vendor?: string }>;
-  currentModel?: string;
-}
-
-// Extract a model catalog from an ACP session/new result. Some providers report
-// ACP-standard `models.availableModels`/`currentModelId`; opencode reports its
-// `configOptions` model category (provider/model ids split into vendor + model).
-export function parseAcpModelCatalog(result: Record<string, unknown>): AcpModelCatalog | undefined {
-  const standardModels = isRecord(result.models) ? result.models : undefined;
-  if (standardModels !== undefined && Array.isArray(standardModels.availableModels)) {
-    const models = standardModels.availableModels
-      .filter(isRecord)
-      .map((entry) => {
-        const value = stringField(entry, "modelId") ?? "";
-        return { value, label: stringField(entry, "name") ?? value };
-      })
-      .filter((model) => model.value.length > 0);
-    if (models.length > 0) {
-      return { models, currentModel: stringField(standardModels, "currentModelId") };
-    }
-  }
-  if (Array.isArray(result.configOptions)) {
-    const modelOption = result.configOptions
-      .filter(isRecord)
-      .find((option) => stringField(option, "category") === "model" || stringField(option, "id") === "model");
-    if (modelOption !== undefined && Array.isArray(modelOption.options)) {
-      const models = modelOption.options
-        .filter(isRecord)
-        .map((entry) => {
-          const value = stringField(entry, "value") ?? "";
-          const slash = value.indexOf("/");
-          return {
-            value,
-            label: slash > 0 ? value.slice(slash + 1) : stringField(entry, "name") ?? value,
-            ...(slash > 0 ? { vendor: value.slice(0, slash) } : {}),
-          };
-        })
-        .filter((model) => model.value.length > 0);
-      if (models.length > 0) {
-        return { models, currentModel: stringField(modelOption, "currentValue") };
-      }
-    }
-  }
-  return undefined;
-}
-
-// Token + quota parsing moved to acp-usage.ts to keep this client under the file-size
-// ratchet; re-exported here so callers/tests keep their import path.
 export { acpUsageFromRecord };
-
-function stringField(record: Record<string, unknown>, key: string): string | undefined {
-  const value = record[key];
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function bounded(text: string): string {
-  return text.length > 4000 ? `${text.slice(0, 4000)}…` : text;
-}
-
-function acpToolOutput(content: unknown): string {
-  if (!Array.isArray(content)) {
-    return "";
-  }
-  return content
-    .map((item) => {
-      if (!isRecord(item)) {
-        return "";
-      }
-      const inner = isRecord(item.content) ? item.content : undefined;
-      if (inner !== undefined && typeof inner.text === "string") {
-        return inner.text;
-      }
-      return "";
-    })
-    .join("\n")
-    .trim();
-}

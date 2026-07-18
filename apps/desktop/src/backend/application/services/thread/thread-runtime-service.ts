@@ -1,18 +1,14 @@
-import type { AnswerPromptInput, AnswerPromptResult, AppendRawAgentFrameInput, CreateDraftThreadInput, CreateDraftThreadResult, CreateThreadRuntimeServiceInput, DiscardDraftThreadInput, DiscardDraftThreadResult, HydrateThreadInput, HydrateThreadResult, InvokeProviderCapabilityInput, InvokeProviderCapabilityResult, RecordAgentSessionBlockInput, RecordAgentSessionBlockResult, RecordStreamingBlockInput, RecordStreamingBlockResult, RecordProviderGoalStateInput, RecordProviderGoalStateResult, RecordProviderPromptStateInput, RecordProviderPromptStateResult, RecordProviderTurnStartedInput, RecordProviderTurnStartedResult, WithdrawProviderPromptInput, WithdrawProviderPromptResult, RecordProviderSessionRefInput, RecordProviderSessionRefResult, RecordTurnCompleteInput, RecordTurnCompleteResult, ResumeAgentRuntimeInput, ResumeAgentRuntimeResult, RunQueuedInputNowInput, RunQueuedInputNowResult, StartThreadInput, StartThreadResult, StopAgentRuntimeInput, StopAgentRuntimeResult, ThreadRuntimeService, TrustWorkspaceInput, TrustWorkspaceResult, CheckReadinessInput, CheckReadinessResult } from "./thread-runtime-api.ts";
+import type { AnswerPromptInput, AnswerPromptResult, AppendRawAgentFrameInput, CreateDraftThreadInput, CreateDraftThreadResult, CreateThreadRuntimeServiceInput, DiscardDraftThreadInput, DiscardDraftThreadResult, HydrateThreadInput, HydrateThreadResult, InvokeProviderCapabilityInput, InvokeProviderCapabilityResult, RecordAgentSessionBlockInput, RecordAgentSessionBlockResult, RecordDeliveryStateInput, RecordDeliveryStateResult, RecordStreamingBlockInput, RecordStreamingBlockResult, RecordProviderGoalStateInput, RecordProviderGoalStateResult, RecordProviderPromptStateInput, RecordProviderPromptStateResult, RecordProviderTurnStartedInput, RecordProviderTurnStartedResult, WithdrawProviderPromptInput, WithdrawProviderPromptResult, RecordProviderSessionRefInput, RecordProviderSessionRefResult, RecordTurnCompleteInput, RecordTurnCompleteResult, ResumeAgentRuntimeInput, ResumeAgentRuntimeResult, RunQueuedInputNowInput, RunQueuedInputNowResult, StartThreadInput, StartThreadResult, StopAgentRuntimeInput, StopAgentRuntimeResult, ThreadRuntimeService, TrustWorkspaceInput, TrustWorkspaceResult, CheckReadinessInput, CheckReadinessResult } from "./thread-runtime-api.ts";
 import { ComposerQueueService, runQueuedInputNowThroughQueue } from "./composer-queue-service.ts";
 import { createUnavailableBrowserRuntimePort } from "./unavailable-browser-runtime-port.ts";
 import type {
   AgentSessionBlock,
-} from "../../domains/agent-session/agent-session-block.ts";
-import {
-  createLocalUserMessageBlock,
 } from "../../domains/agent-session/agent-session-block.ts";
 import type {
   RawAgentFrame,
   RawAgentFramePayloadKind,
   RawAgentFrameSource,
 } from "../../domains/agent-session/raw-agent-frame.ts";
-
 import type {
   AgentRuntimeHandle,
   AgentRuntimeResumeInput,
@@ -20,12 +16,10 @@ import type {
   AgentRuntimeState,
   TerminalInput,
 } from "../../domains/agent-runtime/agent-runtime.ts";
-
 import type {
   ProviderReadinessCheckInput,
   ProviderReadinessResult,
 } from "../../domains/provider-readiness/provider-readiness.ts";
-
 import type {
   AgentBinding,
   AgentId,
@@ -193,6 +187,12 @@ import type {
 } from "../../ports/outbound/workbench-terminal-port.ts";
 
 import { autoTrustDefaultWorktreeFromTrustedRepo } from "./worktree-trust.ts";
+import {
+  activeOrResumedRuntimeHandle,
+  appendDeliveryUserBlock,
+  openRuntimeForPendingDelivery,
+  recordDeliveryStateInStore,
+} from "./thread-delivery-lifecycle.ts";
 
 const DEFAULT_WORKBENCH_TERMINAL_COMMAND = "sh";
 const DEFAULT_WORKBENCH_TERMINAL_ARGS: string[] = [];
@@ -450,7 +450,8 @@ constructor(input: CreateThreadRuntimeServiceInput) {
       composerAttachmentStorePort: this.composerAttachmentStorePort,
       clock: this.clock,
       idGenerator: this.idGenerator,
-      appendLocalUserMessageBlock: (thread, input) => this.appendLocalUserMessageBlock(thread, input),
+      appendLocalUserMessageBlock: (thread, input, deliveryId, deliveryState) =>
+        this.appendLocalUserMessageBlock(thread, input, deliveryId, deliveryState),
       activeOrResumedHandle: (thread) => this.activeOrResumedHandle(thread),
     });
     this.providerCapabilities = new ThreadProviderCapabilityService({
@@ -549,7 +550,10 @@ async hydrateThread(
     if (
       input.reconcileStaleRuntime === true &&
       thread.activeRuntimeHandle === undefined &&
-      (thread.runtimeState === "waiting_for_approval" ||
+      (thread.lastKnownState === "running" ||
+        thread.lastKnownState === "waiting_for_approval" ||
+        thread.lastKnownState === "waiting_for_input" ||
+        thread.runtimeState === "waiting_for_approval" ||
         thread.runtimeState === "waiting_for_input" ||
         thread.runtimeState === "running" ||
         thread.runtimeState === "starting")
@@ -641,6 +645,7 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
     const { text: message, attachments: messageAttachments } =
       await this.composerQueue.composeMessageWithAttachments(thread, input.initialMessage, input.attachments);
     const hasInitialPrompt = message.trim().length > 0 || messageAttachments.length > 0;
+    const initialDeliveryId = hasInitialPrompt ? this.idGenerator() : undefined;
 
     const readiness = await this.providerReadinessPort.check({
       agentId: thread.agentBinding.agentId,
@@ -653,6 +658,7 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
       if (hasInitialPrompt) {
         this.composerQueue.enqueuePendingInput(thread, {
           kind: "composer_input",
+          deliveryId: initialDeliveryId,
           value: message,
           capturedAt,
           launchOptions: cloneLaunchOptions(input.launchOptions),
@@ -669,23 +675,13 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
         providerReadiness: readiness,
       };
     }
-    const submittedBlock = hasInitialPrompt
-      ? this.appendLocalUserMessageBlock(thread, message)
-      : undefined;
-    if (submittedBlock !== undefined) {
-      this.emitAsyncEvent({
-        kind: "agent_session_block_upserted",
-        thread: snapshotThread(thread),
-        block: submittedBlock,
-      });
-    }
-
     // Provider CLIs receive the first message as the launch-time initial prompt
     // (positional/flag), which reliably starts a turn.
     const deliverPromptViaLaunch = hasInitialPrompt;
     const attachmentsForRuntime = messageAttachments.length > 0 ? messageAttachments : undefined;
     markThreadStarting(thread, this.clock);
     let handle: AgentRuntimeHandle;
+    let submittedBlock: AgentSessionBlockReference | undefined;
     try {
       handle = await this.agentRuntimePort.start({
         threadId: thread.threadId,
@@ -693,6 +689,7 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
         scope: cloneScope(thread.scope),
         launchOptions: thread.launchOptions,
         initialPrompt: deliverPromptViaLaunch ? message : undefined,
+        initialDeliveryId: deliverPromptViaLaunch ? initialDeliveryId : undefined,
         initialGoal: thread.goal,
         initialAttachments: deliverPromptViaLaunch ? attachmentsForRuntime : undefined,
       });
@@ -703,9 +700,25 @@ peekThread(threadId: string): ServiceResult<HydrateThreadResult> {
       if (hasInitialPrompt && !deliverPromptViaLaunch) {
         await this.agentRuntimePort.writeInput(handle, {
           kind: "composer_input",
+          deliveryId: initialDeliveryId,
           value: message,
           submittedAt: this.clock(),
           attachments: attachmentsForRuntime,
+        });
+      }
+      submittedBlock = hasInitialPrompt
+        ? this.appendLocalUserMessageBlock(
+            thread,
+            message,
+            initialDeliveryId,
+            deliverPromptViaLaunch ? "working_unconfirmed" : "acknowledged",
+          )
+        : undefined;
+      if (submittedBlock !== undefined) {
+        this.emitAsyncEvent({
+          kind: "agent_session_block_upserted",
+          thread: snapshotThread(thread),
+          block: submittedBlock,
         });
       }
     } catch (error) {
@@ -1284,6 +1297,7 @@ private async replayPendingInputAfterTrust(thread: ThreadRecord): Promise<void> 
     if (pendingInput === undefined) {
       return;
     }
+    pendingInput.deliveryId ??= this.idGenerator();
     thread.runtimeState = "starting";
     thread.runtimeStartedAt = this.clock();
     thread.lifecycleState = "running";
@@ -1294,23 +1308,29 @@ private async replayPendingInputAfterTrust(thread: ThreadRecord): Promise<void> 
       pendingInput.launchOptions,
       pendingInput.value,
       pendingInput.attachments,
-    );
-    const submittedBlock = this.appendLocalUserMessageBlock(
-      thread,
-      pendingInput.value,
+      pendingInput.deliveryId,
     );
     thread.activeRuntimeHandle = cloneRuntimeHandle(handle);
     thread.runtimeState = "running";
-    this.composerQueue.promoteNextPendingInput(thread);
-    thread.updatedAt = this.clock();
+    let deliveryState = "working_unconfirmed";
     if (!deliveredViaLaunch) {
-      await this.agentRuntimePort.writeInput(handle, {
+      const dispatch = await this.agentRuntimePort.writeInput(handle, {
         kind: "composer_input",
+        deliveryId: pendingInput.deliveryId,
         value: pendingInput.value,
         submittedAt: this.clock(),
         attachments: pendingInput.attachments,
       });
+      deliveryState = dispatch?.state ?? "acknowledged";
     }
+    const submittedBlock = this.appendLocalUserMessageBlock(
+      thread,
+      pendingInput.value,
+      pendingInput.deliveryId,
+      deliveryState,
+    );
+    this.composerQueue.promoteNextPendingInput(thread);
+    thread.updatedAt = this.clock();
     const threadSnapshot = snapshotThread(thread);
     this.emitAsyncEvent({
       kind: "agent_session_block_upserted",
@@ -1388,23 +1408,30 @@ private async replayPendingInputAfterTrust(thread: ThreadRecord): Promise<void> 
 
     const queued = thread.pendingInput;
     if (queued !== undefined && queued.kind === "composer_input") {
-      this.composerQueue.promoteNextPendingInput(thread);
+      queued.deliveryId ??= this.idGenerator();
       // An options change that needs a runtime restart applies before the
       // flushed turn starts (the ended turn's process is idle now).
       await this.composerQueue.consumePendingRuntimeRestart(thread);
       const handle = await this.activeOrResumedHandle(thread);
-      const submittedBlock = this.appendLocalUserMessageBlock(thread, queued.value);
+      const dispatch = await this.agentRuntimePort.writeInput(handle, {
+        kind: "composer_input",
+        deliveryId: queued.deliveryId,
+        value: queued.value,
+        submittedAt: this.clock(),
+        attachments: queued.attachments,
+      });
+      const submittedBlock = this.appendLocalUserMessageBlock(
+        thread,
+        queued.value,
+        queued.deliveryId,
+        dispatch?.state ?? "acknowledged",
+      );
+      this.composerQueue.promoteNextPendingInput(thread);
       thread.runtimeState = "running";
       thread.runtimeStartedAt = this.clock();
       thread.lifecycleState = "running";
       thread.lastKnownState = "running";
       thread.updatedAt = this.clock();
-      await this.agentRuntimePort.writeInput(handle, {
-        kind: "composer_input",
-        value: queued.value,
-        submittedAt: this.clock(),
-        attachments: queued.attachments,
-      });
       return {
         ok: true,
         thread: snapshotThread(thread),
@@ -1424,6 +1451,12 @@ private async replayPendingInputAfterTrust(thread: ThreadRecord): Promise<void> 
       thread: snapshotThread(thread),
       runtimeState: thread.runtimeState,
     };
+  }
+
+  async recordDeliveryState(
+    input: RecordDeliveryStateInput,
+  ): Promise<ServiceResult<RecordDeliveryStateResult>> {
+    return recordDeliveryStateInStore({ threads: this.threads, command: input, clock: this.clock });
   }
 
 // A Launcher tab is a transient "pick what to open" pad. When the active pane is a
@@ -1533,28 +1566,35 @@ private async replayPendingInputIfProviderReady(
 
     try {
       markThreadStarting(thread, this.clock);
+      pendingInput.deliveryId ??= this.idGenerator();
       const { handle, deliveredViaLaunch } = await this.startOrResumeRuntimeForPendingInput(
         thread,
         pendingInput.launchOptions,
         pendingInput.value,
         pendingInput.attachments,
-      );
-      const submittedBlock = this.appendLocalUserMessageBlock(
-        thread,
-        pendingInput.value,
+        pendingInput.deliveryId,
       );
       thread.activeRuntimeHandle = cloneRuntimeHandle(handle);
       thread.runtimeState = "running";
       thread.updatedAt = this.clock();
 
+      let deliveryState = "working_unconfirmed";
       if (!deliveredViaLaunch) {
-        await this.agentRuntimePort.writeInput(handle, {
+        const dispatch = await this.agentRuntimePort.writeInput(handle, {
           kind: "composer_input",
+          deliveryId: pendingInput.deliveryId,
           value: pendingInput.value,
           submittedAt: this.clock(),
           attachments: pendingInput.attachments,
         });
+        deliveryState = dispatch?.state ?? "acknowledged";
       }
+      const submittedBlock = this.appendLocalUserMessageBlock(
+        thread,
+        pendingInput.value,
+        pendingInput.deliveryId,
+        deliveryState,
+      );
       this.composerQueue.promoteNextPendingInput(thread);
       thread.updatedAt = this.clock();
       const threadSnapshot = snapshotThread(thread);
@@ -1611,80 +1651,42 @@ private async startOrResumeRuntimeForPendingInput(
     launchOptions: Record<string, unknown> | undefined,
     promptValue: string,
     promptAttachments?: ComposerAttachmentRef[],
+    deliveryId?: string,
   ): Promise<{ handle: AgentRuntimeHandle; deliveredViaLaunch: boolean }> {
-    await this.composerQueue.consumePendingRuntimeRestart(thread);
-    if (thread.activeRuntimeHandle !== undefined) {
-      return { handle: thread.activeRuntimeHandle, deliveredViaLaunch: false };
-    }
-    if (thread.agentBinding.providerSessionRef !== undefined) {
-      return { handle: await this.activeOrResumedHandle(thread), deliveredViaLaunch: false };
-    }
-
-    // A fresh Provider CLI start must receive the first message as the launch-time
-    // initial prompt (positional/flag), which reliably starts a turn — exactly like
-    // startThread. Without it the CLI launches idle and the typed-in message does not
-    // begin a turn (the held first message never resolves).
-    const deliverPromptViaLaunch = true;
-    const handle = await this.agentRuntimePort.start({
-      threadId: thread.threadId,
-      agentBinding: cloneAgentBinding(thread.agentBinding),
-      scope: cloneScope(thread.scope),
+    return openRuntimeForPendingDelivery({
+      thread,
       launchOptions,
-      initialPrompt: deliverPromptViaLaunch ? promptValue : undefined,
-      initialGoal: thread.goal,
-      initialAttachments: deliverPromptViaLaunch ? promptAttachments : undefined,
+      promptValue,
+      promptAttachments,
+      deliveryId,
+      composerQueue: this.composerQueue,
+      agentRuntimePort: this.agentRuntimePort,
+      activeOrResumedHandle: (candidate) => this.activeOrResumedHandle(candidate),
     });
-    return { handle, deliveredViaLaunch: deliverPromptViaLaunch };
   }
 
 private appendLocalUserMessageBlock(
     thread: ThreadRecord,
     input: string,
+    deliveryId?: string,
+    deliveryState?: string,
   ): AgentSessionBlockReference {
-    const submittedAt = this.clock();
-    const block = createLocalUserMessageBlock({
-      threadId: thread.threadId,
-      agentId: thread.agentBinding.agentId,
-      input,
-      submittedAt,
-      localId: this.idGenerator(),
+    return appendDeliveryUserBlock({
+      thread,
+      value: input,
+      deliveryId,
+      deliveryState,
+      clock: this.clock,
+      idGenerator: this.idGenerator,
     });
-    const reference = toAgentSessionBlockReference(block);
-    thread.cachedBlocks.push(reference);
-    return reference;
   }
 
 async activeOrResumedHandle(thread: ThreadRecord): Promise<AgentRuntimeHandle> {
-    if (thread.activeRuntimeHandle !== undefined) {
-      return thread.activeRuntimeHandle;
-    }
-
-    thread.runtimeState = "starting";
-    thread.runtimeStartedAt = this.clock();
-    thread.updatedAt = this.clock();
-    // Resume only when there is a provider session to resume. A thread that has
-    // never run (e.g. hydrated from metadata before the agent produced a session
-    // ref) has no providerSessionRef, so it must start a fresh runtime instead
-    // of failing the resume.
-    const handle =
-      thread.agentBinding.providerSessionRef === undefined
-        ? await this.agentRuntimePort.start({
-            threadId: thread.threadId,
-            agentBinding: cloneAgentBinding(thread.agentBinding),
-            scope: cloneScope(thread.scope),
-            launchOptions: thread.launchOptions,
-            initialGoal: thread.goal,
-          })
-        : await this.agentRuntimePort.resume({
-            threadId: thread.threadId,
-            agentBinding: cloneAgentBinding(thread.agentBinding),
-            scope: cloneScope(thread.scope),
-            // Current options, not launch-time ones: a resume respawn after a
-            // mid-thread model/permission/effort change uses the new values.
-            launchOptions: cloneLaunchOptions(thread.launchOptions),
-          });
-    thread.activeRuntimeHandle = cloneRuntimeHandle(handle);
-    return handle;
+    return activeOrResumedRuntimeHandle({
+      thread,
+      agentRuntimePort: this.agentRuntimePort,
+      clock: this.clock,
+    });
   }
 
   // Composer queue / launch-option operations are owned by ComposerQueueService

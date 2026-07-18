@@ -22,7 +22,12 @@ export class ComposerQueueService {
   private readonly composerAttachmentStorePort?: ComposerAttachmentStorePort;
   private readonly clock: () => string;
   private readonly idGenerator: () => string;
-  private readonly appendLocalUserMessageBlock: (thread: ThreadRecord, input: string) => AgentSessionBlockReference;
+  private readonly appendLocalUserMessageBlock: (
+    thread: ThreadRecord,
+    input: string,
+    deliveryId?: string,
+    deliveryState?: string,
+  ) => AgentSessionBlockReference;
   private readonly activeOrResumedHandle: (thread: ThreadRecord) => Promise<AgentRuntimeHandle>;
 
   constructor(input: {
@@ -32,7 +37,12 @@ export class ComposerQueueService {
     composerAttachmentStorePort?: ComposerAttachmentStorePort;
     clock: () => string;
     idGenerator: () => string;
-    appendLocalUserMessageBlock: (thread: ThreadRecord, input: string) => AgentSessionBlockReference;
+    appendLocalUserMessageBlock: (
+      thread: ThreadRecord,
+      input: string,
+      deliveryId?: string,
+      deliveryState?: string,
+    ) => AgentSessionBlockReference;
     activeOrResumedHandle: (thread: ThreadRecord) => Promise<AgentRuntimeHandle>;
   }) {
     this.threads = input.threads;
@@ -107,6 +117,7 @@ async sendComposerInput(
     const { text: message, attachments: messageAttachments } =
       await this.composeMessageWithAttachments(thread, input.input, input.attachments);
     const attachmentsForRuntime = messageAttachments.length > 0 ? messageAttachments : undefined;
+    const deliveryId = this.idGenerator();
 
     const readiness = await this.providerReadinessPort.check({
       agentId: thread.agentBinding.agentId,
@@ -117,6 +128,7 @@ async sendComposerInput(
     if (!readiness.ready) {
       this.enqueuePendingInput(thread, {
         kind: "composer_input",
+        deliveryId,
         value: message,
         capturedAt: this.clock(),
         launchOptions: cloneLaunchOptions(thread.launchOptions),
@@ -150,6 +162,7 @@ async sendComposerInput(
     if (busy) {
       this.enqueuePendingInput(thread, {
         kind: "composer_input",
+        deliveryId,
         value: message,
         capturedAt: this.clock(),
         launchOptions: cloneLaunchOptions(thread.launchOptions),
@@ -188,19 +201,24 @@ async sendComposerInput(
         submittedAt: this.clock(),
       });
     }
-    const submittedBlock = this.appendLocalUserMessageBlock(thread, message);
+    const dispatch = await this.agentRuntimePort.writeInput(handle, {
+      kind: "composer_input",
+      deliveryId,
+      value: message,
+      submittedAt: this.clock(),
+      attachments: attachmentsForRuntime,
+    });
+    const submittedBlock = this.appendLocalUserMessageBlock(
+      thread,
+      message,
+      deliveryId,
+      dispatch?.state ?? "acknowledged",
+    );
     thread.runtimeState = "running";
     thread.runtimeStartedAt = this.clock();
     thread.lifecycleState = "running";
     thread.lastKnownState = "running";
     thread.updatedAt = this.clock();
-
-    await this.agentRuntimePort.writeInput(handle, {
-      kind: "composer_input",
-      value: message,
-      submittedAt: this.clock(),
-      attachments: attachmentsForRuntime,
-    });
 
     return {
       ok: true,
@@ -349,6 +367,7 @@ writePendingInputs(thread: ThreadRecord, queue: PendingInput[]): void {
     } else {
       queue[index] = {
         kind: "composer_input",
+        deliveryId: pending.deliveryId ?? this.idGenerator(),
         value: input.value,
         capturedAt: this.clock(),
         // Preserve the queued message's launch options + attachments across the edit.

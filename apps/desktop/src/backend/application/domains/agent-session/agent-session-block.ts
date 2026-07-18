@@ -126,6 +126,8 @@ export function createLocalUserMessageBlock(input: {
   input: string;
   submittedAt: string;
   localId: string;
+  deliveryId?: string;
+  deliveryState?: string;
 }): AgentSessionBlock {
   return {
     blockId: `local:${input.threadId}:${input.localId}`,
@@ -137,6 +139,8 @@ export function createLocalUserMessageBlock(input: {
     localProvenance: {
       kind: "composer_input",
       localId: input.localId,
+      ...(input.deliveryId !== undefined ? { deliveryId: input.deliveryId } : {}),
+      ...(input.deliveryState !== undefined ? { deliveryState: input.deliveryState } : {}),
       submittedAt: input.submittedAt,
     },
     status: "complete",

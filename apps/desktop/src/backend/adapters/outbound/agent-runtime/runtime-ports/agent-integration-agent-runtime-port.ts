@@ -225,6 +225,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
       plan,
       runtimeId,
       input.initialPrompt,
+      input.initialDeliveryId,
       undefined,
       input.initialAttachments,
       input.initialGoal,
@@ -258,29 +259,30 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
       plan,
       runtimeId,
       undefined,
+      undefined,
       providerSessionRef.value,
     );
   }
 
-  async writeInput(handle: AgentRuntimeHandle, input: TerminalInput): Promise<void> {
+  async writeInput(handle: AgentRuntimeHandle, input: TerminalInput) {
     const runtime = this.runtimes.get(handle.runtimeId);
     if (runtime === undefined) {
       throw new Error("Agent Runtime handle was not found.");
     }
     if (input.kind === "goal_set") {
-      await runtime.client.write({ kind: "goal_set", objective: input.value });
-      return;
+      return runtime.client.write({ kind: "goal_set", objective: input.value });
     }
     if (input.kind === "composer_input") {
-      await runtime.client.write({
+      return runtime.client.write({
         kind: "composer_input",
         value: input.value,
+        deliveryId: input.deliveryId,
         attachments: input.attachments,
       });
       return;
     }
     if (input.kind === "prompt_answer") {
-      await runtime.client.write({
+      return runtime.client.write({
         kind: "prompt_answer",
         promptId: input.promptId,
         choiceId: input.choiceId,
@@ -474,16 +476,17 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     }
   }
 
-  private spawnRuntime(
+  private async spawnRuntime(
     threadId: string,
     agentId: ProviderCliAgentId,
     plan: ProviderLaunchPlan,
     runtimeId: string,
     initialPrompt?: string,
+    initialDeliveryId?: string,
     resumeRef?: string,
     initialAttachments?: ComposerAttachmentRef[],
     initialGoal?: string,
-  ): AgentRuntimeHandle {
+  ): Promise<AgentRuntimeHandle> {
     // One live runtime per thread: tear down any existing one so a thread can
     // never double-run (two clients on one session tangle the turn).
     for (const [existingRuntimeId, state] of this.runtimes) {
@@ -530,13 +533,20 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
       runtimeId,
       agentId,
       initialPrompt,
+      initialDeliveryId,
       initialAttachments,
       initialGoal,
       resumeRef,
       onEvent: emit,
     });
+    try {
+      await client.ready();
+    } catch (error) {
+      await Promise.resolve(client.stop()).catch(() => undefined);
+      throw error;
+    }
     this.runtimes.set(runtimeId, { client, threadId, agentId });
-    traceAgentRuntime(`spawned ${agentId} runtime=${runtimeId} transport=${String(plan.transport)}`);
+    traceAgentRuntime(`ready ${agentId} runtime=${runtimeId} transport=${String(plan.transport)}`);
     // A launch-assigned session ref (claude minted --session-id) binds the
     // thread immediately; structured clients also emit session_ref from the
     // protocol's own session id.
@@ -582,6 +592,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     runtimeId: string;
     agentId: ProviderCliAgentId;
     initialPrompt?: string;
+    initialDeliveryId?: string;
     initialAttachments?: ComposerAttachmentRef[];
     initialGoal?: string;
     resumeRef?: string;
@@ -594,6 +605,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
           threadId: input.threadId,
           runtimeId: input.runtimeId,
           initialPrompt: input.initialPrompt,
+          initialDeliveryId: input.initialDeliveryId,
           initialGoal: input.initialGoal,
           initialAttachments: input.initialAttachments,
           locateSubagentsDir: this.locateSubagentsDir,
@@ -605,6 +617,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
           threadId: input.threadId,
           runtimeId: input.runtimeId,
           initialPrompt: input.initialPrompt,
+          initialDeliveryId: input.initialDeliveryId,
           initialGoal: input.initialGoal,
           initialAttachments: input.initialAttachments,
           resumeThreadId: input.resumeRef,
@@ -618,6 +631,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
           agentId: input.agentId,
           sessionRefKind: sessionRefKindForAgent(input.agentId),
           initialPrompt: input.initialPrompt,
+          initialDeliveryId: input.initialDeliveryId,
           initialGoal: input.initialGoal,
           initialAttachments: input.initialAttachments,
           resumeSessionId: input.resumeRef,

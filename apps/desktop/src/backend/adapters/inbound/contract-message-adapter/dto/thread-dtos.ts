@@ -18,6 +18,17 @@ export function toThreadSummaryDto(thread: ThreadSnapshot): ThreadSummaryDto {
     lastKnownState: thread.lastKnownState as LastKnownStateDto,
     live: thread.live,
     queuedInputs: thread.queuedInputs,
+    queuedDeliveries: thread.pendingInputs.map((pending) => ({
+      deliveryId: pending.deliveryId ?? pending.capturedAt,
+      value: pending.value,
+      capturedAt: pending.capturedAt,
+      ...(jsonObject(pending.launchOptions) !== undefined
+        ? { launchOptions: jsonObject(pending.launchOptions) }
+        : {}),
+      ...(pending.attachments !== undefined
+        ? { attachments: pending.attachments.map((attachment) => ({ ...attachment })) }
+        : {}),
+    })),
   };
   if (launchOptions !== undefined) {
     summary.launchOptions = launchOptions;
