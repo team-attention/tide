@@ -498,6 +498,14 @@ Implemented:
 - Hidden observe/action no longer requires a visible Workbench pane or renderer
   Browser Pane mount.
 
+Known contract gap:
+
+- Renderer-created auxiliary browsing contexts are currently cancelled and
+  reconstructed from their URL as independent Browser Panes. This loses
+  `WindowProxy`, opener, postMessage, form-body, named-window, and close
+  semantics. Investigation, evidence gates, and presentation options are
+  specified in [Browser Pane Popup Contract](browser-pane-popup-contract.md).
+
 Removed from Browser Use:
 
 - Renderer Browser Pane `<webview>` presentation.
@@ -575,6 +583,10 @@ Retained outside Browser Use:
 
 ## Open Questions
 
+- Whether an allowed auxiliary browsing context should be presented by adopting
+  its exact child `WebContents` into a Browser Pane or by a native transient
+  child window. URL/provider recognition is not an acceptable decision rule;
+  see [Browser Pane Popup Contract](browser-pane-popup-contract.md).
 - Cross-origin iframe selector routing: coordinate input can target the browser
   surface, but selector/DOM lookup must route to the correct CDP frame/target
   session or fail structurally.

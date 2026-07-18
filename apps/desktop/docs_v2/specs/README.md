@@ -50,6 +50,7 @@ Each spec must be narrow enough to test and implement as one slice.
 | [Workbench Editor UI/UX Refresh](workbench-editor-ui-ux-refresh.md) | Implemented | Make Editor surfaces theme-aware, align code and prose typography, and provide editable Markdown Live Preview and Source presentations over one document. |
 | [Workbench Editor Code Navigation](workbench-editor-code-navigation.md) | Drafted | Add the first Backend-owned go-to-definition path for Workbench Editor Panes. |
 | [Workbench Browser WebView Pane](workbench-browser-webview-pane.md) | Drafted | Render Browser Workbench Pane URLs through an Electron-hosted page surface. |
+| [Browser Pane Popup Contract](browser-pane-popup-contract.md) | Investigating | Define provider-neutral auxiliary browsing-context semantics and evidence gates before changing BrowserRuntime popup behavior. |
 | [Workbench Browser Pane Evidence Loop](workbench-browser-pane-evidence-loop.md) | Drafted | Store WebView title, URL, and bounded page text in Backend Workbench state for MCP observation. |
 | [Workbench Launcher Pane](workbench-launcher-pane.md) | Drafted | Open a real Workbench Launcher Pane when the active Thread has no visible work surface. |
 | [Workbench Terminal Pane Session](workbench-terminal-pane-session.md) | Drafted | Open a user-visible Thread-scoped Terminal Pane backed by a Workbench terminal process port. |
