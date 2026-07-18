@@ -279,7 +279,6 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
         deliveryId: input.deliveryId,
         attachments: input.attachments,
       });
-      return;
     }
     if (input.kind === "prompt_answer") {
       return runtime.client.write({
@@ -542,7 +541,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     try {
       await client.ready();
     } catch (error) {
-      await Promise.resolve(client.stop()).catch(() => undefined);
+      await client.stop().catch(() => undefined);
       throw error;
     }
     this.runtimes.set(runtimeId, { client, threadId, agentId });

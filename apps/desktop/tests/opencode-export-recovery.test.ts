@@ -93,10 +93,17 @@ test("reopen reconciliation joins optimistic user blocks by delivery ID, never t
     [provider],
     [matched, sameTextButDifferentId],
   );
-  assert.equal(reconciled.length, 1);
+  assert.equal(reconciled.length, 2);
   assert.equal(reconciled[0].blockId, "provider");
   assert.equal(reconciled[0].localProvenance?.deliveryId, "delivery-a");
   assert.equal(reconciled[0].localProvenance?.deliveryState, "acknowledged");
+  assert.equal(reconciled[1].blockId, "unmatched");
+  assert.equal(reconciled[1].localProvenance?.deliveryId, "delivery-b");
+  assert.equal(reconciled[1].localProvenance?.deliveryState, "indeterminate");
+  assert.equal(
+    reconciled[1].localProvenance?.recoveryReason,
+    "restart_without_provider_delivery_evidence",
+  );
 });
 
 test("reopen reconciliation preserves cached history when opencode import fails", () => {

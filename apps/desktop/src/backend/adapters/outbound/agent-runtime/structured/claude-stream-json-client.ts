@@ -163,18 +163,19 @@ class ClaudeStreamJsonClient implements StructuredRuntimeClient {
 
   ready(): Promise<void> { return this.readiness; }
 
-  private sendUserText(
+  private async sendUserText(
     text: string,
     attachments?: ComposerAttachmentRef[],
     deliveryId: string = randomUUID(),
   ): Promise<{ deliveryId: string; state: "working_unconfirmed" | "acknowledged"; providerMessageId?: string }> {
+    const content = await claudeUserContent(text, attachments);
     this.activeDeliveryId = deliveryId;
     this.writeLine({
       type: "user",
       uuid: deliveryId,
       message: {
         role: "user",
-        content: claudeUserContent(text, attachments),
+        content,
       },
     });
     this.onEvent({ kind: "turn_started", deliveryId });

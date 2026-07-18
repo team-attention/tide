@@ -244,19 +244,21 @@ export function reconcileReopenedThreadBlocks(
   if (!providerBlocks.every(isFailedProviderImportDiagnostic)) {
     const cachedByDeliveryId = new Map<string, AgentSessionBlock>();
     const cachedByProviderMessageId = new Map<string, AgentSessionBlock>();
+    const matchedCachedBlocks = new Set<AgentSessionBlock>();
     for (const cached of cachedBlocks) {
       const deliveryId = cached.localProvenance?.deliveryId;
       const providerMessageId = cached.localProvenance?.providerMessageId;
       if (typeof deliveryId === "string") cachedByDeliveryId.set(deliveryId, cached);
       if (typeof providerMessageId === "string") cachedByProviderMessageId.set(providerMessageId, cached);
     }
-    return providerBlocks.map((provider) => {
+    const reconciledProviderBlocks = providerBlocks.map((provider) => {
       const deliveryId = provider.localProvenance?.deliveryId;
       const providerMessageId = provider.localProvenance?.providerMessageId;
       const cached =
         (typeof deliveryId === "string" ? cachedByDeliveryId.get(deliveryId) : undefined) ??
         (typeof providerMessageId === "string" ? cachedByProviderMessageId.get(providerMessageId) : undefined);
       if (cached === undefined) return provider;
+      matchedCachedBlocks.add(cached);
       return {
         ...provider,
         localProvenance: {
@@ -266,20 +268,24 @@ export function reconcileReopenedThreadBlocks(
         },
       };
     });
+    const unmatchedUnsettledBlocks = cachedBlocks
+      .filter((cached) => !matchedCachedBlocks.has(cached) && isUnsettledDeliveryBlock(cached))
+      .map(markUnsettledDeliveryIndeterminate);
+    return [...reconciledProviderBlocks, ...unmatchedUnsettledBlocks];
   }
   return cachedBlocks.length > 0
     ? [...cachedBlocks.map(markUnsettledDeliveryIndeterminate), ...providerBlocks]
     : providerBlocks;
 }
 
-function markUnsettledDeliveryIndeterminate(block: AgentSessionBlock): AgentSessionBlock {
+function isUnsettledDeliveryBlock(block: AgentSessionBlock): boolean {
   const state = block.localProvenance?.deliveryState;
-  if (
-    block.role !== "user" ||
-    (state !== "dispatching" && state !== "working_unconfirmed" && state !== "acknowledged")
-  ) {
-    return block;
-  }
+  return block.role === "user" &&
+    (state === "dispatching" || state === "working_unconfirmed" || state === "acknowledged");
+}
+
+function markUnsettledDeliveryIndeterminate(block: AgentSessionBlock): AgentSessionBlock {
+  if (!isUnsettledDeliveryBlock(block)) return block;
   return {
     ...block,
     localProvenance: {

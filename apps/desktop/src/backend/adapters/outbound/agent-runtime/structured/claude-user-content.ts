@@ -1,12 +1,12 @@
-import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import type { ComposerAttachmentRef } from "../../../../application/domains/thread/thread.ts";
 
 const ATTACHED_IMAGE_LINE_RE = /\n*\[Attached image:[^\]]*\]/g;
 
-export function claudeUserContent(
+export async function claudeUserContent(
   text: string,
   attachments?: ComposerAttachmentRef[],
-): Array<Record<string, unknown>> {
+): Promise<Array<Record<string, unknown>>> {
   if (attachments === undefined || attachments.length === 0) return [{ type: "text", text }];
   const cleaned = text.replace(ATTACHED_IMAGE_LINE_RE, "").trim();
   const content: Array<Record<string, unknown>> = [];
@@ -18,7 +18,7 @@ export function claudeUserContent(
         source: {
           type: "base64",
           media_type: attachment.mediaType,
-          data: readFileSync(attachment.path).toString("base64"),
+          data: (await readFile(attachment.path)).toString("base64"),
         },
       });
     } catch {
