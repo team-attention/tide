@@ -17,11 +17,45 @@ export interface AgentRuntimeHandle {
   agentId: AgentId;
 }
 
+// Tide owns one stable identity for a Composer delivery across queueing,
+// provider dispatch, acknowledgement, restart reconciliation, and rendering.
+// It is intentionally provider-neutral; adapters map it to their native field.
+export type AgentDeliveryId = string;
+
+export type AgentDeliveryState =
+  | "queued"
+  | "dispatching"
+  | "working_unconfirmed"
+  | "acknowledged"
+  | "completed"
+  | "interrupted"
+  | "failed"
+  | "indeterminate";
+
+export type ProviderTurnTerminalStatus =
+  | "completed"
+  | "interrupted"
+  | "failed"
+  | "cancelled"
+  | "max_tokens"
+  | "refusal"
+  | "unknown";
+
+export interface AgentRuntimeDispatchResult {
+  deliveryId: AgentDeliveryId;
+  state: "working_unconfirmed" | "acknowledged";
+  providerMessageId?: string;
+  providerTurnId?: string;
+}
+
 export interface TerminalInput {
   // "goal_set" pushes the thread goal to the provider's native goal mechanism;
   // `value` carries the objective (empty ⇒ clear). See
   // docs_v2/specs/thread-goal-and-checklist-panel.md.
   kind: "composer_input" | "prompt_answer" | "goal_set";
+  // Required on every real Composer delivery. Optional only for legacy callers
+  // and non-Composer control writes while old persisted state is migrated.
+  deliveryId?: AgentDeliveryId;
   value: string;
   submittedAt: string;
   promptId?: string;
@@ -41,6 +75,7 @@ export interface AgentRuntimeStartInput {
   // First user message, delivered to provider CLIs as the launch-time initial
   // prompt (see AgentStartPlanInput.initialPrompt).
   initialPrompt?: string;
+  initialDeliveryId?: AgentDeliveryId;
   // Tide-owned thread goal, applied to the provider before the first prompt where
   // the structured protocol supports it.
   initialGoal?: string;

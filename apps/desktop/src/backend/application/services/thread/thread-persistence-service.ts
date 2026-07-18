@@ -7,6 +7,7 @@ import type {
   ThreadId,
   ThreadScope,
 } from "../../domains/thread/thread.ts";
+import type { ComposerAttachmentRef } from "../../domains/thread/thread.ts";
 import type { AppStoragePort } from "../../ports/outbound/app-storage-port.ts";
 
 export const THREAD_STORAGE_VERSION = 1;
@@ -29,6 +30,13 @@ export interface ThreadStorageRecord {
   executionContext: ExecutionContextRecord;
   providerSessionRef?: ProviderSessionRefRecord;
   lastKnownState: LastKnownState;
+  queuedDeliveries?: Array<{
+    deliveryId: string;
+    value: string;
+    capturedAt: string;
+    launchOptions?: Record<string, unknown>;
+    attachments?: ComposerAttachmentRef[];
+  }>;
   cache?: AgentSessionCacheRecord;
   readiness?: ProviderReadinessRecord;
 }

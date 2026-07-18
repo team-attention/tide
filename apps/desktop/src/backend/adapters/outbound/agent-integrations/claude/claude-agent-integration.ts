@@ -253,6 +253,9 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       "stream-json",
       "--output-format",
       "stream-json",
+      // Echo accepted user frames (including their stable UUID) back on stdout.
+      // Tide uses this as provider acknowledgement and restart dedupe evidence.
+      "--replay-user-messages",
       "--verbose",
       // Stream partial message deltas so Tide can render the answer
       // token-by-token (the structured client coalesces them into live updates).

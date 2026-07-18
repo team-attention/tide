@@ -7,6 +7,7 @@ export type NativeTransport = "codex_app_server" | "claude_stream_json" | "acp";
 export type NativeRedactionLevel = "raw" | "reduced" | "summary_only";
 
 export interface NativeRuntimeIds {
+  deliveryId?: string;
   threadId?: string;
   turnId?: string;
   itemId?: string;

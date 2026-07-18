@@ -11,9 +11,43 @@ import type { ComposerAttachmentRef, PromptState, PromptStepAnswer } from "../..
 import type { DiscoveredProviderSessionRef } from "../../../../application/ports/outbound/agent-integration-port.ts";
 import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/agent-runtime.ts";
 import type {
+  AgentRuntimeDispatchResult,
   AgentRuntimeCapabilityInvocationInput,
   AgentRuntimeCapabilityInvocationResult,
 } from "../../../../application/domains/agent-runtime/agent-runtime.ts";
+import type { ProviderTurnTerminalStatus } from "../../../../application/domains/agent-runtime/agent-runtime.ts";
+
+export type StructuredProviderId = "codex" | "claude" | "opencode" | "qwen";
+
+export function normalizeProviderTerminalStatus(
+  _provider: StructuredProviderId,
+  nativeStatus: string | undefined,
+): { status: ProviderTurnTerminalStatus; nativeStatus: string } {
+  const native = nativeStatus?.trim() || "unknown";
+  switch (native) {
+    case "completed":
+    case "end_turn":
+    case "success":
+      return { status: "completed", nativeStatus: native };
+    case "interrupted":
+    case "aborted":
+    case "aborted_streaming":
+      return { status: "interrupted", nativeStatus: native };
+    case "failed":
+    case "error":
+    case "error_during_execution":
+      return { status: "failed", nativeStatus: native };
+    case "cancelled":
+    case "canceled":
+      return { status: "cancelled", nativeStatus: native };
+    case "max_tokens":
+      return { status: "max_tokens", nativeStatus: native };
+    case "refusal":
+      return { status: "refusal", nativeStatus: native };
+    default:
+      return { status: "unknown", nativeStatus: native };
+  }
+}
 
 export type StructuredProviderEvent =
   // Provider bootstrap metadata from a structured runtime initialize handshake.
@@ -32,7 +66,8 @@ export type StructuredProviderEvent =
   | { kind: "session_ref"; ref: DiscoveredProviderSessionRef }
   // A provider-native turn started without Tide necessarily initiating it. Native
   // goal runners can continue turns on their own after stop-hook evaluation.
-  | { kind: "turn_started" }
+  | { kind: "delivery_acknowledged"; deliveryId: string; providerMessageId?: string; providerTurnId?: string }
+  | { kind: "turn_started"; turnId?: string; deliveryId?: string }
   // Provider-native goal runner state changed or cleared.
   | { kind: "goal_updated"; goal: StructuredGoalState }
   | { kind: "goal_cleared" }
@@ -111,6 +146,10 @@ export type StructuredProviderEvent =
   // The turn ended. `notice` carries a user-visible failure/limit message.
   | {
       kind: "turn_completed";
+      status: ProviderTurnTerminalStatus;
+      nativeStatus: string;
+      turnId?: string;
+      deliveryId?: string;
       notice?: string;
       usage?: {
         inputTokens?: number;
@@ -122,11 +161,15 @@ export type StructuredProviderEvent =
       };
     }
   // The runtime process exited (crash or normal end-of-session).
-  | { kind: "runtime_exited"; exitCode: number | null };
+  | { kind: "runtime_exited"; exitCode: number | null; activeDeliveryId?: string };
 
 export interface StructuredRuntimeClient {
+  // Resolves only after the transport can accept a Composer dispatch. Codex and
+  // ACP wait for session adoption; Claude resolves on successful spawn because
+  // its protocol emits no init frame before the first user message.
+  ready(): Promise<void>;
   // Routes composer input and prompt answers to the protocol.
-  write(input: StructuredRuntimeWrite): Promise<void>;
+  write(input: StructuredRuntimeWrite): Promise<AgentRuntimeDispatchResult | void>;
   // Apply a live session reconfiguration (mid-thread Launch Options change).
   // `protocolParams` are the provider-protocol values produced by the Agent
   // Integration's buildSessionConfigUpdate (claude control_request fields /
@@ -150,7 +193,7 @@ export interface StructuredRuntimeClient {
 }
 
 export type StructuredRuntimeWrite =
-  | { kind: "composer_input"; value: string; attachments?: ComposerAttachmentRef[] }
+  | { kind: "composer_input"; value: string; deliveryId?: string; attachments?: ComposerAttachmentRef[] }
   // Push the user's thread goal to the provider's native goal mechanism. Empty
   // `objective` clears the goal. codex maps this to thread/goal/set|clear; claude
   // sends `/goal <objective>`; ACP clients inject a goal preamble (no native goal).

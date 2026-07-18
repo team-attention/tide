@@ -57,9 +57,16 @@ export function nativeIdsFromStructuredProviderEvent(
       };
     case "prompt_withdrawn":
       return { requestId: event.promptId };
+    case "delivery_acknowledged":
+      return {
+        deliveryId: event.deliveryId,
+        messageId: event.providerMessageId,
+        turnId: event.providerTurnId,
+      };
     case "turn_started":
+      return { deliveryId: event.deliveryId, turnId: event.turnId };
     case "turn_completed":
-      return {};
+      return { deliveryId: event.deliveryId, turnId: event.turnId };
     case "goal_updated":
     case "goal_cleared":
       return {};
@@ -68,8 +75,9 @@ export function nativeIdsFromStructuredProviderEvent(
     case "usage":
     case "live_activity":
     case "runtime_notice":
-    case "runtime_exited":
       return {};
+    case "runtime_exited":
+      return { deliveryId: event.activeDeliveryId };
   }
 }
 

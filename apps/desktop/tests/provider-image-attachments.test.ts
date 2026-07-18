@@ -213,14 +213,14 @@ test("ACP skips an unreadable attachment rather than failing the turn", () => {
   assert.deepEqual(blocks, [{ type: "text", text: "hi" }]);
 });
 
-test("claude content carries a NATIVE inline base64 image block + strips the path marker", () => {
+test("claude content carries a NATIVE inline base64 image block + strips the path marker", async () => {
   // Claude gets the image INLINE on the wire (verified accepted by stream-json) —
   // no file read, so the "[Attached image: <path>]" marker is stripped.
   const dir = mkdtempSync(join(tmpdir(), "claude-img-"));
   try {
     const path = join(dir, "shot.png");
     writeFileSync(path, Buffer.from(PNG_B64, "base64"));
-    const content = claudeUserContent("look at this\n\n[Attached image: " + path + "]", [
+    const content = await claudeUserContent("look at this\n\n[Attached image: " + path + "]", [
       { path, mediaType: "image/png" },
     ]);
     assert.equal(content.length, 2);
@@ -232,20 +232,20 @@ test("claude content carries a NATIVE inline base64 image block + strips the pat
   }
 });
 
-test("claude content with no attachments is exactly the text block (no regression, no strip)", () => {
-  assert.deepEqual(claudeUserContent("hello"), [{ type: "text", text: "hello" }]);
+test("claude content with no attachments is exactly the text block (no regression, no strip)", async () => {
+  assert.deepEqual(await claudeUserContent("hello"), [{ type: "text", text: "hello" }]);
   // No attachments → the marker regex never runs, body untouched.
-  assert.deepEqual(claudeUserContent("a [Attached image: x] b"), [
+  assert.deepEqual(await claudeUserContent("a [Attached image: x] b"), [
     { type: "text", text: "a [Attached image: x] b" },
   ]);
 });
 
-test("claude image-only message (no text) sends just the image block", () => {
+test("claude image-only message (no text) sends just the image block", async () => {
   const dir = mkdtempSync(join(tmpdir(), "claude-img2-"));
   try {
     const path = join(dir, "only.png");
     writeFileSync(path, Buffer.from(PNG_B64, "base64"));
-    const content = claudeUserContent("[Attached image: " + path + "]", [
+    const content = await claudeUserContent("[Attached image: " + path + "]", [
       { path, mediaType: "image/png" },
     ]);
     assert.equal(content.length, 1);

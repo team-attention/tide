@@ -1184,6 +1184,47 @@ test("thread_summary_storage_record_preserves_scope_and_agent_binding", () => {
   });
 });
 
+test("thread restore never resurrects a remembered active spinner without a live runtime", () => {
+  const record = threadStorageRecordFromThreadSummary({
+    threadId: "thread-stale-running",
+    title: "Stale runtime",
+    agentBinding: { agentId: "codex", runtimeSource: { kind: "provider_cli", integrationId: "codex" } },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+    createdAt: now,
+    updatedAt: later,
+    pinned: false,
+    archived: false,
+    lastKnownState: "waiting_for_input",
+  });
+
+  const seed = threadSeedFromStorageRecord(record);
+  assert.equal(seed.runtimeState, "not_started");
+  assert.equal(seed.lastKnownState, "idle");
+  assert.equal(seed.lifecycleState, "open");
+});
+
+test("thread storage round-trips queued delivery UUIDs and FIFO order", () => {
+  const record = threadStorageRecordFromThreadSummary({
+    threadId: "thread-queued",
+    title: "Queued",
+    agentBinding: { agentId: "opencode", runtimeSource: { kind: "provider_cli", integrationId: "opencode" } },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+    createdAt: now,
+    updatedAt: later,
+    pinned: false,
+    archived: false,
+    lastKnownState: "idle",
+    queuedDeliveries: [
+      { deliveryId: "delivery-a", value: "first", capturedAt: now },
+      { deliveryId: "delivery-b", value: "second", capturedAt: later },
+    ],
+  });
+
+  const seed = threadSeedFromStorageRecord(record);
+  assert.equal(seed.pendingInput?.deliveryId, "delivery-a");
+  assert.equal(seed.pendingInputQueue?.[0]?.deliveryId, "delivery-b");
+});
+
 test("live_backend_restores_persisted_threads_before_thread_list", async () => {
   // Spec: docs_v2/specs/thread-launch-options-contract.md
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tide-live-backend-"));

@@ -75,6 +75,37 @@ test("reopen reconciliation prefers valid provider history over derived cache", 
   assert.deepEqual(reconcileReopenedThreadBlocks([provider], [cached]), [provider]);
 });
 
+test("reopen reconciliation joins optimistic user blocks by delivery ID, never text", () => {
+  const provider = sessionBlock("provider", "same text");
+  provider.kind = "user_message";
+  provider.role = "user";
+  provider.localProvenance = { deliveryId: "delivery-a", providerMessageId: "message-a" };
+  const matched = sessionBlock("matched", "same text");
+  matched.kind = "user_message";
+  matched.role = "user";
+  matched.localProvenance = { deliveryId: "delivery-a", deliveryState: "working_unconfirmed" };
+  const sameTextButDifferentId = sessionBlock("unmatched", "same text");
+  sameTextButDifferentId.kind = "user_message";
+  sameTextButDifferentId.role = "user";
+  sameTextButDifferentId.localProvenance = { deliveryId: "delivery-b", deliveryState: "working_unconfirmed" };
+
+  const reconciled = reconcileReopenedThreadBlocks(
+    [provider],
+    [matched, sameTextButDifferentId],
+  );
+  assert.equal(reconciled.length, 2);
+  assert.equal(reconciled[0].blockId, "provider");
+  assert.equal(reconciled[0].localProvenance?.deliveryId, "delivery-a");
+  assert.equal(reconciled[0].localProvenance?.deliveryState, "acknowledged");
+  assert.equal(reconciled[1].blockId, "unmatched");
+  assert.equal(reconciled[1].localProvenance?.deliveryId, "delivery-b");
+  assert.equal(reconciled[1].localProvenance?.deliveryState, "indeterminate");
+  assert.equal(
+    reconciled[1].localProvenance?.recoveryReason,
+    "restart_without_provider_delivery_evidence",
+  );
+});
+
 test("reopen reconciliation preserves cached history when opencode import fails", () => {
   const cached = sessionBlock("cached", "locally cached history");
   const diagnostic = opencodeImportDiagnosticBlock(
@@ -89,6 +120,24 @@ test("reopen reconciliation preserves cached history when opencode import fails"
     [cached, diagnostic],
   );
   assert.deepEqual(reconcileReopenedThreadBlocks([diagnostic], []), [diagnostic]);
+});
+
+test("reopen without provider evidence marks an accepted optimistic delivery indeterminate", () => {
+  const cached = sessionBlock("cached-user", "possibly accepted");
+  cached.kind = "user_message";
+  cached.role = "user";
+  cached.localProvenance = {
+    kind: "composer_input",
+    deliveryId: "delivery-1",
+    deliveryState: "acknowledged",
+  };
+
+  const [reconciled] = reconcileReopenedThreadBlocks([], [cached]);
+  assert.equal(reconciled.localProvenance?.deliveryState, "indeterminate");
+  assert.equal(
+    reconciled.localProvenance?.recoveryReason,
+    "restart_without_provider_delivery_evidence",
+  );
 });
 
 function sessionBlock(blockId: string, body: string): AgentSessionBlock {

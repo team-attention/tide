@@ -10,7 +10,7 @@ import type { ProviderTrustPort } from "../../ports/outbound/provider-trust-port
 import type { BrowserRuntimePort } from "../../ports/outbound/browser-runtime-port.ts";
 import type { AgentBinding, AgentId, AgentSessionBlockReference, ProviderCliAgentId, PromptState, PromptStepAnswer, ProviderSessionRef, ThreadGoalState, ThreadId, ThreadScope, ThreadSeed, ThreadSnapshot } from "../../domains/thread/thread.ts";
 import type { ThreadRuntimeAsyncEvent } from "./thread-runtime-events.ts";
-import type { AgentRuntimeCapabilityInvoke, AgentRuntimeState } from "../../domains/agent-runtime/agent-runtime.ts";
+import type { AgentDeliveryState, AgentRuntimeCapabilityInvoke, AgentRuntimeState } from "../../domains/agent-runtime/agent-runtime.ts";
 import type { ProviderReadinessResult } from "../../domains/provider-readiness/provider-readiness.ts";
 import type { AgentSessionBlock } from "../../domains/agent-session/agent-session-block.ts";
 import type { RawAgentFrame, RawAgentFramePayloadKind, RawAgentFrameSource } from "../../domains/agent-session/raw-agent-frame.ts";
@@ -342,6 +342,20 @@ export interface RecordTurnCompleteResult {
   submittedBlock?: AgentSessionBlockReference;
 }
 
+export interface RecordDeliveryStateInput {
+  threadId: ThreadId;
+  deliveryId: string;
+  state: AgentDeliveryState;
+  providerMessageId?: string;
+  providerTurnId?: string;
+  nativeStatus?: string;
+}
+
+export interface RecordDeliveryStateResult {
+  thread: ThreadSnapshot;
+  block?: AgentSessionBlockReference;
+}
+
 export interface AppendRawAgentFrameInput {
   threadId: ThreadId;
   agentId: AgentId;
@@ -409,6 +423,9 @@ export interface ThreadRuntimeService {
   recordProviderTurnStarted(
     input: RecordProviderTurnStartedInput,
   ): Promise<ServiceResult<RecordProviderTurnStartedResult>>;
+  recordDeliveryState(
+    input: RecordDeliveryStateInput,
+  ): Promise<ServiceResult<RecordDeliveryStateResult>>;
   recordAgentSessionBlock(
     input: RecordAgentSessionBlockInput,
   ): Promise<ServiceResult<RecordAgentSessionBlockResult>>;

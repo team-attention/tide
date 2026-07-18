@@ -728,6 +728,11 @@ test("starting_a_thread_with_ready_provider_starts_runtime_with_launch_prompt", 
   assert.equal(result.thread.runtimeStartedAt, now);
   assert.deepEqual(fakes.runtime.events, ["start"]);
   assert.equal(fakes.runtime.starts[0].initialPrompt, "Implement the backend lifecycle");
+  assert.equal(typeof fakes.runtime.starts[0].initialDeliveryId, "string");
+  assert.equal(
+    result.submittedBlock?.localProvenance?.deliveryId,
+    fakes.runtime.starts[0].initialDeliveryId,
+  );
   assert.equal(fakes.runtime.writes.length, 0);
 });
 
@@ -830,7 +835,6 @@ test("sends_attachment_paths_when_the_message_text_is_empty", async () => {
     input: "",
     attachments: [{ name: "only.png", mediaType: "image/png", dataBase64: "AAAA" }],
   });
-
   assert.equal(
     fakes.runtime.writes[0]?.input.value,
     "[Attached image: /app-data/attachments/thread-img/0-only.png]",
@@ -988,7 +992,7 @@ test("starting_ready_thread_records_local_user_message_block_before_runtime_outp
   assert.equal(result.thread.cachedBlocks.at(-1)?.blockId, result.submittedBlock?.blockId);
 });
 
-test("starting_ready_thread_pushes_local_user_message_before_runtime_start_resolves", async () => {
+test("starting_ready_thread_promotes_local_user_message_only_after_runtime_adoption", async () => {
   let releaseStart: (() => void) | undefined;
   class SlowStartRuntimePort extends FakeAgentRuntimePort {
     override async start(input: AgentRuntimeStartInput): Promise<AgentRuntimeHandle> {
@@ -1025,13 +1029,11 @@ test("starting_ready_thread_pushes_local_user_message_before_runtime_start_resol
   });
   await new Promise((resolve) => setImmediate(resolve));
 
-  const blockEvent = asyncEvents.find(
-    (entry): entry is { event: Extract<ThreadRuntimeAsyncEvent, { kind: "agent_session_block_upserted" }>; runtimeEvents: string[] } =>
-      entry.event.kind === "agent_session_block_upserted",
+  assert.equal(
+    asyncEvents.some((entry) => entry.event.kind === "agent_session_block_upserted"),
+    false,
+    "an unresolved transport start is not provider acceptance",
   );
-  assert.equal(blockEvent?.event.block.kind, "user_message");
-  assert.equal(blockEvent?.event.block.body, "Show me before startup finishes");
-  assert.deepEqual(blockEvent?.runtimeEvents, []);
   assert.equal(runtime.events[0], "start");
   assert.equal(typeof releaseStart, "function");
 
@@ -1039,6 +1041,13 @@ test("starting_ready_thread_pushes_local_user_message_before_runtime_start_resol
   const result = await started;
   assert.equal(result.ok, true);
   assert.equal(result.ok && result.status, "started");
+  const blockEvent = asyncEvents.find(
+    (entry): entry is { event: Extract<ThreadRuntimeAsyncEvent, { kind: "agent_session_block_upserted" }>; runtimeEvents: string[] } =>
+      entry.event.kind === "agent_session_block_upserted",
+  );
+  assert.equal(blockEvent?.event.block.kind, "user_message");
+  assert.equal(blockEvent?.event.block.body, "Show me before startup finishes");
+  assert.deepEqual(blockEvent?.runtimeEvents, ["start"]);
 });
 
 test("starting_ready_thread_marks_thread_failed_when_runtime_start_rejects", async () => {
@@ -1077,8 +1086,8 @@ test("starting_ready_thread_marks_thread_failed_when_runtime_start_rejects", asy
   assert.equal(hydrated.ok && hydrated.runtimeState, "failed");
   assert.equal(hydrated.ok && hydrated.thread.lifecycleState, "failed");
   assert.equal(hydrated.ok && hydrated.thread.lastKnownState, "failed");
-  assert.equal(hydrated.ok && hydrated.thread.cachedBlocks[0]?.body, "Show the failed start");
-  assert.equal(asyncEvents[0]?.kind, "agent_session_block_upserted");
+  assert.equal(hydrated.ok && hydrated.thread.cachedBlocks.length, 0);
+  assert.equal(asyncEvents.some((event) => event.kind === "agent_session_block_upserted"), false);
 });
 
 test("starting_thread_preserves_launch_options_on_thread_snapshot", async () => {
@@ -1917,6 +1926,9 @@ test("editing_queued_input_replaces_text_and_preserves_launch_options", async ()
     input: "teh typo",
     launchOptions: { model: "gpt-5.5" },
   });
+  const beforeEdit = service.peekThread("thread-busy");
+  assert.equal(beforeEdit.ok, true);
+  const deliveryId = beforeEdit.ok ? beforeEdit.thread.pendingInput?.deliveryId : undefined;
 
   const edited = await service.editPendingInput({
     threadId: "thread-busy",
@@ -1927,6 +1939,7 @@ test("editing_queued_input_replaces_text_and_preserves_launch_options", async ()
   assert.equal(edited.status, "edited");
   assert.equal(edited.thread.pendingInput?.value, "the fix");
   assert.deepEqual(edited.thread.pendingInput?.launchOptions, { model: "gpt-5.5" });
+  assert.equal(edited.thread.pendingInput?.deliveryId, deliveryId);
 });
 
 test("editing_queued_input_does_not_write_to_runtime", async () => {
@@ -2040,6 +2053,10 @@ test("follow_up_send_records_local_user_message_block", async () => {
   assert.equal(result.submittedBlock?.kind, "user_message");
   assert.equal(result.submittedBlock?.body, "Visible follow-up");
   assert.equal(result.thread.cachedBlocks.at(-1)?.blockId, result.submittedBlock?.blockId);
+  assert.equal(
+    fakes.runtime.writes.at(-1)?.input.deliveryId,
+    result.submittedBlock?.localProvenance?.deliveryId,
+  );
 });
 
 test("sending_follow_up_input_with_a_different_agent_binding_is_rejected", async () => {

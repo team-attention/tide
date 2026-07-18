@@ -71,6 +71,7 @@ Each spec must be narrow enough to test and implement as one slice.
 | [opencode Local Session Adoption](opencode-local-session-adoption.md) | Drafted | Adopt existing local opencode sessions into Tide Threads using `opencode session list` and `opencode export`, then resume via `opencode_session`. |
 | [opencode Export Recovery](opencode-export-recovery.md) | Implemented | Preserve large unsanitized opencode exports and fall back to an existing Agent Session Cache when provider-history import fails. |
 | [Goal Complete Follow-up Stall](goal-complete-follow-up-stall.md) | Drafted | Prevent completed goal Threads from accepting optimistic follow-ups that stall behind stale live runtime state until app restart. |
+| [Provider-Authoritative Conversation Lifecycle](provider-authoritative-conversation-lifecycle.md) | Drafted | Reconcile provider-owned history and native turn state on resume, track stable delivery acknowledgements, preserve terminal outcomes, and eliminate hidden adapter queues across Codex, Claude, and opencode. |
 
 ## Rule
 

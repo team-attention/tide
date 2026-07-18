@@ -99,7 +99,37 @@ async function assertRuntimeEnvironmentApplied(
       electronRunAsNode: process.env.ELECTRON_RUN_AS_NODE,
       runtimeId: process.env.TIDE_RUNTIME_ID
     }));
-    setTimeout(() => {}, 200);
+    const transport = ${JSON.stringify(transport)};
+    const send = value => process.stdout.write(JSON.stringify(value) + "\\n");
+    const handle = message => {
+      if (transport === "claude_stream_json" && message.type === "user") {
+        send(message);
+        send({ type: "result", subtype: "success", is_error: false, result: "ok" });
+      }
+      if (transport === "codex_app_server") {
+        if (message.method === "initialize") send({ id: message.id, result: {} });
+        if (message.method === "thread/start") send({ id: message.id, result: { thread: { id: "env-thread" } } });
+        if (message.method === "skills/list") send({ id: message.id, result: { data: [] } });
+        if (message.method === "turn/start") send({ id: message.id, result: { turn: { id: "env-turn" } } });
+      }
+      if (transport === "acp") {
+        if (message.method === "initialize") send({ jsonrpc: "2.0", id: message.id, result: {} });
+        if (message.method === "session/new") send({ jsonrpc: "2.0", id: message.id, result: { sessionId: "env-session" } });
+        if (message.method === "session/prompt") send({ jsonrpc: "2.0", id: message.id, result: { stopReason: "end_turn" } });
+      }
+    };
+    let buffer = "";
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", chunk => {
+      buffer += chunk;
+      let index;
+      while ((index = buffer.indexOf("\\n")) >= 0) {
+        const line = buffer.slice(0, index).trim();
+        buffer = buffer.slice(index + 1);
+        if (line) handle(JSON.parse(line));
+      }
+    });
+    setInterval(() => {}, 1000);
   `;
   const plan: ProviderLaunchPlan = {
     command: process.execPath,

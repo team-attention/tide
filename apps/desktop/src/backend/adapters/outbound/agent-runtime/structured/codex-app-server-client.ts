@@ -15,13 +15,7 @@
 // - turn/start {threadId, input:[{type:"text",text}]} → streaming notifications:
 //   item/started / item/completed (agentMessage, reasoning, commandExecution,
 //   mcpToolCall, webSearch, …), thread/tokenUsage/updated, turn/completed
-//   {turn:{status: completed|interrupted|failed, error}}.
-// - approvals: server request item/commandExecution/requestApproval
-//   {command, cwd, reason?} / item/fileChange/requestApproval — respond
-//   {id, result:{decision:"accept"|"decline"|…}}. decline does NOT kill the
-//   turn: the model is told and continues (verified live, 02-deny-flow.jsonl).
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-
 import type {
   AgentRuntimeCapabilityInvocationInput,
   AgentRuntimeCapabilityInvocationResult,
@@ -33,6 +27,7 @@ import type {
   StructuredRuntimeClient,
   StructuredRuntimeWrite,
 } from "./structured-runtime-events.ts";
+import { normalizeProviderTerminalStatus } from "./structured-runtime-events.ts";
 import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/agent-runtime.ts";
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
 import { codexPlanActivityFromItem } from "./plan-activity.ts";
@@ -42,6 +37,13 @@ import { CodexToolCallLifecycle } from "./codex-tool-call-lifecycle.ts";
 import { codexGoalState } from "./codex-goal-state.ts";
 import { invokeCodexProviderCapability } from "./codex-provider-methods.ts";
 import { codexPlanContentRecord } from "./structured-plan-goal.ts";
+import { codexTurnInput } from "./codex-turn-input.ts";
+export { codexTurnInput } from "./codex-turn-input.ts";
+import {
+  CODEX_REQUEST_TIMEOUT_MS,
+  emitCodexDispatchFailure,
+  type PendingCodexResponse,
+} from "./codex-request-lifecycle.ts";
 import {
   codexServerPromptResult,
   type PendingServerPrompt,
@@ -64,37 +66,17 @@ export interface CreateCodexAppServerClientInput extends StructuredClientCallbac
   threadId: string;
   runtimeId: string;
   initialPrompt?: string;
+  initialDeliveryId?: string;
   initialGoal?: string;
   initialAttachments?: ComposerAttachmentRef[];
   // thread/resume target (the rollout/thread id) when resuming.
   resumeThreadId?: string;
 }
 
-// Build the codex turn input array: the text plus a NATIVE localImage item per
-// attachment. Codex has no file-read tool, so the "[Attached image: <path>]" text
-// alone is invisible to it — the localImage item is what actually lets it see the
-// image. EVIDENCE: codex app-server UserInput union (v0.136 generate-ts bindings)
-// has { type: "localImage", path, detail? }.
-export function codexTurnInput(
-  text: string,
-  attachments?: ComposerAttachmentRef[],
-): Array<Record<string, unknown>> {
-  const items: Array<Record<string, unknown>> = [{ type: "text", text }];
-  for (const attachment of attachments ?? []) {
-    items.push({ type: "localImage", path: attachment.path });
-  }
-  return items;
-}
-
 export function createCodexAppServerClient(
   input: CreateCodexAppServerClientInput,
 ): StructuredRuntimeClient {
   return new CodexAppServerClient(input);
-}
-
-interface PendingCodexResponse {
-  onResult: (result: unknown) => void;
-  onError?: (error: Error) => void;
 }
 
 class CodexAppServerClient implements StructuredRuntimeClient {
@@ -109,11 +91,9 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   private exited = false;
   private codexThreadId?: string;
   private activeTurnId?: string;
+  private activeDeliveryId?: string;
   // True between issuing turn/start and learning the turn id from its result.
-  // In that window a steer can't carry expectedTurnId yet, so it parks in
-  // pendingSteerText and flushes the instant the id lands.
   private turnStartInFlight = false;
-  private readonly pendingSteerText: string[] = [];
   // Mid-thread Launch Options changes (model/effort), delivered as turn/start
   // overrides — the protocol applies them "for this turn and subsequent turns"
   // (codex-cli 0.136 bindings: TurnStartParams). Re-sent on every turn/start;
@@ -133,8 +113,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   private readonly pendingResponses = new Map<number, PendingCodexResponse>();
   // promptId -> the SERVER's request id awaiting a decision result
   private readonly pendingServerPrompts = new Map<string, PendingServerPrompt>();
-  private readonly queuedWrites: string[] = [];
-  private ready = false;
+  private sessionReady = false;
   // Live streaming: itemId -> accumulated agentMessage text. The complete
   // item/completed finalizes the same blockId (msg:<itemId>).
   private readonly streamBodies = new Map<string, string>();
@@ -145,8 +124,15 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   private readonly scanUpdate = createUpdateNoticeScanner((message) =>
     this.onEvent({ kind: "runtime_notice", level: "info", message }),
   );
+  private readonly readiness: Promise<void>;
+  private resolveReadiness!: () => void;
+  private rejectReadiness!: (error: Error) => void;
 
   constructor(input: CreateCodexAppServerClientInput) {
+    this.readiness = new Promise<void>((resolve, reject) => {
+      this.resolveReadiness = resolve;
+      this.rejectReadiness = reject;
+    });
     this.onEvent = input.onEvent;
     this.tideThreadId = input.threadId;
     this.runtimeId = input.runtimeId;
@@ -179,15 +165,19 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     this.child.on("error", () => {
       if (!this.exited) {
         this.exited = true;
+        this.rejectReadiness(new Error("Codex app-server failed to start."));
         this.toolCalls.failPendingForTurnEnd("failed");
-        this.onEvent({ kind: "runtime_exited", exitCode: null });
+        this.failPendingResponses(new Error("Codex app-server exited before responding."));
+        this.onEvent({ kind: "runtime_exited", exitCode: null, activeDeliveryId: this.activeDeliveryId });
       }
     });
     this.child.on("exit", (code) => {
       if (!this.exited) {
         this.exited = true;
+        this.rejectReadiness(new Error("Codex app-server exited before session adoption."));
         this.toolCalls.failPendingForTurnEnd("failed");
-        this.onEvent({ kind: "runtime_exited", exitCode: code });
+        this.failPendingResponses(new Error("Codex app-server exited before responding."));
+        this.onEvent({ kind: "runtime_exited", exitCode: code, activeDeliveryId: this.activeDeliveryId });
       }
     });
 
@@ -197,6 +187,8 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   get pid(): number | undefined {
     return this.child.pid ?? undefined;
   }
+
+  ready(): Promise<void> { return this.readiness; }
 
   private async bootstrap(input: CreateCodexAppServerClientInput): Promise<void> {
     this.request("initialize", {
@@ -225,7 +217,10 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       }, (result) => {
         this.adoptThread(result);
         if (input.initialPrompt !== undefined && input.initialPrompt.length > 0) {
-          this.startTurn(input.initialPrompt, input.initialAttachments);
+          void this.startTurn(input.initialPrompt, input.initialAttachments, input.initialDeliveryId)
+            .catch((error: unknown) => emitCodexDispatchFailure({
+              error, deliveryId: input.initialDeliveryId, exited: this.exited, onEvent: this.onEvent,
+            }));
         }
       });
     });
@@ -266,82 +261,66 @@ class CodexAppServerClient implements StructuredRuntimeClient {
         ...(path !== undefined ? { transcriptPath: path } : {}),
       },
     });
-    this.ready = true;
+    this.sessionReady = true;
+    this.resolveReadiness();
     if (this.goalObjective.length > 0) this.applyGoal();
-    for (const queued of this.queuedWrites.splice(0)) {
-      this.startTurn(queued);
-    }
   }
 
-  private startTurn(text: string, attachments?: ComposerAttachmentRef[]): void {
+  private startTurn(
+    text: string,
+    attachments?: ComposerAttachmentRef[],
+    deliveryId?: string,
+  ): Promise<{ deliveryId: string; state: "acknowledged"; providerTurnId?: string }> {
     if (this.codexThreadId === undefined) {
-      this.queuedWrites.push(text);
-      return;
+      return Promise.reject(new Error("Codex thread is not ready for dispatch."));
     }
     // A turn is already running → STEER: inject this input into the active turn
     // instead of starting a second one (codex serves one turn at a time).
     if (this.activeTurnId !== undefined) {
-      this.steerTurn(text, attachments);
-      return;
+      return Promise.reject(new Error("Codex already has an active turn; queue in the application service."));
     }
     // A turn/start is mid-flight but its id isn't known yet — steer once it is.
     if (this.turnStartInFlight) {
-      this.pendingSteerText.push(text);
-      return;
+      return Promise.reject(new Error("Codex turn dispatch is already in flight."));
     }
+    const stableDeliveryId = deliveryId ?? `${this.runtimeId}:delivery:${this.requestId + 1}`;
+    this.activeDeliveryId = stableDeliveryId;
     this.clearStreamingTextBuffers();
     this.turnStartInFlight = true;
-    this.request("turn/start", {
-      threadId: this.codexThreadId,
-      input: codexTurnInput(text, attachments),
-      ...this.turnOverrides,
-    }, (result) => {
-      const turn = isRecord(result.turn) ? result.turn : undefined;
-      this.activeTurnId = turn !== undefined ? stringField(turn, "id") : undefined;
-      this.turnStartInFlight = false;
-      if (this.activeTurnId !== undefined) {
-        for (const pending of this.pendingSteerText.splice(0)) {
-          this.steerTurn(pending);
-        }
-      }
+    return new Promise((resolve, reject) => {
+      this.request("turn/start", {
+        threadId: this.codexThreadId,
+        input: codexTurnInput(text, attachments),
+        clientUserMessageId: stableDeliveryId,
+        ...this.turnOverrides,
+      }, (result) => {
+        const turn = isRecord(result.turn) ? result.turn : undefined;
+        this.activeTurnId = turn !== undefined ? stringField(turn, "id") : undefined;
+        this.turnStartInFlight = false;
+        this.onEvent({
+          kind: "delivery_acknowledged",
+          deliveryId: stableDeliveryId,
+          providerTurnId: this.activeTurnId,
+        });
+        resolve({ deliveryId: stableDeliveryId, state: "acknowledged", providerTurnId: this.activeTurnId });
+      }, (error) => {
+        this.turnStartInFlight = false;
+        reject(error);
+      });
     });
   }
 
-  // turn/steer injects new user input into the ACTIVE turn (expectedTurnId is a
-  // required precondition; the request fails if it doesn't match the live turn).
-  // The same turn continues — exactly one turn/completed still ends it.
-  // EVIDENCE: codex app-server bindings (codex-cli 0.136) TurnSteerParams =
-  // {threadId, input, expectedTurnId} → TurnSteerResponse {turnId}.
-  private steerTurn(text: string, attachments?: ComposerAttachmentRef[]): void {
-    if (this.codexThreadId === undefined || this.activeTurnId === undefined) {
-      this.pendingSteerText.push(text);
-      return;
-    }
-    this.request("turn/steer", {
-      threadId: this.codexThreadId,
-      input: codexTurnInput(text, attachments),
-      expectedTurnId: this.activeTurnId,
-    }, (result) => {
-      const turnId = stringField(result, "turnId");
-      if (turnId !== undefined) {
-        this.activeTurnId = turnId;
-      }
-    });
-  }
-
-  async write(input: StructuredRuntimeWrite): Promise<void> {
+  async write(input: StructuredRuntimeWrite) {
     if (input.kind === "goal_set") {
       this.goalObjective = input.objective.trim();
       this.applyGoal();
       return;
     }
     if (input.kind === "composer_input") {
-      if (!this.ready) {
-        this.queuedWrites.push(input.value);
-        return;
+      if (!this.sessionReady) {
+        throw new Error("Codex thread is not ready for dispatch.");
       }
-      this.startTurn(input.value, input.attachments);
-      return;
+      return this.startTurn(input.value, input.attachments, input.deliveryId);
     }
     const promptId = input.promptId ?? "";
     const pending = this.pendingServerPrompts.get(promptId);
@@ -407,6 +386,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   async stop(): Promise<void> {
     this.exited = true;
     this.toolCalls.clearTimeouts();
+    this.failPendingResponses(new Error("Codex runtime stopped."));
     this.child.kill("SIGTERM");
     setTimeout(() => {
       try {
@@ -424,9 +404,28 @@ class CodexAppServerClient implements StructuredRuntimeClient {
     onError?: (error: Error) => void,
   ): void {
     this.requestId += 1;
+    const requestId = this.requestId;
+    const timer = setTimeout(() => {
+      const pending = this.pendingResponses.get(requestId);
+      if (pending === undefined) return;
+      this.pendingResponses.delete(requestId);
+      const error = new Error(`Codex request timed out: ${method}`);
+      if (!this.sessionReady) this.rejectReadiness(error);
+      if (pending.onError !== undefined) pending.onError(error);
+      else this.onEvent({
+        kind: "turn_completed",
+        status: "failed",
+        nativeStatus: "request_timeout",
+        turnId: this.activeTurnId,
+        deliveryId: this.activeDeliveryId,
+        notice: error.message,
+      });
+    }, CODEX_REQUEST_TIMEOUT_MS);
+    timer.unref();
     this.pendingResponses.set(this.requestId, {
       onResult: (result) => onResult(isRecord(result) ? result : {}),
       onError,
+      timer,
     });
     if (process.env.TIDE_DEBUG_STRUCTURED === "1") {
       process.stderr.write(`[tide-codex-as ${this.runtimeId}] -> ${method}\n`);
@@ -480,6 +479,7 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       const handler = this.pendingResponses.get(id);
       if (handler !== undefined) {
         this.pendingResponses.delete(id);
+        clearTimeout(handler.timer);
         if (message.result !== undefined) {
           handler.onResult(message.result);
         } else if (message.error !== undefined) {
@@ -487,10 +487,18 @@ class CodexAppServerClient implements StructuredRuntimeClient {
           const errorMessage = isRecord(message.error)
             ? stringField(message.error, "message") ?? "Codex request failed."
             : "Codex request failed.";
+          if (!this.sessionReady) this.rejectReadiness(new Error(errorMessage));
           if (handler.onError !== undefined) {
             handler.onError(new Error(errorMessage));
           } else {
-            this.onEvent({ kind: "turn_completed", notice: errorMessage });
+            this.onEvent({
+              kind: "turn_completed",
+              status: "failed",
+              nativeStatus: "request_error",
+              turnId: this.activeTurnId,
+              deliveryId: this.activeDeliveryId,
+              notice: errorMessage,
+            });
           }
         } else {
           handler.onResult({});
@@ -601,12 +609,14 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       if (id !== undefined) {
         this.activeTurnId = id;
       }
-      this.onEvent({ kind: "turn_started" });
+      this.onEvent({ kind: "turn_started", turnId: id, deliveryId: this.activeDeliveryId });
       return;
     }
     if (method === "turn/completed") {
       const turn = isRecord(params.turn) ? params.turn : undefined;
       const status = turn !== undefined ? stringField(turn, "status") : undefined;
+      const turnId = turn !== undefined ? stringField(turn, "id") : this.activeTurnId;
+      const terminal = normalizeProviderTerminalStatus("codex", status);
       let notice: string | undefined;
       if (status === "failed") {
         const error = turn !== undefined && isRecord(turn.error) ? turn.error : undefined;
@@ -617,21 +627,26 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       this.activeTurnId = undefined;
       this.turnStartInFlight = false;
       this.clearStreamingTextBuffers();
-      // Any input parked for a steer that never found a live turn (e.g. the turn
-      // errored before its id landed) carries over as the next turn — the client
-      // owns delivering input the service already handed it.
-      const carryOver = this.pendingSteerText.splice(0);
       this.onEvent({
         kind: "turn_completed",
+        ...terminal,
+        turnId,
+        deliveryId: this.activeDeliveryId,
         ...(notice !== undefined ? { notice } : {}),
         ...(this.lastUsage !== undefined ? { usage: this.lastUsage } : {}),
       });
-      for (const text of carryOver) {
-        this.startTurn(text);
-      }
+      this.activeDeliveryId = undefined;
       return;
     }
     // thread/started, deltas, status changes: no visible block.
+  }
+
+  private failPendingResponses(error: Error): void {
+    for (const pending of this.pendingResponses.values()) {
+      clearTimeout(pending.timer);
+      pending.onError?.(error);
+    }
+    this.pendingResponses.clear();
   }
 
   private emitItem(item: Record<string, unknown> | undefined): void {

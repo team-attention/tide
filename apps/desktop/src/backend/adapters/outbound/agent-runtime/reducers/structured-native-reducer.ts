@@ -184,15 +184,41 @@ export function reduceStructuredNativeEvent(
       dirty.push(upsertNotice(next, event, evidence, "Runtime notice", payload.message));
       break;
     }
+    case "delivery_acknowledged": {
+      dirty.push(upsertEntry(next, event, evidence, {
+        key: `delivery:${payload.deliveryId}`,
+        blockId: `native:${event.tideThreadId}:delivery:${payload.deliveryId}`,
+        kind: "session_event",
+        status: "running",
+        title: "Delivery acknowledged",
+        data: {
+          deliveryId: payload.deliveryId,
+          providerMessageId: payload.providerMessageId,
+          providerTurnId: payload.providerTurnId,
+        },
+      }));
+      break;
+    }
     case "turn_completed": {
       dirty.push(upsertEntry(next, event, evidence, {
         key: `turn:${event.runtimeId}:active`,
         blockId: `native:${event.tideThreadId}:${event.runtimeId}:turn:active`,
         kind: "session_event",
-        status: payload.notice === undefined ? "completed" : "failed",
-        title: payload.notice === undefined ? "Turn completed" : "Turn failed",
+        status:
+          payload.status === "completed"
+            ? "completed"
+            : payload.status === "interrupted" || payload.status === "cancelled"
+              ? "cancelled"
+              : "failed",
+        title: `Turn ${payload.nativeStatus}`,
         body: payload.notice,
-        data: { usage: payload.usage },
+        data: {
+          usage: payload.usage,
+          status: payload.status,
+          nativeStatus: payload.nativeStatus,
+          deliveryId: payload.deliveryId,
+          turnId: payload.turnId,
+        },
 	      }));
 	      dirty.push(upsertEntry(next, event, evidence, {
         key: `activity:${event.runtimeId}`,
@@ -217,7 +243,9 @@ export function reduceStructuredNativeEvent(
         key: `runtime:${event.runtimeId}:exit`,
         blockId: `native:${event.tideThreadId}:${event.runtimeId}:exit`,
         kind: "session_event",
-        status: payload.exitCode === 0 ? "completed" : "failed",
+        // Process exit is transport evidence, never proof that a model turn
+        // completed. A clean exit is neutral/cancelled; a crash is failed.
+        status: payload.exitCode === 0 ? "cancelled" : "failed",
         title: "Runtime exited",
         body: payload.exitCode === null ? "signal" : String(payload.exitCode),
         data: { exitCode: payload.exitCode },
