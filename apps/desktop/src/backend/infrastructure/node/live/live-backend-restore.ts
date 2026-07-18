@@ -120,8 +120,8 @@ export function createPersistentLiveBackendAdapter(input: {
   };
 
   // Rebuild ONE thread's conversation the first time it is opened (its blocks were not
-  // eagerly restored). Prefer the coding agent's own persisted session (codex rollout /
-  // claude transcript); fall back to Tide's cached blocks. A thread whose worktree was
+  // eagerly restored). Prefer the coding agent's own persisted session; fall back to
+  // Tide's cached blocks. A thread whose worktree was
   // deleted gets the "tangled" banner. Cost is one file read + parse, paid inside the
   // existing thread-open hydrate loading window — invisible to the user.
   const loadThreadBlocks = async (threadId: string): Promise<void> => {
@@ -130,11 +130,12 @@ export function createPersistentLiveBackendAdapter(input: {
       return;
     }
     const record = loaded.value;
-    let blocks = rebuildConversationFromProviderHistory(record);
-    if (blocks.length === 0) {
+    const providerBlocks = rebuildConversationFromProviderHistory(record);
+    let blocks = providerBlocks;
+    if (providerHistoryNeedsCacheFallback(providerBlocks)) {
       const hydrated = await input.persistence.hydrateThread(threadId, {});
       if (hydrated.ok) {
-        blocks = hydrated.value.blocks;
+        blocks = reconcileReopenedThreadBlocks(providerBlocks, hydrated.value.blocks);
       }
     }
     const threadCwd = record.scope.kind === "project" ? record.scope.cwd : undefined;
@@ -231,6 +232,32 @@ function requestIdFromMessage(message: unknown): string | undefined {
   }
   const requestId = (message as { requestId?: unknown }).requestId;
   return typeof requestId === "string" ? requestId : undefined;
+}
+
+export function reconcileReopenedThreadBlocks(
+  providerBlocks: AgentSessionBlock[],
+  cachedBlocks: AgentSessionBlock[],
+): AgentSessionBlock[] {
+  if (providerBlocks.length === 0) {
+    return cachedBlocks;
+  }
+  if (!providerBlocks.every(isFailedProviderImportDiagnostic)) {
+    return providerBlocks;
+  }
+  return cachedBlocks.length > 0
+    ? [...cachedBlocks, ...providerBlocks]
+    : providerBlocks;
+}
+
+function providerHistoryNeedsCacheFallback(blocks: AgentSessionBlock[]): boolean {
+  return blocks.length === 0 || blocks.every(isFailedProviderImportDiagnostic);
+}
+
+function isFailedProviderImportDiagnostic(block: AgentSessionBlock): boolean {
+  return block.kind === "raw_block" &&
+    block.role === "runtime" &&
+    block.status === "failed" &&
+    block.blockId.startsWith("opencode-import-diagnostic:");
 }
 
 // The thread a thread.hydrate command targets, if any — drives the lazy block load.

@@ -69,6 +69,7 @@ Each spec must be narrow enough to test and implement as one slice.
 | [Thread Row Changes Routing](thread-row-changes-routing.md) | Drafted | Route Thread Row changes actions to the working-tree Changes pane and align launcher Diff affordances. |
 | [opencode Composer Model And Provider Flow](opencode-composer-model-provider-flow.md) | Drafted | Make the opencode Model Chip open a compact provider-first model/connect/reconnect flow instead of a flat menu plus separate on-ramp. |
 | [opencode Local Session Adoption](opencode-local-session-adoption.md) | Drafted | Adopt existing local opencode sessions into Tide Threads using `opencode session list` and `opencode export`, then resume via `opencode_session`. |
+| [opencode Export Recovery](opencode-export-recovery.md) | Implemented | Preserve large unsanitized opencode exports and fall back to an existing Agent Session Cache when provider-history import fails. |
 | [Goal Complete Follow-up Stall](goal-complete-follow-up-stall.md) | Drafted | Prevent completed goal Threads from accepting optimistic follow-ups that stall behind stale live runtime state until app restart. |
 
 ## Rule

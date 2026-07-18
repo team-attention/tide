@@ -29,6 +29,7 @@ import {
   rebuildCodexConversation,
   rebuildOpencodeConversationFromCli,
 } from "../provider/provider-conversation-rebuilders.ts";
+import { runOpencodeExport } from "../provider/opencode-export-command.ts";
 
 interface RegisteredProjectEntry {
   projectId: string;
@@ -95,7 +96,7 @@ function createDiscoveryFs(homeDir: string, codexHome?: string): DiscoveryFs {
       const result = runOpencodeCli(["session", "list", "--format", "json", "--max-count", "200"], 2 * 1024 * 1024);
       return result === undefined ? [] : parseOpencodeSessionListText(result);
     },
-    exportOpencodeSession: (sessionId) => runOpencodeCli(["export", sessionId], 8 * 1024 * 1024),
+    exportOpencodeSession: (sessionId) => runOpencodeExport(sessionId),
     readText: (path) => readBoundedHead(path, 256 * 1024),
   };
 }
