@@ -588,6 +588,12 @@ Does not own:
 
 ## Resource Registry
 
+The process-resource portion of this section is refined by
+`backend-owned-process-lifecycle.md`: one generalized Backend resource registry
+owns live process handles across runtime-, backend-, workspace-, and pane-scoped
+resources. Do not implement the interface below as a second agent-only process
+store.
+
 ### Initial Implementation
 
 Start with a Backend in-memory registry:

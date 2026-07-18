@@ -5,27 +5,16 @@
 // publishDiagnostics cache. Requests resolve null on timeout or server death
 // instead of rejecting — a slow or dead server degrades to "no intelligence",
 // never to a thrown failure that could take the query pipeline down.
-import { spawn, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import {
+  createStandaloneOwnedProcessSpawner,
+  type BackendOwnedProcessSpawner,
+  type ManagedBackendOwnedProcess,
+} from "../../../../infrastructure/node/process/backend-owned-process.ts";
 
 const REQUEST_TIMEOUT_MS = 8_000;
 const SHUTDOWN_GRACE_MS = 1_000;
-
-// ONE process-level exit hook for ALL clients (a per-instance process.on("exit")
-// accumulates listeners past the MaxListeners warning with one server per root).
-const liveClients = new Set<LspClient>();
-let exitHookInstalled = false;
-function installExitHook(): void {
-  if (exitHookInstalled) {
-    return;
-  }
-  exitHookInstalled = true;
-  process.on("exit", () => {
-    for (const client of liveClients) {
-      client.killNow();
-    }
-  });
-}
 
 interface JsonRpcMessage {
   jsonrpc?: string;
@@ -43,11 +32,13 @@ export interface LspClientInput {
   // Fired when the server dies outside dispose() — the owning engine flips to
   // a permanent unavailable state so we never spawn-retry per query.
   onUnexpectedExit?: () => void;
+  processSpawner?: BackendOwnedProcessSpawner;
 }
 
 export class LspClient {
   private readonly input: LspClientInput;
   private readonly child: ChildProcess;
+  private readonly managedProcess: ManagedBackendOwnedProcess;
   private readonly ready: Promise<boolean>;
   private readonly pending = new Map<
     number,
@@ -62,27 +53,23 @@ export class LspClient {
   private buffer = Buffer.alloc(0);
   private alive = true;
   private disposed = false;
-  // Backend teardown must never leak rust-analyzer/gopls orphans: the shared exit
-  // hook kills every live client, and the
-  // TIDE_RUNTIME_ID env tag lets reap-orphaned-agents collect survivors of a
-  // HARD kill (where no exit handler runs) at the next backend startup.
-  killNow(): void {
-    try {
-      this.child.kill("SIGKILL");
-    } catch {
-      // Already gone.
-    }
-  }
-
   constructor(input: LspClientInput) {
     this.input = input;
-    this.child = spawn(input.executable, input.args, {
-      cwd: input.root,
-      stdio: ["pipe", "pipe", "ignore"],
-      env: { ...process.env, TIDE_RUNTIME_ID: `tide-lsp-${process.pid}` },
+    const processSpawner = input.processSpawner ?? createStandaloneOwnedProcessSpawner();
+    this.managedProcess = processSpawner.spawn({
+      resourceId: `language_server:${input.executable}:${input.root}`,
+      kind: "language_server",
+      scope: { kind: "workspace", cwd: input.root },
+      command: input.executable,
+      args: input.args,
+      options: {
+        cwd: input.root,
+        stdio: ["pipe", "pipe", "ignore"],
+        env: process.env,
+      },
+      beforeSignal: () => this.prepareForStop(),
     });
-    installExitHook();
-    liveClients.add(this);
+    this.child = this.managedProcess.child;
     this.child.on("error", () => this.markDead());
     this.child.on("exit", () => this.markDead());
     // A dying server can EPIPE buffered writes; the exit handler owns state.
@@ -198,6 +185,10 @@ export class LspClient {
       return;
     }
     this.disposed = true;
+    await this.managedProcess.stop("backend_shutdown");
+  }
+
+  private async prepareForStop(): Promise<void> {
     if (this.alive) {
       // Polite shutdown with a short grace; a wedged server is killed anyway.
       await this.request("shutdown", null, SHUTDOWN_GRACE_MS);
@@ -206,11 +197,6 @@ export class LspClient {
       }
     }
     this.markDead();
-    try {
-      this.child.kill();
-    } catch {
-      // Already gone.
-    }
   }
 
   private markDead(): void {
@@ -218,7 +204,6 @@ export class LspClient {
       return;
     }
     this.alive = false;
-    liveClients.delete(this);
     for (const entry of this.pending.values()) {
       clearTimeout(entry.timer);
       entry.resolve(null);

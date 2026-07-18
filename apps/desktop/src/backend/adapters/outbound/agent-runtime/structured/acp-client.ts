@@ -2,7 +2,7 @@
 // opencode (`opencode acp`). Evidence: JSON-RPC 2.0 JSONL, bidirectional server
 // requests, session/prompt stays unresolved for the turn, and session/update
 // notifications stream messages, thoughts, tools, commands, usage, and plans.
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFileSync } from "node:fs";
 import type { ComposerAttachmentRef, PromptChoice, PromptState, ProviderCliAgentId } from "../../../../application/domains/thread/thread.ts";
 import type { DiscoveredProviderSessionRef, ProviderLaunchPlan } from "../../../../application/ports/outbound/agent-integration-port.ts";
@@ -22,6 +22,11 @@ import { planActivityFromEntries, planActivityFromTodoToolOutput } from "./plan-
 import { acpPlanContentRecord, withGoalPreamble } from "./structured-plan-goal.ts";
 import { acpProviderCapabilitiesEvent } from "./acp-provider-capabilities.ts";
 import {
+  spawnStructuredOwnedProcess,
+  type ManagedBackendOwnedProcess,
+  type StructuredProcessOwnershipInput,
+} from "./structured-owned-process.ts";
+import {
   acpToolOutput,
   bounded,
   isRecord,
@@ -34,7 +39,7 @@ export { mergeConfigOptions, parseAcpModelCatalog } from "./acp-client-shared.ts
 
 export const ACP_OPTION_PREFIX = "structured:acp-option:";
 
-export interface CreateAcpClientInput extends StructuredClientCallbacks {
+export interface CreateAcpClientInput extends StructuredClientCallbacks, StructuredProcessOwnershipInput {
   plan: ProviderLaunchPlan;
   threadId: string;
   runtimeId: string;
@@ -77,6 +82,7 @@ export function createAcpClient(input: CreateAcpClientInput): StructuredRuntimeC
 
 class AcpClient implements StructuredRuntimeClient {
   private readonly child: ChildProcessWithoutNullStreams;
+  private readonly managedProcess: ManagedBackendOwnedProcess;
   private readonly onEvent: StructuredClientCallbacks["onEvent"];
   private readonly tideThreadId: string;
   private readonly runtimeId: string;
@@ -122,11 +128,19 @@ class AcpClient implements StructuredRuntimeClient {
     this.sessionRefKind = input.sessionRefKind;
     this.protocolParams = isRecord(input.plan.protocolParams) ? input.plan.protocolParams : {};
     this.goalObjective = input.initialGoal?.trim() ?? "";
-    this.child = spawn(input.plan.command, input.plan.args, {
-      cwd: input.plan.cwd,
-      env: input.plan.env,
-      stdio: ["pipe", "pipe", "pipe"],
+    this.managedProcess = spawnStructuredOwnedProcess({
+      ...input,
+      providerId: input.agentId,
+      command: input.plan.command,
+      args: input.plan.args,
+      options: {
+        cwd: input.plan.cwd,
+        env: input.plan.env,
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+      beforeSignal: () => this.prepareForProcessStop(),
     });
+    this.child = this.managedProcess.child as ChildProcessWithoutNullStreams;
     this.child.stdout.setEncoding("utf8");
     this.child.stdout.on("data", (chunk: string) => this.ingest(chunk));
     this.child.stderr.setEncoding("utf8");
@@ -408,16 +422,12 @@ class AcpClient implements StructuredRuntimeClient {
   }
 
   async stop(): Promise<void> {
+    await this.managedProcess.stop("runtime_stop");
+  }
+
+  private prepareForProcessStop(): void {
     this.exited = true;
     this.clearPendingResponses();
-    this.child.kill("SIGTERM");
-    setTimeout(() => {
-      try {
-        this.child.kill("SIGKILL");
-      } catch {
-        // gone
-      }
-    }, 1500).unref();
   }
 
   private request(

@@ -24,14 +24,22 @@ import {
   resolveLspServerExecutable,
   type LspServerSpec,
 } from "./lsp/lsp-code-intelligence-port.ts";
+import type { BackendOwnedProcessSpawner } from "../../../infrastructure/node/process/backend-owned-process.ts";
 
 const TYPESCRIPT_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"]);
 
-export function createWorkspaceCodeIntelligenceRouter(): WorkspaceCodeIntelligencePort {
-  return new WorkspaceCodeIntelligenceRouter();
+export function createWorkspaceCodeIntelligenceRouter(input: {
+  processSpawner?: BackendOwnedProcessSpawner;
+} = {}): WorkspaceCodeIntelligencePort {
+  return new WorkspaceCodeIntelligenceRouter(input.processSpawner);
 }
 
 class WorkspaceCodeIntelligenceRouter implements WorkspaceCodeIntelligencePort {
+  private readonly processSpawner?: BackendOwnedProcessSpawner;
+
+  constructor(processSpawner?: BackendOwnedProcessSpawner) {
+    this.processSpawner = processSpawner;
+  }
   private readonly typescript = createTypeScriptCodeIntelligencePort();
   // serverId → live engine. Created on first query for a matching file; a
   // failed executable lookup is remembered so we never spawn-retry per query.
@@ -56,7 +64,7 @@ class WorkspaceCodeIntelligenceRouter implements WorkspaceCodeIntelligencePort {
       this.unavailableServers.add(spec.id);
       return undefined;
     }
-    const engine = createLspCodeIntelligencePort({ spec, executable });
+    const engine = createLspCodeIntelligencePort({ spec, executable, processSpawner: this.processSpawner });
     this.lspEngines.set(spec.id, engine);
     return engine;
   }

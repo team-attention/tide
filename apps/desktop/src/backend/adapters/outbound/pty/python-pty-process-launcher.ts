@@ -1,18 +1,39 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type {
   PtyLaunchPlan,
   PtyProcessHandle,
   PtyProcessLauncher,
   PtyProcessSpawnInput,
 } from "./pty-process.ts";
+import {
+  createStandaloneOwnedProcessSpawner,
+  type BackendOwnedProcessSpawner,
+  type ManagedBackendOwnedProcess,
+} from "../../../infrastructure/node/process/backend-owned-process.ts";
 
-export function createPythonPtyProcessLauncher(): PtyProcessLauncher {
-  return new PythonPtyProcessLauncher();
+export function createPythonPtyProcessLauncher(input: {
+  processSpawner?: BackendOwnedProcessSpawner;
+} = {}): PtyProcessLauncher {
+  return new PythonPtyProcessLauncher(
+    input.processSpawner ?? createStandaloneOwnedProcessSpawner(),
+  );
 }
 
 class PythonPtyProcessLauncher implements PtyProcessLauncher {
+  private readonly processSpawner: BackendOwnedProcessSpawner;
+
+  constructor(processSpawner: BackendOwnedProcessSpawner) {
+    this.processSpawner = processSpawner;
+  }
+
   async spawn(input: PtyProcessSpawnInput): Promise<PtyProcessHandle> {
-    const child = spawnProcess(input.plan, input.emulateTerminalQueries ?? true);
+    const managed = spawnProcess(
+      this.processSpawner,
+      input.runtimeId,
+      input.plan,
+      input.emulateTerminalQueries ?? true,
+    );
+    const child = managed.child as ChildProcessWithoutNullStreams;
     tracePtyLauncher(`spawned runtime=${input.runtimeId} command=${input.plan.command}`);
     child.stdout.on("data", (chunk: Buffer) => {
       tracePtyLauncher(`stdout runtime=${input.runtimeId} bytes=${chunk.byteLength}`);
@@ -26,20 +47,23 @@ class PythonPtyProcessLauncher implements PtyProcessLauncher {
       tracePtyLauncher(`exit runtime=${input.runtimeId} code=${exitCode} signal=${signal}`);
       input.onExit?.({ exitCode, signal });
     });
-    return new ChildProcessPtyHandle(input.runtimeId, child);
+    return new ChildProcessPtyHandle(input.runtimeId, child, managed);
   }
 }
 
 class ChildProcessPtyHandle implements PtyProcessHandle {
   readonly runtimeId: string;
   private readonly child: ChildProcessWithoutNullStreams;
+  private readonly managedProcess: ManagedBackendOwnedProcess;
 
   constructor(
     runtimeId: string,
     child: ChildProcessWithoutNullStreams,
+    managedProcess: ManagedBackendOwnedProcess,
   ) {
     this.runtimeId = runtimeId;
     this.child = child;
+    this.managedProcess = managedProcess;
   }
 
   get pid(): number | undefined {
@@ -75,16 +99,17 @@ class ChildProcessPtyHandle implements PtyProcessHandle {
     }
   }
 
-  stop(): Promise<void> {
-    this.child.kill("SIGTERM");
-    return Promise.resolve();
+  async stop(): Promise<void> {
+    await this.managedProcess.stop("runtime_stop");
   }
 }
 
 function spawnProcess(
+  processSpawner: BackendOwnedProcessSpawner,
+  runtimeId: string,
   plan: PtyLaunchPlan,
   emulateTerminalQueries = true,
-): ChildProcessWithoutNullStreams {
+): ManagedBackendOwnedProcess {
   const env = {
     ...process.env,
     ...plan.env,
@@ -93,16 +118,18 @@ function spawnProcess(
 
   // fd 0-2 are the PTY stdio; fd 3 is a dedicated control pipe the bridge reads
   // resize messages ("rows,cols\n") from.
-  return spawn("python3", [
-    "-c",
-    pythonPtyBridgeSource,
-    plan.command,
-    ...plan.args,
-  ], {
-    cwd: plan.cwd,
-    env,
-    stdio: ["pipe", "pipe", "pipe", "pipe"],
-  }) as ChildProcessWithoutNullStreams;
+  return processSpawner.spawn({
+    resourceId: `workbench_terminal:${runtimeId}`,
+    kind: "workbench_terminal",
+    scope: { kind: "operation", operationId: runtimeId },
+    command: "python3",
+    args: ["-c", pythonPtyBridgeSource, plan.command, ...plan.args],
+    options: {
+      cwd: plan.cwd,
+      env,
+      stdio: ["pipe", "pipe", "pipe", "pipe"],
+    },
+  });
 }
 
 const pythonPtyBridgeSource = String.raw`

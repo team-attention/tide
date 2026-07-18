@@ -1,9 +1,13 @@
-import { spawn as nodeSpawn } from "node:child_process";
-import type { ChildProcess } from "node:child_process";
 import type {
   OpencodeProviderAuthMethodDto,
   OpencodeProviderOptionDto,
 } from "../../../../shared/contracts/index.ts";
+import {
+  createStandaloneOwnedProcessSpawner,
+  type BackendOwnedProcessSpawner,
+  type BackendOwnedProcessStopReason,
+  type ManagedBackendOwnedProcess,
+} from "../process/backend-owned-process.ts";
 
 // The canonical (server-API) path for opencode vendor auth — exactly what palot and the
 // other opencode GUI clients use, instead of the interactive `auth login` TUI (which
@@ -33,7 +37,7 @@ export interface OpencodeAuthServer {
   listProviderAuth(): Promise<OpencodeProviderAuthMap>;
   // Set an API-key credential for a provider (PUT /auth/{id} { type:"api", key }).
   setApiKey(providerId: string, key: string): Promise<void>;
-  stop(): void;
+  stop(): Promise<void>;
 }
 
 export interface CreateOpencodeAuthServerInput {
@@ -41,16 +45,26 @@ export interface CreateOpencodeAuthServerInput {
   // Injected in tests to exercise the HTTP layer without a real server.
   fetchImpl?: typeof fetch;
   resolveBaseUrl?: () => Promise<string>;
+  processSpawner?: BackendOwnedProcessSpawner;
+  idleMs?: number;
 }
 
 const LISTEN_RE = /listening on\s+(https?:\/\/\S+)/i;
 const SERVER_START_TIMEOUT_MS = 8_000;
+export const OPENCODE_AUTH_SERVER_IDLE_MS = 30_000;
 const OPENCODE_PROVIDER_SOURCES = new Set(["env", "config", "custom", "api"]);
 
 export function createOpencodeAuthServer(input: CreateOpencodeAuthServerInput): OpencodeAuthServer {
   const fetchImpl = input.fetchImpl ?? fetch;
-  let child: ChildProcess | undefined;
+  const processSpawner = input.processSpawner ?? createStandaloneOwnedProcessSpawner();
+  let managedProcess: ManagedBackendOwnedProcess | undefined;
   let baseUrlPromise: Promise<string> | undefined;
+  let generation = 0;
+  let activeLeases = 0;
+  let idleGeneration = 0;
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  let stoppingPromise: Promise<void> | undefined;
+  let shuttingDown = false;
 
   const spawnServer = (): Promise<string> =>
     new Promise<string>((resolve, reject) => {
@@ -59,13 +73,20 @@ export function createOpencodeAuthServer(input: CreateOpencodeAuthServerInput): 
         reject(new Error("opencode executable was not found."));
         return;
       }
-      const proc = nodeSpawn(executablePath, ["serve", "--port", "0", "--hostname", "127.0.0.1"], {
-        stdio: ["ignore", "pipe", "pipe"],
+      generation += 1;
+      const owned = processSpawner.spawn({
+        resourceId: `provider_helper:opencode-auth:${generation}`,
+        kind: "provider_helper",
+        scope: { kind: "backend" },
+        command: executablePath,
+        args: ["serve", "--port", "0", "--hostname", "127.0.0.1"],
+        options: { stdio: ["ignore", "pipe", "pipe"] },
       });
-      child = proc;
+      const proc = owned.child;
+      managedProcess = owned;
       const timer = setTimeout(() => {
         reject(new Error("opencode serve did not announce a URL in time."));
-        proc.kill();
+        void owned.stop("readiness_failed");
       }, SERVER_START_TIMEOUT_MS);
 
       const onData = (chunk: Buffer) => {
@@ -82,23 +103,26 @@ export function createOpencodeAuthServer(input: CreateOpencodeAuthServerInput): 
       proc.stderr?.on("data", onData);
       proc.on("exit", () => {
         clearTimeout(timer);
-        child = undefined;
         baseUrlPromise = undefined;
+        if (managedProcess === owned) managedProcess = undefined;
         reject(new Error("opencode serve exited before announcing a URL."));
       });
       // A spawn failure (ENOENT / permission) emits "error"; with no listener Node
       // throws an unhandled exception that would crash the backend.
       proc.on("error", (error) => {
         clearTimeout(timer);
-        child = undefined;
         baseUrlPromise = undefined;
+        if (managedProcess === owned) managedProcess = undefined;
         reject(error);
       });
     });
 
-  const baseUrl = (): Promise<string> => {
+  const baseUrl = async (): Promise<string> => {
     if (input.resolveBaseUrl !== undefined) {
       return input.resolveBaseUrl();
+    }
+    if (stoppingPromise !== undefined) {
+      await stoppingPromise;
     }
     if (baseUrlPromise === undefined) {
       baseUrlPromise = spawnServer().catch((error) => {
@@ -109,40 +133,87 @@ export function createOpencodeAuthServer(input: CreateOpencodeAuthServerInput): 
     return baseUrlPromise;
   };
 
+  const stopCurrent = (reason: BackendOwnedProcessStopReason = "idle_expired"): Promise<void> => {
+    if (stoppingPromise !== undefined) return stoppingPromise;
+    const owned = managedProcess;
+    managedProcess = undefined;
+    baseUrlPromise = undefined;
+    if (owned === undefined) return Promise.resolve();
+    stoppingPromise = owned.stop(reason)
+      .then(() => undefined)
+      .finally(() => {
+        stoppingPromise = undefined;
+      });
+    return stoppingPromise;
+  };
+
+  const scheduleIdleStop = (): void => {
+    if (shuttingDown || activeLeases > 0 || managedProcess === undefined) return;
+    const scheduledGeneration = ++idleGeneration;
+    idleTimer = setTimeout(() => {
+      idleTimer = undefined;
+      if (activeLeases === 0 && idleGeneration === scheduledGeneration && !shuttingDown) {
+        void stopCurrent();
+      }
+    }, input.idleMs ?? OPENCODE_AUTH_SERVER_IDLE_MS);
+    idleTimer.unref?.();
+  };
+
+  const withLease = async <T>(operation: () => Promise<T>): Promise<T> => {
+    if (shuttingDown) throw new Error("opencode auth server is shutting down.");
+    activeLeases += 1;
+    idleGeneration += 1;
+    if (idleTimer !== undefined) {
+      clearTimeout(idleTimer);
+      idleTimer = undefined;
+    }
+    try {
+      return await operation();
+    } finally {
+      activeLeases -= 1;
+      scheduleIdleStop();
+    }
+  };
+
   return {
     async listProviderOptions() {
-      const base = await baseUrl();
-      const [providerResponse, auth] = await Promise.all([
-        fetchImpl(`${base}/provider`),
-        fetchProviderAuth(fetchImpl, base).catch(() => ({})),
-      ]);
-      if (!providerResponse.ok) {
-        throw new Error(`GET /provider failed: ${providerResponse.status}`);
-      }
-      return parseOpencodeProviderOptions(await providerResponse.json(), auth);
+      return withLease(async () => {
+        const base = await baseUrl();
+        const [providerResponse, auth] = await Promise.all([
+          fetchImpl(`${base}/provider`),
+          fetchProviderAuth(fetchImpl, base).catch(() => ({})),
+        ]);
+        if (!providerResponse.ok) {
+          throw new Error(`GET /provider failed: ${providerResponse.status}`);
+        }
+        return parseOpencodeProviderOptions(await providerResponse.json(), auth);
+      });
     },
     async listProviderAuth() {
-      const base = await baseUrl();
-      return fetchProviderAuth(fetchImpl, base);
+      return withLease(async () => fetchProviderAuth(fetchImpl, await baseUrl()));
     },
     async setApiKey(providerId: string, key: string) {
-      const base = await baseUrl();
-      const response = await fetchImpl(`${base}/auth/${encodeURIComponent(providerId)}`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "api", key }),
+      return withLease(async () => {
+        const base = await baseUrl();
+        const response = await fetchImpl(`${base}/auth/${encodeURIComponent(providerId)}`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ type: "api", key }),
+        });
+        if (!response.ok) {
+          const detail = await response.text().catch(() => "");
+          throw new Error(`PUT /auth/${providerId} failed: ${response.status} ${detail}`.trim());
+        }
       });
-      if (!response.ok) {
-        const detail = await response.text().catch(() => "");
-        throw new Error(`PUT /auth/${providerId} failed: ${response.status} ${detail}`.trim());
-      }
     },
-    stop() {
-      if (child !== undefined) {
-        child.kill();
-        child = undefined;
+    async stop() {
+      shuttingDown = true;
+      idleGeneration += 1;
+      if (idleTimer !== undefined) {
+        clearTimeout(idleTimer);
+        idleTimer = undefined;
       }
-      baseUrlPromise = undefined;
+      await stopCurrent("backend_shutdown");
     },
   };
 }

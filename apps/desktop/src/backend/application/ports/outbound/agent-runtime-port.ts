@@ -38,6 +38,7 @@ export interface AgentRuntimePort {
   // Abort the in-flight turn but keep the runtime alive + resumable.
   interrupt(handle: AgentRuntimeHandle): Promise<void>;
   stop(handle: AgentRuntimeHandle): Promise<void>;
+  shutdown?(): Promise<void>;
   // Discover the agent's REAL command set (the list the provider CLI itself
   // exposes) by running a handshake-only runtime and capturing its `commands`
   // event, without a full turn — for the composer's / and $ menu on the Start

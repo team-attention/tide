@@ -1,6 +1,6 @@
 import { checkoutBranchForStart, execGitArgs, readProjectRegistry, repoRootForWorktree, runGit, writeProjectRegistry } from "./project-registry.ts";
 import type { GitChangeFile, GitChanges, GitContext } from "./project-registry.ts";
-import { backendProcess, ensureBackendProcess, nextEventId, postBackendCommand } from "./backend-bridge.ts";
+import { ensureBackendProcess, nextEventId, postBackendCommand, shutdownBackendProcess } from "./backend-bridge.ts";
 import { maybeOfferMoveToApplications } from "./move-to-applications.ts";
 import { installApplicationMenu } from "./app-menu.ts";
 import { applyHostZoom } from "./zoom.ts";
@@ -734,7 +734,16 @@ app.on("window-all-closed", () => {
   }
 });
 
-app.on("before-quit", () => {
+let gracefulQuitStarted = false;
+let gracefulQuitCompleted = false;
+app.on("before-quit", (event) => {
   browserRuntimeHost.closeAll("app_quit");
-  backendProcess?.kill();
+  if (gracefulQuitCompleted) return;
+  event.preventDefault();
+  if (gracefulQuitStarted) return;
+  gracefulQuitStarted = true;
+  void shutdownBackendProcess().finally(() => {
+    gracefulQuitCompleted = true;
+    app.quit();
+  });
 });

@@ -37,6 +37,12 @@ import type {
 import type { NativeRuntimeEvent, NativeTransport } from "../../../../application/domains/native-agent/native-runtime-event.ts";
 import { structuredToNativeRuntimeEvent } from "../clients/structured-to-native-runtime-event.ts";
 import { sanitizeProviderRuntimeEnv } from "./provider-runtime-env.ts";
+import {
+  createStandaloneOwnedProcessSpawner,
+  type BackendOwnedProcessKind,
+  type BackendOwnedProcessScope,
+  type BackendOwnedProcessSpawner,
+} from "../../../../infrastructure/node/process/backend-owned-process.ts";
 
 export type AgentIntegrationRegistry = Record<ProviderCliAgentId, AgentIntegrationPort>;
 
@@ -80,6 +86,7 @@ export interface CreateAgentIntegrationRuntimePortInput {
   // `Task` fan-out activity watcher. Infra-injected (needs the home dir); absent in
   // tests/probes. See live-turn-activity-visibility.md (Slice B).
   locateSubagentsDir?: (sessionId: string) => string | undefined;
+  processSpawner?: BackendOwnedProcessSpawner;
 }
 
 // A synchronous source of "a newer CLI is published" advisories, consulted while
@@ -183,6 +190,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
   private readonly onProviderEvent?: CreateAgentIntegrationRuntimePortInput["onProviderEvent"];
   private readonly onNativeEvent?: CreateAgentIntegrationRuntimePortInput["onNativeEvent"];
   private readonly locateSubagentsDir?: CreateAgentIntegrationRuntimePortInput["locateSubagentsDir"];
+  private readonly processSpawner: BackendOwnedProcessSpawner;
   private readonly runtimes = new Map<string, StructuredRuntimeState>();
   // Probed real command sets per (agentId:cwd) — see discoverCommands.
   private readonly commandCache = new Map<string, DiscoveredCommand[]>();
@@ -198,6 +206,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     this.onProviderEvent = input.onProviderEvent;
     this.onNativeEvent = input.onNativeEvent;
     this.locateSubagentsDir = input.locateSubagentsDir;
+    this.processSpawner = input.processSpawner ?? createStandaloneOwnedProcessSpawner();
   }
 
   async start(input: AgentRuntimeStartInput): Promise<AgentRuntimeHandle> {
@@ -375,6 +384,12 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     this.runtimes.delete(handle.runtimeId);
   }
 
+  async shutdown(): Promise<void> {
+    const runtimes = [...this.runtimes.values()];
+    this.runtimes.clear();
+    await Promise.allSettled(runtimes.map((runtime) => runtime.client.stop()));
+  }
+
   // Spawn a handshake-only runtime, capture the first `commands` event (the
   // agent's own slash-commands/skills, reported during init/handshake), then
   // stop — no full turn. Cached per (agentId, cwd). claude only emits its init
@@ -448,6 +463,8 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
             runtimeId,
             agentId,
             initialPrompt: needsPrompt ? "tide command probe" : undefined,
+            processKind: "command_probe",
+            processScope: { kind: "operation", operationId: runtimeId },
             onEvent,
           });
           // If the client emitted `commands` synchronously during construction,
@@ -488,13 +505,15 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
   ): Promise<AgentRuntimeHandle> {
     // One live runtime per thread: tear down any existing one so a thread can
     // never double-run (two clients on one session tangle the turn).
+    const duplicateStops: Promise<void>[] = [];
     for (const [existingRuntimeId, state] of this.runtimes) {
       if (state.threadId === threadId) {
         traceAgentRuntime(`reaping duplicate runtime=${existingRuntimeId} thread=${threadId}`);
-        void Promise.resolve(state.client.stop()).catch(() => undefined);
+        duplicateStops.push(Promise.resolve(state.client.stop()).catch(() => undefined));
         this.runtimes.delete(existingRuntimeId);
       }
     }
+    await Promise.all(duplicateStops);
     const runtimePlan: ProviderLaunchPlan = {
       ...plan,
       env: {
@@ -595,6 +614,8 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
     initialAttachments?: ComposerAttachmentRef[];
     initialGoal?: string;
     resumeRef?: string;
+    processKind?: BackendOwnedProcessKind;
+    processScope?: BackendOwnedProcessScope;
     onEvent: (event: StructuredProviderEvent) => void;
   }): StructuredRuntimeClient {
     switch (input.plan.transport) {
@@ -608,6 +629,9 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
           initialGoal: input.initialGoal,
           initialAttachments: input.initialAttachments,
           locateSubagentsDir: this.locateSubagentsDir,
+          processSpawner: this.processSpawner,
+          processKind: input.processKind,
+          processScope: input.processScope,
           onEvent: input.onEvent,
         });
       case "codex_app_server":
@@ -620,6 +644,9 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
           initialGoal: input.initialGoal,
           initialAttachments: input.initialAttachments,
           resumeThreadId: input.resumeRef,
+          processSpawner: this.processSpawner,
+          processKind: input.processKind,
+          processScope: input.processScope,
           onEvent: input.onEvent,
         });
       case "acp":
@@ -634,6 +661,9 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
           initialGoal: input.initialGoal,
           initialAttachments: input.initialAttachments,
           resumeSessionId: input.resumeRef,
+          processSpawner: this.processSpawner,
+          processKind: input.processKind,
+          processScope: input.processScope,
           onEvent: input.onEvent,
         });
       default:

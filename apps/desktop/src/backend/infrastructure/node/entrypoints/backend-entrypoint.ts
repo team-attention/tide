@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import {
   CONTRACT_VERSION,
@@ -15,6 +16,11 @@ import {
 } from "../live/agent-reaper-guardian.ts";
 import { resolveAugmentedEnvironment } from "../live/resolve-shell-path.ts";
 import { runTideMcpStdioBridgeFromEnv } from "./tide-mcp-stdio-entrypoint.ts";
+import {
+  ownedProcessManifestPath,
+  ownedProcessManifestRoot,
+  reapStaleOwnedProcessManifests,
+} from "../process/reap-owned-process-manifests.ts";
 
 // A Finder/Dock-launched packaged app only inherits the minimal launchd env, so
 // provider runtimes miss both CLI search paths and exported shell variables that
@@ -45,6 +51,9 @@ if (process.argv.includes("guardian")) {
 // before this session spawns anything — a force-quit can skip the PTY watchdog and
 // leave a CPU-spinning orphan from the last run.
 reapOrphanedTideAgentProcesses();
+const backendAppDataRoot = process.env.TIDE_APP_DATA_ROOT ??
+  join(process.env.HOME ?? process.cwd(), ".tide-v2");
+reapStaleOwnedProcessManifests(ownedProcessManifestRoot(backendAppDataRoot));
 
 type ElectronParentPort = {
   postMessage: (message: unknown) => void;
@@ -75,6 +84,7 @@ if (process.argv.includes("mcp")) {
 spawnAgentReaperGuardian({
   entrypointPath: fileURLToPath(import.meta.url),
   targetPid: process.pid,
+  manifestPath: ownedProcessManifestPath(backendAppDataRoot, backendInstanceId),
 });
 
 const parentPort = await loadElectronParentPort();
@@ -87,20 +97,15 @@ const adapter = createLiveBackendContractMessageAdapter({
 let activeParentCommandCount = 0;
 const bufferedBackendEvents: BackendEventEnvelope[] = [];
 
-// On a clean quit Electron sends SIGTERM to the utilityProcess. Flush the
-// coalesced conversation-cache writes so the trailing debounce window is never
-// lost, then exit. (A hard kill skips this — acceptable for a best-effort cache.)
-let shuttingDown = false;
+let shutdownPromise: Promise<void> | undefined;
+function beginShutdown(): Promise<void> {
+  shutdownPromise ??= adapter.shutdown().catch(() => undefined);
+  return shutdownPromise;
+}
+
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.on(signal, () => {
-    if (shuttingDown) {
-      return;
-    }
-    shuttingDown = true;
-    void adapter
-      .shutdown()
-      .catch(() => {})
-      .finally(() => process.exit(0));
+    void beginShutdown().finally(() => process.exit(0));
   });
 }
 
@@ -119,11 +124,27 @@ if (parentPort !== undefined) {
 
   parentPort.on("message", (message: unknown) => {
     const payload = unwrapPortMessage(message);
+    if (isBackendShutdownRequest(payload)) {
+      void beginShutdown().finally(() => {
+        parentPort.postMessage({
+          kind: "backend.shutdown.complete",
+          requestId: payload.requestId,
+        });
+        setImmediate(() => process.exit(0));
+      });
+      return;
+    }
     if (browserRuntime.handleParentMessage(payload)) {
       return;
     }
     void handleParentMessage(payload);
   });
+}
+
+function isBackendShutdownRequest(value: unknown): value is { kind: "backend.shutdown.request"; requestId: string } {
+  return typeof value === "object" && value !== null &&
+    (value as { kind?: unknown }).kind === "backend.shutdown.request" &&
+    typeof (value as { requestId?: unknown }).requestId === "string";
 }
 
 async function handleParentMessage(message: unknown): Promise<void> {

@@ -15,18 +15,11 @@
 // - turn/start {threadId, input:[{type:"text",text}]} → streaming notifications:
 //   item/started / item/completed (agentMessage, reasoning, commandExecution,
 //   mcpToolCall, webSearch, …), thread/tokenUsage/updated, turn/completed
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import type {
-  AgentRuntimeCapabilityInvocationInput,
-  AgentRuntimeCapabilityInvocationResult,
-} from "../../../../application/domains/agent-runtime/agent-runtime.ts";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import type { AgentRuntimeCapabilityInvocationInput, AgentRuntimeCapabilityInvocationResult } from "../../../../application/domains/agent-runtime/agent-runtime.ts";
 import type { ComposerAttachmentRef } from "../../../../application/domains/thread/thread.ts";
 import type { ProviderLaunchPlan } from "../../../../application/ports/outbound/agent-integration-port.ts";
-import type {
-  StructuredClientCallbacks,
-  StructuredRuntimeClient,
-  StructuredRuntimeWrite,
-} from "./structured-runtime-events.ts";
+import type { StructuredClientCallbacks, StructuredRuntimeClient, StructuredRuntimeWrite } from "./structured-runtime-events.ts";
 import { normalizeProviderTerminalStatus } from "./structured-runtime-events.ts";
 import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/agent-runtime.ts";
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
@@ -49,6 +42,7 @@ import {
   type PendingServerPrompt,
 } from "./codex-server-prompt.ts";
 import { handleCodexServerRequest } from "./codex-server-request.ts";
+import { spawnStructuredOwnedProcess, type ManagedBackendOwnedProcess, type StructuredProcessOwnershipInput } from "./structured-owned-process.ts";
 export { codexRateLimitsFromUsage } from "./codex-app-server-shared.ts";
 export {
   CODEX_ACCEPT_FOR_SESSION_TOKEN,
@@ -61,7 +55,7 @@ export {
   type CodexToolCallRecord,
 } from "./codex-tool-call-record.ts";
 
-export interface CreateCodexAppServerClientInput extends StructuredClientCallbacks {
+export interface CreateCodexAppServerClientInput extends StructuredClientCallbacks, StructuredProcessOwnershipInput {
   plan: ProviderLaunchPlan;
   threadId: string;
   runtimeId: string;
@@ -81,6 +75,7 @@ export function createCodexAppServerClient(
 
 class CodexAppServerClient implements StructuredRuntimeClient {
   private readonly child: ChildProcessWithoutNullStreams;
+  private readonly managedProcess: ManagedBackendOwnedProcess;
   private readonly onEvent: StructuredClientCallbacks["onEvent"];
   private readonly tideThreadId: string;
   private readonly runtimeId: string;
@@ -148,11 +143,19 @@ class CodexAppServerClient implements StructuredRuntimeClient {
       emitRecord: (sourceRef, payload, body) => this.emitRecord(sourceRef, payload, body),
       onNotice: (message) => this.onEvent({ kind: "runtime_notice", level: "info", message }),
     });
-    this.child = spawn(input.plan.command, input.plan.args, {
-      cwd: input.plan.cwd,
-      env: input.plan.env,
-      stdio: ["pipe", "pipe", "pipe"],
+    this.managedProcess = spawnStructuredOwnedProcess({
+      ...input,
+      providerId: "codex",
+      command: input.plan.command,
+      args: input.plan.args,
+      options: {
+        cwd: input.plan.cwd,
+        env: input.plan.env,
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+      beforeSignal: () => this.prepareForProcessStop(),
     });
+    this.child = this.managedProcess.child as ChildProcessWithoutNullStreams;
     this.child.stdout.setEncoding("utf8");
     this.child.stdout.on("data", (chunk: string) => this.ingest(chunk));
     this.child.stderr.setEncoding("utf8");
@@ -384,17 +387,13 @@ class CodexAppServerClient implements StructuredRuntimeClient {
   }
 
   async stop(): Promise<void> {
+    await this.managedProcess.stop("runtime_stop");
+  }
+
+  private prepareForProcessStop(): void {
     this.exited = true;
     this.toolCalls.clearTimeouts();
     this.failPendingResponses(new Error("Codex runtime stopped."));
-    this.child.kill("SIGTERM");
-    setTimeout(() => {
-      try {
-        this.child.kill("SIGKILL");
-      } catch {
-        // gone
-      }
-    }, 1500).unref();
   }
 
   private request(

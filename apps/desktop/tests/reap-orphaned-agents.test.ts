@@ -15,6 +15,9 @@ const processList = [
   "42003 42002 /Users/me/.local/bin/claude TIDE_RUNTIME_ID=runtime-live",
   // Unrelated orphan without the tag. Must NOT be touched.
   "42004     1 /Applications/Some.app/Contents/MacOS/Some --flag",
+  // New managed child. Exact manifest cleanup owns it, even if it inherited
+  // the legacy runtime routing tag.
+  "42005     1 /Users/me/.local/bin/opencode acp TIDE_RUNTIME_ID=runtime-new TIDE_PROCESS_OWNER_TOKEN=owner-exact",
 ].join("\n");
 
 test("reaps only orphaned Tide-tagged processes, never live or untagged ones", () => {
@@ -30,6 +33,7 @@ test("reaps only orphaned Tide-tagged processes, never live or untagged ones", (
   // Live agent (ppid != 1) and the untagged orphan are left alone.
   assert.ok(!killed.includes(42003));
   assert.ok(!killed.includes(42004));
+  assert.ok(!killed.includes(42005));
 });
 
 test("never reaps its own process", () => {

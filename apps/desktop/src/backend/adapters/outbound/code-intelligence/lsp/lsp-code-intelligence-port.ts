@@ -26,6 +26,7 @@ import type {
   WorkspaceCodeSignatureHelpResult,
 } from "../../../../application/ports/outbound/workspace-code-intelligence-port.ts";
 import { LspClient } from "./lsp-client.ts";
+import type { BackendOwnedProcessSpawner } from "../../../../infrastructure/node/process/backend-owned-process.ts";
 
 export interface LspServerSpec {
   id: string;
@@ -144,21 +145,24 @@ type PreparedQuery =
 export function createLspCodeIntelligencePort(input: {
   spec: LspServerSpec;
   executable: string;
+  processSpawner?: BackendOwnedProcessSpawner;
 }): WorkspaceCodeIntelligencePort {
-  return new LspCodeIntelligencePort(input.spec, input.executable);
+  return new LspCodeIntelligencePort(input.spec, input.executable, input.processSpawner);
 }
 
 class LspCodeIntelligencePort implements WorkspaceCodeIntelligencePort {
   private readonly spec: LspServerSpec;
   private readonly executable: string;
+  private readonly processSpawner?: BackendOwnedProcessSpawner;
   // root → live client. A spawn failure or unexpected exit flips `failed` for
   // the backend lifetime — every later query degrades to a clean miss.
   private readonly clients = new Map<string, LspClient>();
   private failed = false;
 
-  constructor(spec: LspServerSpec, executable: string) {
+  constructor(spec: LspServerSpec, executable: string, processSpawner?: BackendOwnedProcessSpawner) {
     this.spec = spec;
     this.executable = executable;
+    this.processSpawner = processSpawner;
   }
 
   async findDefinition(input: WorkspaceCodeQueryInput): Promise<WorkspaceCodeDefinitionResult> {
@@ -504,6 +508,7 @@ class LspCodeIntelligencePort implements WorkspaceCodeIntelligencePort {
       executable: this.executable,
       args: this.spec.args,
       root,
+      processSpawner: this.processSpawner,
       onUnexpectedExit: () => {
         this.markFailed();
       },

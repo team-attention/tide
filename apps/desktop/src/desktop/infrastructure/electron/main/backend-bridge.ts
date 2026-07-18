@@ -17,7 +17,8 @@ const backendCommandTimeoutMs = parsePositiveIntegerEnv("TIDE_BACKEND_COMMAND_TI
 
 type BackendProcessMessage =
   | { kind: "backend.handshake"; payload: unknown }
-  | { kind: "backend.event"; payload: unknown };
+  | { kind: "backend.event"; payload: unknown }
+  | { kind: "backend.shutdown.complete"; requestId: string };
 
 export interface PendingBackendRequest {
   events: BackendEventEnvelope[];
@@ -32,6 +33,13 @@ let backendHandshake: Promise<BackendHandshake> | null = null;
 let resolveBackendHandshake: ((handshake: BackendHandshake) => void) | null = null;
 
 let rejectBackendHandshake: ((error: Error) => void) | null = null;
+
+let pendingBackendShutdown: {
+  requestId: string;
+  promise: Promise<void>;
+  resolve: () => void;
+  timeout: ReturnType<typeof setTimeout>;
+} | null = null;
 
 export const pendingBackendRequests = new Map<string, PendingBackendRequest>();
 
@@ -77,6 +85,7 @@ export async function ensureBackendProcess(): Promise<BackendHandshake> {
     const message = `Backend process exited with code ${exitCode} before completing the command.`;
     rejectBackendHandshake?.(new Error(message));
     failPendingRequests(message);
+    settlePendingBackendShutdown();
     resetBackendProcess();
   });
 
@@ -129,6 +138,29 @@ export function postBackendCommand(command: BackendCommandEnvelope): Promise<Bac
   });
 }
 
+export function shutdownBackendProcess(timeoutMs = 7_000): Promise<void> {
+  if (backendProcess === null) return Promise.resolve();
+  if (pendingBackendShutdown !== null) return pendingBackendShutdown.promise;
+  const requestId = `shutdown-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  const timeout = setTimeout(() => {
+    const processToTerminate = backendProcess;
+    settlePendingBackendShutdown();
+    processToTerminate?.kill();
+  }, timeoutMs);
+  pendingBackendShutdown = { requestId, promise, resolve, timeout };
+  backendProcess.postMessage({
+    kind: "backend.shutdown.request",
+    requestId,
+    reason: "app_quit",
+    deadlineAt: new Date(Date.now() + timeoutMs).toISOString(),
+  });
+  return promise;
+}
+
 function handleBackendProcessMessage(message: unknown): void {
   const payload = unwrapPortMessage(message);
   if (isBrowserRuntimeRequestEnvelope(payload)) {
@@ -138,6 +170,13 @@ function handleBackendProcessMessage(message: unknown): void {
     return;
   }
   if (!isBackendProcessMessage(payload)) {
+    return;
+  }
+
+  if (payload.kind === "backend.shutdown.complete") {
+    if (pendingBackendShutdown?.requestId === payload.requestId) {
+      settlePendingBackendShutdown();
+    }
     return;
   }
 
@@ -239,6 +278,14 @@ function resetBackendProcess(): void {
   rejectBackendHandshake = null;
 }
 
+function settlePendingBackendShutdown(): void {
+  const pending = pendingBackendShutdown;
+  if (pending === null) return;
+  pendingBackendShutdown = null;
+  clearTimeout(pending.timeout);
+  pending.resolve();
+}
+
 function backendProcessEnvironment(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) {
@@ -267,6 +314,10 @@ function isInheritedAgentOwnerEnv(key: string): boolean {
     key === "TIDE_THREAD_ID" ||
     key === "TIDE_RUNTIME_ID" ||
     key === "TIDE_AGENT_ID" ||
+    key === "TIDE_PROCESS_OWNER_ID" ||
+    key === "TIDE_PROCESS_OWNER_PID" ||
+    key === "TIDE_PROCESS_RESOURCE_ID" ||
+    key === "TIDE_PROCESS_OWNER_TOKEN" ||
     key === "TIDE_PANE" ||
     key === "TIDE_WINDOW" ||
     key === "TIDE_ELECTRON_SMOKE_COMMAND" ||
@@ -284,6 +335,9 @@ function isBackendProcessMessage(value: unknown): value is BackendProcessMessage
   }
 
   const kind = (value as { kind?: unknown }).kind;
+  if (kind === "backend.shutdown.complete") {
+    return typeof (value as { requestId?: unknown }).requestId === "string";
+  }
   return kind === "backend.handshake" || kind === "backend.event";
 }
 
