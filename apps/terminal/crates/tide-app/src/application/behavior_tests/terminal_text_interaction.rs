@@ -332,6 +332,7 @@ fn copying_wrapped_terminal_selection_trims_the_margin_after_joining_rows() {
 fn terminal_wrap_metadata_from_the_emulator_joins_copied_rows() {
     // UC-2 BR-2: A wrapped visible row does not insert a newline into copied text
     let mut pane = TerminalPane::with_cwd(99, 8, 4, None, true).unwrap();
+    pane.backend.stop_pty_for_test();
 
     pane.backend.bench_sync_grid();
     pane.backend.bench_write_to_term(b"\x1b[2J\x1b[Habcdefghi");

@@ -41,3 +41,8 @@ Release verification pins Rust 1.92.0 (the locally verified toolchain), includin
 - Vibe wrapper behavior and architecture checks passed.
 - Regression verifies 100 injected frames while a stale snapshot is deliberately pending.
 - Release patch is prepared as 0.51.60. No new tag or publication has occurred; automatic approval review rejected commit/push because lint cleanup spans many files.
+
+## CI follow-up: emulator test isolation
+The wrapping test creates a real login shell while injecting bytes directly into the emulator. Shell startup output can overwrite the fixture on CI. Emulator-only fixtures must stop and join their PTY reader before injecting output; continue using the real VT parser and grid sync thread. Add a test-only stop helper and use it for wrapping, MCP observation and snapshot fixtures. Do not replace real wrapping assertions with mock rows or add timing sleeps. Production shell lifecycle remains unchanged.
+
+CI follow-up validated locally on 0.51.61: strict Clippy passes; full workspace tests pass (1,790 passed, 0 failed, 10 ignored). Failed v0.51.60 stays immutable and unpublished; v0.51.61 carries the fixture isolation fix.

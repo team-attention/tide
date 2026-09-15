@@ -1059,6 +1059,7 @@ fn observing_terminal_reports_live_work_surface() {
             Some(PaneKind::Terminal(terminal)) => terminal,
             _ => panic!("terminal should exist"),
         };
+        terminal.backend.stop_pty_for_test();
         terminal.context.cwd = Some(PathBuf::from("/tmp/tide-observe"));
         terminal.context.shell_idle = false;
         terminal.backend.bench_sync_grid();

@@ -7,7 +7,8 @@ mod tests {
 
     /// Build a Terminal and apply the given escape sequences to set TermMode flags.
     fn term_with_modes(seqs: &[&str]) -> Terminal {
-        let term = Terminal::new(80, 24).expect("terminal backend");
+        let mut term = Terminal::new(80, 24).expect("terminal backend");
+        term.stop_pty_for_test();
         for s in seqs {
             term.bench_write_to_term(s.as_bytes());
         }
@@ -693,6 +694,7 @@ fn synchronization_exposes_latest_output_with_an_older_snapshot_pending() {
     // Spec: docs/specs/terminal-snapshot-handoff.md — UC-1 BR-1/2/3.
     use crate::tide_core::TerminalBackend;
     let mut terminal = super::Terminal::new(80, 24).expect("terminal backend");
+    terminal.stop_pty_for_test();
     for index in 0..100 {
         // Leave the previous frame published but unconsumed before injecting new output.
         {

@@ -223,6 +223,8 @@ fn discover_agent_dirs() -> (Option<String>, Option<String>) {
 
 /// Terminal backend using alacritty_terminal for PTY management and terminal emulation.
 pub struct Terminal {
+    #[cfg(test)]
+    stop_pty_reader: Option<Box<dyn FnOnce() + Send>>,
     /// The alacritty terminal emulator state, wrapped in a FairMutex for thread safety
     term: Arc<FairMutex<Term<TermEventListener>>>,
     /// Notifier to send messages to the PTY event loop
@@ -432,7 +434,7 @@ impl Terminal {
         if let Ok(mut guard) = pty_writer.lock() {
             *guard = Some(Notifier(event_loop.channel()));
         }
-        event_loop.spawn();
+        let _pty_join = event_loop.spawn();
 
         // Initialize shared state for the sync thread
         let cached_grid = Self::build_empty_grid(cols, rows);
@@ -507,6 +509,8 @@ impl Terminal {
         };
 
         Ok(Terminal {
+            #[cfg(test)]
+            stop_pty_reader: Some(Box::new(move || { let _ = _pty_join.join(); })),
             term,
             notifier,
             cached_grid,
@@ -932,6 +936,17 @@ impl Terminal {
     /// Returns the current row count.
     pub fn current_rows(&self) -> u16 {
         self.rows
+    }
+
+    /// Isolate emulator fixtures from login-shell startup output without mocking VT parsing.
+    #[cfg(test)]
+    pub fn stop_pty_for_test(&mut self) {
+        if let Some(join) = self.stop_pty_reader.take() {
+            let _ = self.notifier.0.send(Msg::Shutdown);
+            join();
+            // The joined reader drops its PTY/child; do not signal a stale PID later.
+            self.child_pid = None;
+        }
     }
 
     #[cfg(test)]
