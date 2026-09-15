@@ -2,7 +2,7 @@ import type { ProviderCapability } from "../../../../application/domains/native-
 import type { NativeProviderId } from "../../../../application/domains/native-agent/native-runtime-event.ts";
 
 export interface AcpProviderProfile {
-  provider: Extract<NativeProviderId, "opencode" | "qwen">;
+  provider: Extract<NativeProviderId, "opencode" | "qwen" | "vibe">;
   command: string;
   args: string[];
   displayName: string;

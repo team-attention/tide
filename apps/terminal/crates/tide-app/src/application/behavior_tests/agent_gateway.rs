@@ -4211,3 +4211,147 @@ fn notification_activation_with_missing_pane_is_no_op() {
         Some(crate::state::gateway_status::AgentStatus::NeedsInput)
     );
 }
+
+// Spec: docs/specs/vibe-wrapped-agent.md — UC-2
+#[test]
+fn vibe_native_titles_require_wrapper_ownership_and_route_attention() {
+    // BR-1/2/3/4: native titles are scoped, mapped and deduplicated.
+    use crate::state::gateway_status::AgentStatus;
+    let (mut app, id) = app_with_terminal();
+    crate::adapter::inward::vibe_title_adapter::handle_vibe_title_change(
+        &mut app,
+        id,
+        None,
+        Some("? Vibe"),
+    );
+    assert!(!app.gateway.detected_agents.contains_key(&id));
+    app.handle_terminal_notification(id, "tide:wrapped-agent:vibe:agent-attached");
+    app.window.is_focused = false;
+    crate::adapter::inward::vibe_title_adapter::handle_vibe_title_change(
+        &mut app,
+        id,
+        Some("Vibe"),
+        Some(">> Vibe"),
+    );
+    assert_eq!(
+        app.gateway.detected_agents[&id].status,
+        Some(AgentStatus::Running)
+    );
+    crate::adapter::inward::vibe_title_adapter::handle_vibe_title_change(
+        &mut app,
+        id,
+        Some(">> Vibe"),
+        Some("? Vibe"),
+    );
+    assert_eq!(
+        app.gateway.detected_agents[&id].status,
+        Some(AgentStatus::NeedsInput)
+    );
+    assert!(app.pending_platform_commands.iter().any(|command| matches!(command, crate::tide_platform::WindowCommand::SendSystemNotification { pane_id, .. } if *pane_id == id)));
+    app.pending_platform_commands.clear();
+    // Acknowledging attention must not get undone by focus-driven title decoration.
+    app.gateway.detected_agents.get_mut(&id).unwrap().status = None;
+    crate::adapter::inward::vibe_title_adapter::handle_vibe_title_change(
+        &mut app,
+        id,
+        Some("? Vibe"),
+        Some("Vibe - Action Required"),
+    );
+    assert_eq!(app.gateway.detected_agents[&id].status, None);
+    assert!(app.pending_platform_commands.is_empty());
+    crate::adapter::inward::vibe_title_adapter::handle_vibe_title_change(
+        &mut app,
+        id,
+        Some("Vibe - Action Required"),
+        Some(">> Vibe"),
+    );
+    crate::adapter::inward::vibe_title_adapter::handle_vibe_title_change(
+        &mut app,
+        id,
+        Some(">> Vibe"),
+        Some("Vibe"),
+    );
+    assert_eq!(
+        app.gateway.detected_agents[&id].status,
+        Some(AgentStatus::Idle)
+    );
+    app.handle_terminal_notification(id, "tide:wrapped-agent:vibe:agent-detached");
+    crate::adapter::inward::vibe_title_adapter::handle_vibe_title_change(
+        &mut app,
+        id,
+        Some("Vibe"),
+        Some("? Vibe"),
+    );
+    assert!(!app
+        .gateway
+        .detected_agents
+        .get(&id)
+        .is_some_and(|agent| agent.gateway_connected));
+}
+
+#[test]
+fn vibe_title_transition_does_not_invent_completion_or_repeat_waiting() {
+    // UC-2 BR-2/3: no completion at startup, on rename, or clearing a question.
+    use crate::domain::agent::vibe_title::lifecycle_event;
+    assert_eq!(lifecycle_event(None, Some("Vibe")), None);
+    assert_eq!(lifecycle_event(Some("Vibe"), Some("A task")), None);
+    assert_eq!(lifecycle_event(Some("? Vibe"), Some("Vibe")), None);
+    assert_eq!(
+        lifecycle_event(Some("? Vibe"), Some("Vibe - Action Required")),
+        None
+    );
+    assert_eq!(
+        lifecycle_event(Some(">> Vibe"), Some("Vibe")),
+        Some("agent-idle")
+    );
+    assert_eq!(
+        lifecycle_event(Some(">> Vibe"), Some("Vibe - Task Complete")),
+        Some("agent-idle")
+    );
+    assert_eq!(lifecycle_event(Some(">> Vibe"), None), None);
+}
+
+#[test]
+fn vibe_titles_ignore_other_agents_and_notify_inactive_workspace() {
+    use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
+    // Spec: docs/specs/vibe-wrapped-agent.md — UC-2 BR-1/4.
+    use crate::state::gateway_status::AgentStatus;
+    let (mut app, id) = app_with_terminal();
+    app.handle_terminal_notification(id, "tide:wrapped-agent:codex:agent-attached");
+    crate::adapter::inward::vibe_title_adapter::handle_vibe_title_change(
+        &mut app,
+        id,
+        None,
+        Some("? Vibe"),
+    );
+    assert_eq!(app.gateway.detected_agents[&id].status, None);
+    app.handle_terminal_notification(id, "tide:wrapped-agent:vibe:agent-attached");
+    app.ws.workspaces.push(Workspace {
+        name: "Active".into(),
+        layout: crate::tide_layout::SplitLayout::new(),
+        focused: None,
+        panes: Default::default(),
+    });
+    app.ws.workspaces.push(Workspace {
+        name: "Background".into(),
+        layout: std::mem::replace(&mut app.layout, crate::tide_layout::SplitLayout::new()),
+        focused: Some(id),
+        panes: std::mem::take(&mut app.panes),
+    });
+    app.ws.workspace_extras.push(WorkspaceExtras::new());
+    app.ws.workspace_extras.push(WorkspaceExtras::new());
+    app.ws.active = 0;
+    app.focus.focused = None;
+    crate::adapter::inward::vibe_title_adapter::handle_vibe_title_change(
+        &mut app,
+        id,
+        Some(">> Vibe"),
+        Some("Vibe - Action Required"),
+    );
+    assert_eq!(
+        app.gateway.detected_agents[&id].status,
+        Some(AgentStatus::NeedsInput)
+    );
+    assert!(app.pending_platform_commands.iter().any(|command| matches!(command, crate::tide_platform::WindowCommand::SendSystemNotification { pane_id, .. } if *pane_id == id)));
+    assert!(app.ws.workspace_extras[1].has_agent_notification);
+}

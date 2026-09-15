@@ -25,11 +25,12 @@ export function providerCapabilityCatalogFromRuntimeCommands(
         tideReviewCapability(agentId),
         ...claudeBaseCapabilityRegistry({ runtimeCommands: commands }),
       ];
+    case "vibe":
     case "opencode":
       return [
-        tideReviewCapability(agentId),
+        ...(agentId === "vibe" ? [] : [tideReviewCapability(agentId)]),
         ...acpCapabilitiesFromSession({
-          provider: "opencode",
+          provider: agentId,
           commands: commands
             .filter((command) => command.trigger === "/")
             .map((command) => ({ name: command.name, description: command.description })),

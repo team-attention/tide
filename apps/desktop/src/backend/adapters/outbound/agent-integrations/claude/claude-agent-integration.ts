@@ -360,13 +360,7 @@ function claudeLaunchOptionArgs(
 
   // Thinking effort (the Claude Code app's "Effort" control) maps to `--effort`.
   const effort = stringValue(launchOptions?.reasoning);
-  if (
-    effort === "low" ||
-    effort === "medium" ||
-    effort === "high" ||
-    effort === "xhigh" ||
-    effort === "max"
-  ) {
+  if (effort !== undefined) {
     args.push("--effort", effort);
   }
 

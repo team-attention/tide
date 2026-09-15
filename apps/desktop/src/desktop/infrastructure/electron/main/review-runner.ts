@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 
 import { parseReviewFindings, type ReviewFinding } from "../../../application/domains/product-shell/state/review-findings.ts";
 
-export type ReviewProvider = "codex" | "claude" | "opencode";
+export type ReviewProvider = "codex" | "claude" | "opencode" | "vibe";
 
 export type ReviewTarget =
   | { kind: "uncommitted" }
@@ -127,6 +127,8 @@ export async function buildReviewCommand(input: {
   target: ReviewTarget;
 }): Promise<ReviewCommand | null> {
   switch (input.provider) {
+    case "vibe":
+      return null;
     case "codex":
       return codexReviewCommand(input.target);
     case "claude":
@@ -256,7 +258,7 @@ async function uncommittedDiff(cwd: string): Promise<string> {
 }
 
 function reviewProviderFromInput(value: unknown): ReviewProvider | undefined {
-  return value === "codex" || value === "claude" || value === "opencode" ? value : undefined;
+  return value === "codex" || value === "claude" || value === "opencode" || value === "vibe" ? value : undefined;
 }
 
 function reviewTargetFromInput(value: unknown): ReviewTarget | undefined {

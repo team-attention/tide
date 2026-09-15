@@ -24,16 +24,17 @@ interface CodexDebugModel {
 }
 
 interface CodexModelCatalog {
-  get: () => Promise<CodexModelCatalogSnapshot>;
+  get: (cwd?: string) => Promise<CodexModelCatalogSnapshot>;
   invalidate: () => void;
 }
 
-type CodexCommandRunner = (executablePath: string, args: string[]) => Promise<string>;
+type CodexCommandRunner = (executablePath: string, args: string[], cwd?: string) => Promise<string>;
 type CodexVersionReader = (executablePath: string) => Promise<string | undefined>;
 
-async function runCodexDebugModelsCommand(executablePath: string, args: string[]): Promise<string> {
+async function runCodexDebugModelsCommand(executablePath: string, args: string[], cwd?: string): Promise<string> {
   const { stdout } = await execFileAsync(executablePath, args, {
     encoding: "utf8",
+    cwd,
     timeout: CODEX_MODELS_TIMEOUT_MS,
     maxBuffer: 20 * 1024 * 1024,
   });
@@ -72,15 +73,15 @@ export function createCodexModelCatalog(
   runCommand: CodexCommandRunner = runCodexDebugModelsCommand,
   readVersion: CodexVersionReader = providerVersionForExecutable,
 ): CodexModelCatalog {
-  let inflight: Promise<CodexModelCatalogSnapshot> | null = null;
+  const pending = new Map<string, Promise<CodexModelCatalogSnapshot>>();
 
-  const refresh = async (): Promise<CodexModelCatalogSnapshot> => {
+  const refresh = async (cwd: string): Promise<CodexModelCatalogSnapshot> => {
     const executablePath = resolveExecutable("codex");
     if (executablePath === undefined) {
       throw new Error("codex executable was not found.");
     }
     const [stdout, version] = await Promise.all([
-      runCommand(executablePath, ["debug", "models"]),
+      runCommand(executablePath, ["debug", "models"], cwd),
       readVersion(executablePath),
     ]);
     const models = parseCodexDebugModels(stdout);
@@ -99,28 +100,16 @@ export function createCodexModelCatalog(
   };
 
   return {
-    get: async () => {
-      if (inflight === null) {
-        const promise = refresh();
-        inflight = promise;
-        void promise.then(
-          () => {
-            if (inflight === promise) {
-              inflight = null;
-            }
-          },
-          () => {
-            if (inflight === promise) {
-              inflight = null;
-            }
-          },
-        );
-      }
-      return inflight;
+    get: async (cwd = process.cwd()) => {
+      const existing = pending.get(cwd);
+      if (existing) return existing;
+      const request = refresh(cwd);
+      pending.set(cwd, request);
+      const clear = () => { if (pending.get(cwd) === request) pending.delete(cwd); };
+      void request.then(clear, clear);
+      return request;
     },
-    invalidate: () => {
-      inflight = null;
-    },
+    invalidate: () => { pending.clear(); },
   };
 }
 

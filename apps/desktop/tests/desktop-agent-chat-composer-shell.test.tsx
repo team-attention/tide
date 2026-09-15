@@ -51,6 +51,17 @@ import {
 const now = "2026-05-27T00:00:00.000Z";
 const later = "2026-05-27T00:00:01.000Z";
 
+function stateWithDiscoveredCodexModels() {
+  const state = createAgentChatShellState();
+  state.availableProviderCatalogs = { codex: { agentId: "codex", status: "ready", defaultModel: "gpt-5.5", models: [
+    { value: "gpt-5.5", label: "GPT-5.5", effortOptions: ["low", "medium", "high"] },
+    { value: "gpt-5.4", label: "GPT-5.4", effortOptions: ["low", "medium", "high"] },
+  ] } };
+  state.composer.startOptions.launchOptions = { ...state.composer.startOptions.launchOptions, model: "gpt-5.5" };
+  return state;
+}
+
+
 test("typing_in_start_composer_keeps_a_local_draft_without_emitting_a_backend_command", () => {
   const result = updateComposerDraft(createAgentChatShellState(), "Draft a plan");
 
@@ -1306,7 +1317,7 @@ test("removing_a_staged_chip_drops_it_from_the_next_message", () => {
 
 test("follow_up_carries_a_changed_model_in_launch_options", () => {
   const hydrated = applyBackendEventToAgentChatShell(
-    createAgentChatShellState(),
+    stateWithDiscoveredCodexModels(),
     backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
   );
   // Change the model via the model menu, then send a follow-up.
@@ -1329,7 +1340,7 @@ test("follow_up_carries_a_changed_model_in_launch_options", () => {
 // apply to the runtime), while the chip patches optimistically.
 test("model_change_on_an_active_thread_sends_thread_set_launch_options", () => {
   const hydrated = applyBackendEventToAgentChatShell(
-    createAgentChatShellState(),
+    stateWithDiscoveredCodexModels(),
     backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
   );
   const result = selectAgentChatChoiceSurfaceRow(
@@ -2134,7 +2145,7 @@ test("opencode_provider_search_surface_renders_search_input_and_provider_rows", 
 test("codex_model_chip_renders_polished_label_but_stores_provider_native_value", () => {
   // Spec: docs_v2/specs/composer-agent-runtime-source.md D5/D5a
   const withModelMenu = setComposerActiveSurface(
-    createAgentChatShellState(),
+    stateWithDiscoveredCodexModels(),
     "model_menu",
   ).state;
   const selected = selectAgentChatChoiceSurfaceRow(
@@ -2149,16 +2160,16 @@ test("codex_model_chip_renders_polished_label_but_stores_provider_native_value",
   assert.equal(view.composer.modelLabel, "GPT-5.5 · Medium");
 });
 
-test("codex_default_model_chip_uses_conservative_fallback_default_reasoning", () => {
+test("codex_default_model_chip_uses_provider_default_before_discovery", () => {
   const view = createAgentChatShellViewModel(createAgentChatShellState());
 
-  assert.equal(view.composer.modelLabel, "GPT-5.5 · Medium");
+  assert.equal(view.composer.modelLabel, "Default · Medium");
 });
 
 test("codex_reasoning_effort_row_sets_launch_option_and_updates_chip_label", () => {
   // Spec: docs_v2/specs/composer-agent-runtime-source.md D5a
   const withModelMenu = setComposerActiveSurface(
-    createAgentChatShellState(),
+    stateWithDiscoveredCodexModels(),
     "model_menu",
   ).state;
   const high = selectAgentChatChoiceSurfaceRow(
@@ -2696,30 +2707,17 @@ test("at_file_menu_filters_files_and_splices_a_file_mention", () => {
   assert.equal(picked.composer.activeSurface, null);
 });
 
-test("claude_model_menu_lists_latest_named_models", () => {
-  const claudeModelMenu = setComposerActiveSurface(
-    selectComposerAgent(createAgentChatShellState(), "claude").state,
-    "model_menu",
-  ).state;
-  const html = renderShell(claudeModelMenu);
-  assert.match(html, /Default/);
-  assert.match(html, /Recommended/);
-  assert.match(html, /Fable 5/);
-  assert.match(html, /Opus 4\.8/);
-  assert.match(html, /Sonnet 5/);
-  assert.match(html, /Haiku 4\.5/);
+test("claude_model_menu_has_only_default_before_discovery", () => {
+ const state = setComposerActiveSurface(selectComposerAgent(createAgentChatShellState(), "claude").state, "model_menu").state;
+ const rows = createAgentChatShellViewModel(state).composer.activeSurface?.rows ?? [];
+ assert.deepEqual(rows.filter((row) => row.rowId.startsWith("model:")).map((row) => row.rowId), ["model:Claude default"]);
 });
 
-test("codex_model_menu_uses_conservative_fallback_until_runtime_catalog_arrives", () => {
-  const state = setComposerActiveSurface(createAgentChatShellState(), "model_menu").state;
-  const rows = createAgentChatShellViewModel(state).composer.activeSurface?.rows ?? [];
-  const rowIds = rows.map((entry) => entry.rowId);
-
-  assert.ok(rowIds.includes("model:gpt-5.5"));
-  assert.ok(!rowIds.includes("model:gpt-5.6-sol"));
-  assert.ok(!rowIds.includes("reasoning-max"));
-  assert.ok(!rowIds.includes("reasoning-ultra"));
-  assert.equal(rows.find((entry) => entry.rowId === "reasoning-medium")?.selected, true);
+test("codex_model_menu_does_not_invent_models_before_discovery", () => {
+ const state = setComposerActiveSurface(createAgentChatShellState(), "model_menu").state;
+ const rows = createAgentChatShellViewModel(state).composer.activeSurface?.rows ?? [];
+ assert.deepEqual(rows.filter((row) => row.rowId.startsWith("model:")).map((row) => row.rowId), ["model:"]);
+ assert.equal(rows.some((row) => row.rowId.startsWith("reasoning-")), false);
 });
 
 test("provider_cli_readiness_mentions_readiness_action_without_dropping_draft", () => {

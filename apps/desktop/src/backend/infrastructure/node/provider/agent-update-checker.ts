@@ -148,7 +148,7 @@ export function createLiveAgentUpdateChecker(input: {
       const exe = input.resolveExecutable(executableForAgent(agentId));
       return exe === undefined ? Promise.resolve(undefined) : readVersionForExecutable(exe);
     },
-    readLatestVersion: (agentId) => readLatestPublishedVersion(installPackageForAgent(agentId), npmPath),
+    readLatestVersion: (agentId) => agentId === "vibe" ? Promise.resolve(undefined) : readLatestPublishedVersion(installPackageForAgent(agentId), npmPath),
     readUpdateTerminalAction: async (agentId) => {
       const executablePath = input.resolveExecutable(executableForAgent(agentId));
       const nativeUpdateAvailable =

@@ -86,7 +86,7 @@ export interface AgentActivityBlockData {
 export type SemanticAgentSessionProvider = Extract<NativeProviderId, AgentId>;
 
 export function isSemanticAgentSessionProvider(provider: NativeProviderId): provider is SemanticAgentSessionProvider {
-  return provider === "codex" || provider === "claude" || provider === "opencode";
+  return provider === "codex" || provider === "claude" || provider === "opencode" || provider === "vibe";
 }
 
 export function semanticAgentBlockToAgentSessionBlock(

@@ -132,7 +132,7 @@ test("connected provider drilldown renders models, connection update row, and pr
     ],
     models: [
       { value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" },
-      { value: "openai/gpt-5.4-mini", label: "gpt-5.4-mini", vendor: "openai" },
+      { value: "openai/gpt-5.4-mini", label: "gpt-5.4-mini", vendor: "openai", effortOptions: ["max"] },
     ],
   })), "opencode_model_provider").state;
   const drilled = selectAgentChatChoiceSurfaceRow(
@@ -320,7 +320,7 @@ test("model and effort rows update launch options through the existing command p
     vendors: [{ id: "openai", label: "OpenAI", connected: true, popular: true, usable: true }],
     models: [
       { value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" },
-      { value: "openai/gpt-5.4-mini", label: "gpt-5.4-mini", vendor: "openai" },
+      { value: "openai/gpt-5.4-mini", label: "gpt-5.4-mini", vendor: "openai", effortOptions: ["max"] },
     ],
   });
 
@@ -355,4 +355,30 @@ test("codex and claude keep the existing compact model menu", () => {
   const codexOpened = setComposerActiveSurface(codexState(), "model_menu").state;
   assert.equal(codexOpened.composer.activeSurface, "model_menu");
   assert.equal(createActiveComposerSurface(codexOpened)?.surfaceKind, "model_menu");
+});
+
+test("provider list explains missing connections and unavailable saved connections before auth methods", () => {
+  const catalog = opencodeCatalog({
+    models: [{ value: "openai/gpt-5.5", label: "gpt-5.5", vendor: "openai" }],
+    vendors: [
+      { id: "google", label: "Google", connected: false, popular: true },
+      { id: "anthropic", label: "Anthropic", connected: true, usable: false, method: "oauth", popular: true },
+    ],
+    providerOptions: [
+      { id: "google", label: "Google", connected: false, modelCount: 20, source: "custom" },
+      { id: "anthropic", label: "Anthropic", connected: true, modelCount: 10, source: "custom" },
+    ],
+  });
+  const opened = setComposerActiveSurface(opencodeState(catalog), "opencode_model_provider").state;
+  const surface = createActiveComposerSurface(opened)!;
+  assert.equal(surface.opencodeModelProvider?.providers.find(p => p.id === "google")?.detail, "Connection required");
+  assert.equal(surface.opencodeModelProvider?.providers.find(p => p.id === "anthropic")?.detail, "No models available");
+  const search = selectAgentChatChoiceSurfaceRow(opened, "opencode_model_provider", "opencode-provider-search").state;
+  const searchSurface = createActiveComposerSurface(search)!;
+  assert.equal(searchSurface.opencodeModelProvider?.searchProviders?.find(p => p.id === "google")?.detail, "Connection required");
+  assert.equal(searchSurface.opencodeModelProvider?.searchProviders?.find(p => p.id === "anthropic")?.detail, "No models available");
+  const method = selectAgentChatChoiceSurfaceRow(opened, "opencode_model_provider", "opencode-provider:google").state;
+  const methodSurface = createActiveComposerSurface(method)!;
+  assert.equal(methodSurface.opencodeModelProvider?.providerStatus, "Connection required");
+  assert.equal(methodSurface.opencodeModelProvider?.method?.apiKeyLabel, "Connect with API key");
 });

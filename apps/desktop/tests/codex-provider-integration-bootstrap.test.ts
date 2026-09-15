@@ -301,14 +301,14 @@ test("codex_launch_plan_maps_reasoning_effort_to_config_override", async () => {
   assert.ok(overrideIndex > 0, "expected model_reasoning_effort override");
   assert.equal(plan.args[overrideIndex - 1], "-c");
 
-  const ignored = await integration.buildStartPlan({
+  const native = await integration.buildStartPlan({
     agentId: "codex",
     scope: projectScope,
     launchOptions: { model: "gpt-5.5", reasoning: "turbo" },
   });
   assert.ok(
-    !ignored.args.some((arg) => arg.startsWith("model_reasoning_effort=")),
-    "unknown reasoning effort must not produce an override",
+    native.args.includes('model_reasoning_effort="turbo"'),
+    "provider-native effort must reach the CLI without a local allowlist",
   );
 });
 
@@ -567,4 +567,14 @@ test("codex_web_search_calls_render_as_tool_calls", () => {
   assert.equal(calls.length, 1);
   assert.equal(calls[0]?.payload.toolName, "web_search");
   assert.equal(calls[0]?.body, "Figma short interest 2026");
+});
+
+test("codex passes provider-native effort through startup and live updates", async () => {
+  const integration = codexIntegration();
+  for (const reasoning of ["max", "ultra", "future-effort"]) {
+    const plan = await integration.buildStartPlan({ agentId: "codex", scope: projectScope, launchOptions: { model: "future-model", reasoning } });
+    assert.ok(plan.args.includes(`model_reasoning_effort="${reasoning}"`));
+    assert.equal(plan.protocolParams?.model, "future-model");
+    assert.deepEqual(integration.buildSessionConfigUpdate?.({ launchOptions: { reasoning }, changedKeys: ["reasoning"] }), { kind: "live", protocolParams: { effort: reasoning } });
+  }
 });

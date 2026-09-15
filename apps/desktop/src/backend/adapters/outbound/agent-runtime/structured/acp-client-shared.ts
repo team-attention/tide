@@ -26,11 +26,21 @@ export function mergeConfigOptions(
 }
 
 export interface AcpModelCatalog {
-  models: Array<{ value: string; label: string; vendor?: string }>;
+  models: Array<{ value: string; label: string; vendor?: string; effortOptions?: string[] }>;
   currentModel?: string;
 }
 
 export function parseAcpModelCatalog(result: Record<string, unknown>): AcpModelCatalog | undefined {
+  const config = (Array.isArray(result.configOptions) ? result.configOptions : []).filter(isRecord);
+  const thinking = config.find(option => option.id === "thinking");
+  const effort = thinking ?? config.find(option => option.id === "effort");
+  const modelOption = config.find(option => option.id === "model" || option.category === "model");
+  const currentModel = stringField(modelOption ?? {}, "currentValue");
+  const effortOptions = (Array.isArray(effort?.options) ? effort.options : []).filter(isRecord).map(option => option.value).filter((value): value is string => typeof value === "string");
+  const withThinking = (models: AcpModelCatalog["models"]) => models.map(model => ({
+    ...model,
+    ...(effort && (thinking || model.value === currentModel) ? { effortOptions } : {}),
+  }));
   const standardModels = isRecord(result.models) ? result.models : undefined;
   if (standardModels !== undefined && Array.isArray(standardModels.availableModels)) {
     const models = standardModels.availableModels
@@ -40,7 +50,7 @@ export function parseAcpModelCatalog(result: Record<string, unknown>): AcpModelC
         return { value, label: stringField(entry, "name") ?? value };
       })
       .filter((model) => model.value.length > 0);
-    if (models.length > 0) return { models, currentModel: stringField(standardModels, "currentModelId") };
+    if (models.length > 0) return { models: withThinking(models), currentModel: stringField(standardModels, "currentModelId") };
   }
   if (Array.isArray(result.configOptions)) {
     const modelOption = result.configOptions
@@ -59,7 +69,7 @@ export function parseAcpModelCatalog(result: Record<string, unknown>): AcpModelC
           };
         })
         .filter((model) => model.value.length > 0);
-      if (models.length > 0) return { models, currentModel: stringField(modelOption, "currentValue") };
+      if (models.length > 0) return { models: withThinking(models), currentModel: stringField(modelOption, "currentValue") };
     }
   }
   return undefined;

@@ -52,7 +52,7 @@ test("opencode model catalog tolerates cold CLI startup above one second", async
   const catalog = createOpencodeModelCatalog(
     () => "/fake/opencode",
     async (_executablePath, args) => {
-      assert.deepEqual(args, ["models"]);
+      assert.deepEqual(args, ["models", "--verbose"]);
       await delay(1200);
       return "opencode/deepseek-v4-flash-free\n";
     },
@@ -235,7 +235,7 @@ test("buildProvidersHubViewModel lists supported agents with status + catalog", 
       },
     },
   });
-  assert.deepEqual(hub.map((agent) => agent.agentId), ["claude", "codex", "opencode"]);
+  assert.deepEqual(hub.map((agent) => agent.agentId), ["claude", "codex", "opencode", "vibe"]);
 
   const opencode = hub.find((agent) => agent.agentId === "opencode");
   assert.equal(opencode?.installed, false);
@@ -246,7 +246,7 @@ test("buildProvidersHubViewModel lists supported agents with status + catalog", 
   const claude = hub.find((agent) => agent.agentId === "claude");
   assert.equal(claude?.installed, true);
   assert.equal(claude?.multiVendor, false);
-  assert.ok((claude?.models.length ?? 0) > 1);
+  assert.deepEqual(claude?.models.map((model) => model.value), ["Claude default"]);
 });
 
 test("cliModelOptionsForAgent('opencode') does not fabricate provider catalog rows", () => {

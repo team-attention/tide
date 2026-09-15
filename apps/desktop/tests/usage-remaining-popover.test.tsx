@@ -131,7 +131,7 @@ test("settings_shows_provider_window_usage_and_reset_while_composer_shows_contex
   const composerText = visibleText(composerHtml);
 
   assert.match(settingsText, /Codex/);
-  assert.match(settingsText, /GPT-5\.5/);
+  assert.match(settingsText, /GPT-5\.5/i);
   assert.match(settingsText, /5h\s*58%/);
   assert.match(settingsText, /Weekly\s*68%/);
   assert.doesNotMatch(settingsText, /42%/);

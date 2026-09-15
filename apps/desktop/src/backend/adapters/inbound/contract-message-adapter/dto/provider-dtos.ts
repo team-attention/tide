@@ -1,5 +1,6 @@
 import {
   CONTRACT_VERSION,
+  sanitizeJsonValue,
   type BackendEventEnvelope,
   type OpencodeEnvironmentDto,
   type OpencodeVendorDto,
@@ -18,19 +19,21 @@ export function providerCatalogChangedEvent(input: {
   opencodeVendors?: OpencodeVendorDto[];
   opencodeEnvironment?: OpencodeEnvironmentDto;
 }): BackendEventEnvelope<"providerCatalog.changed"> {
-  return {
+  // Electron structured clone preserves undefined; the JSON contract rejects it.
+  // Normalize nested optional catalog fields as well as the envelope request id.
+  return sanitizeJsonValue({
     contractVersion: CONTRACT_VERSION,
     eventId: input.eventId,
     requestId: input.requestId,
     kind: "providerCatalog.changed",
     emittedAt: input.emittedAt,
-    payload: omitUndefinedProperties({
+    payload: {
       catalog: input.catalog,
       opencodeModels: input.opencodeModels,
       opencodeVendors: input.opencodeVendors,
       opencodeEnvironment: input.opencodeEnvironment,
-    }),
-  };
+    },
+  }) as unknown as BackendEventEnvelope<"providerCatalog.changed">;
 }
 
 export function providerInventoryChangedEvent(input: {
@@ -47,12 +50,6 @@ export function providerInventoryChangedEvent(input: {
     emittedAt: input.emittedAt,
     payload: input.inventory,
   };
-}
-
-function omitUndefinedProperties<T extends Record<string, unknown>>(value: T): T {
-  return Object.fromEntries(
-    Object.entries(value).filter(([, entry]) => entry !== undefined),
-  ) as T;
 }
 
 export function providerUsageChangedEvent(input: {

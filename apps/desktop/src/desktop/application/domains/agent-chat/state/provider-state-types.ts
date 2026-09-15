@@ -1,4 +1,4 @@
-export type AgentChatProviderCliAgentId = "codex" | "claude" | "opencode";
+export type AgentChatProviderCliAgentId = "codex" | "claude" | "opencode" | "vibe";
 
 export interface AgentChatCommandOption {
   name: string;

@@ -221,7 +221,7 @@ declare global {
       gitCreatePullRequest(cwd: string): Promise<{ ok: boolean; message: string }>;
       runReview(
         cwd: string,
-        provider: "codex" | "claude" | "opencode",
+        provider: "codex" | "claude" | "opencode" | "vibe",
         target:
           | { kind: "uncommitted" }
           | { kind: "base_branch"; baseBranch: string }
@@ -229,7 +229,7 @@ declare global {
           | { kind: "custom"; instructions: string; diff?: string },
       ): Promise<{
         ok: boolean;
-        provider: "codex" | "claude" | "opencode";
+        provider: "codex" | "claude" | "opencode" | "vibe";
         source: "codex_cli" | "claude_ultrareview" | "claude_prompt" | "opencode_prompt";
         target:
           | { kind: "uncommitted" }

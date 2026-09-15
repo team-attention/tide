@@ -7,7 +7,7 @@
 //   2. the same prompt never re-surfaces after it was answered (no double prompt),
 //   3. the turn finally settles with an answer instead of hanging "Working".
 //
-// Usage: node scripts/v2-provider-permission-flow.mjs --agent <claude|codex|opencode>
+// Usage: node scripts/v2-provider-permission-flow.mjs --agent <claude|codex|opencode|vibe>
 //        [--deny] [--timeout-ms 240000]
 
 import { mkdtempSync } from "node:fs";
@@ -38,6 +38,7 @@ const timeoutMs = Number(
 // Per-provider scenario: a permission mode that FORCES approval prompts plus a
 // task that needs a permissioned tool.
 const SCENARIOS = {
+  vibe: { permission: "default", message: "Run the shell command `touch /tmp/tide-perm-probe-vibe.txt` (it needs approval), then reply exactly DONE." },
   claude: {
     permission: "default",
     message:
@@ -59,7 +60,7 @@ const SCENARIOS = {
 
 const scenario = SCENARIOS[agent];
 if (scenario === undefined) {
-  console.error("Usage: node scripts/v2-provider-permission-flow.mjs --agent <claude|codex|opencode>");
+  console.error("Usage: node scripts/v2-provider-permission-flow.mjs --agent <claude|codex|opencode|vibe>");
   process.exit(2);
 }
 const message = process.env.TIDE_MESSAGE ?? scenario.message;

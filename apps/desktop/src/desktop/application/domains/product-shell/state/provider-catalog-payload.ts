@@ -68,10 +68,12 @@ export function defaultModelForProvider(agentId: ProductShellAgentIdentity): str
   switch (agentId) {
     case "claude":
       return "Claude default";
+    case "vibe":
+      return "vibe default";
     case "opencode":
       return "opencode default";
     default:
-      return "gpt-5.5";
+      return "";
   }
 }
 

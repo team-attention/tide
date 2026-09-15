@@ -213,6 +213,7 @@ export function applyProductShellBackendEvent(
       // catalog slice as provider.catalog.get.
       const catalogPayload = event.payload as {
         agentId?: string;
+        currentModel?: string;
         models?: ReadonlyArray<{ value: string; label: string; vendor?: string; detail?: string }>;
       };
       const agentId = catalogPayload.agentId;
@@ -223,10 +224,13 @@ export function applyProductShellBackendEvent(
       const catalog: AgentChatProviderCatalog = {
         agentId,
         status: "ready",
-        models: providerModelsFromPayload(catalogPayload.models),
+        models: providerModelsFromPayload(catalogPayload.models).map(model => ({
+          ...model,
+          effortOptions: model.effortOptions ?? previous?.models.find(old => old.value === model.value)?.effortOptions,
+        })),
         vendors: previous?.vendors,
         environment: previous?.environment,
-        currentModel: previous?.currentModel,
+        currentModel: catalogPayload.currentModel ?? previous?.currentModel,
         defaultModel: previous?.defaultModel ?? defaultModelForProvider(agentId),
       };
       return {
@@ -482,7 +486,7 @@ function providerUsageKey(entry: ProductShellProviderUsage): string {
   return entry.agentId;
 }
 
-const PRODUCT_SHELL_PROVIDER_AGENT_IDS = ["codex", "claude", "opencode"] as const;
+const PRODUCT_SHELL_PROVIDER_AGENT_IDS = ["codex", "claude", "opencode", "vibe"] as const;
 
 function seedProviderInventoryFromLegacyThreadList(
   state: ProductShellState,

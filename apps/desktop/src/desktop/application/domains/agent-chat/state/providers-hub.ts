@@ -10,7 +10,7 @@ import type { AgentChatProviderCatalog, AgentChatProviderInventory } from "./typ
 
 // The data layer for the Settings "Providers & Models" hub: one row per provider-CLI
 // agent with its install status, model catalog (the same catalog the composer menu
-// renders — dynamic for opencode, curated for claude/codex), permission modes,
+// renders — reported by each installed provider CLI), permission modes,
 // and Tide-resolved default model. Pure + view-only so it is fully unit-testable; the
 // Settings section renders it. See cross-provider-model-catalog-and-hub.md (P4).
 
@@ -25,7 +25,7 @@ export interface ProvidersHubAgentView {
   agentId: string;
   label: string;
   // Installed locally (its CLI resolves). Drives the "Installed / Not installed"
-  // status chip; not-installed agents still list their (static) models.
+  // status chip; unavailable agents retain only known catalog rows or defaults.
   installed: boolean;
   status: "installed" | "not_installed";
   models: ProvidersHubModelView[];
@@ -40,7 +40,7 @@ export interface ProvidersHubAgentView {
   version?: string;
 }
 
-const HUB_AGENTS = ["claude", "codex", "opencode"] as const;
+const HUB_AGENTS = ["claude", "codex", "opencode", "vibe"] as const;
 
 export function buildProvidersHubViewModel(input: {
   providerInventory?: AgentChatProviderInventory | null;

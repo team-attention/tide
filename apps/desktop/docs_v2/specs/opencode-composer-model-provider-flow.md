@@ -278,3 +278,11 @@ The surface view is Desktop application state, not a new shared Backend domain.
 - If the backend lacks catalog/vendor fields needed by this surface, implement
   that producer/wiring in this slice. Do not ship a silent sentinel/default
   fallback as the completed opencode experience.
+
+## Connection visibility (2026-09-16)
+
+- Provider list and search expose `Connection required` for unconnected providers and `No models available` for saved connections marked unusable. Do not infer expired credentials from missing models.
+- Connection state takes precedence over the current-provider marker. Keep rows actionable through the existing connection flow.
+- The connection-method screen repeats the state before showing methods; API-key action reads `Connect with API key` rather than an unexplained paste action.
+- No new authentication backend, automatic login, or provider-specific unsupported-auth diagnosis is introduced.
+- Test both list/search states and the connection-method transition, retaining model selection for usable providers.

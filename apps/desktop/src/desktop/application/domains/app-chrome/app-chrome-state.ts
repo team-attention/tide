@@ -63,7 +63,7 @@ export interface AppChromeWorkbenchPaneRef {
   command?: string;
   args?: string[];
   cwd?: string;
-  agentId?: "codex" | "claude" | "opencode";
+  agentId?: "codex" | "claude" | "opencode" | "vibe";
   terminalRole?: "session" | "command_result" | "provider_readiness";
   status?: "ready" | "running" | "completed" | "failed";
   expectedCompletion?: "process_exit" | "retry_preflight";

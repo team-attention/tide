@@ -1,4 +1,4 @@
-export type ProviderCliAgentId = "codex" | "claude" | "opencode";
+export type ProviderCliAgentId = "codex" | "claude" | "opencode" | "vibe";
 export type AgentId = ProviderCliAgentId;
 
 export interface AgentRuntimeSourceDto {

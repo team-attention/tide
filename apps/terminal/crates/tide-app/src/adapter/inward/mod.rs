@@ -12,3 +12,4 @@ pub(crate) mod mouse_adapter;
 pub(crate) mod scroll_adapter;
 pub(crate) mod search_adapter;
 pub(crate) mod text_routing_adapter;
+pub(crate) mod vibe_title_adapter;

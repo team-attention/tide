@@ -694,3 +694,12 @@ fn notify_resolves_pane_from_env_when_pane_flag_omitted() {
     assert!(source.contains(r#"std::env::var("TIDE_TERMINAL_PANE")"#));
     assert!(source.contains("let pane_id = pane_id.or_else(||"));
 }
+
+// Spec: docs/specs/vibe-wrapped-agent.md
+// --- UC-1: Launch Vibe ---
+#[test]
+fn wrapped_agent_display_name_covers_vibe() {
+    // UC-1 BR-4: Vibe has its provider display name.
+    use crate::state::gateway_status::wrapped_agent_display_name;
+    assert_eq!(wrapped_agent_display_name("vibe"), Some("Mistral Vibe"));
+}

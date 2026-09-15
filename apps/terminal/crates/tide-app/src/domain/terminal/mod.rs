@@ -276,7 +276,7 @@ pub struct Terminal {
     /// OSC 9 notification queue (shared with TermEventListener on PTY thread)
     notifications: Arc<Mutex<Vec<String>>>,
     /// Pending OSC 0/2 title change (last-write-wins, shared with listener).
-    pending_title: Arc<Mutex<Option<TitleChange>>>,
+    pending_title: Arc<Mutex<Vec<TitleChange>>>,
     /// Edge-triggered bell flag (BEL), shared with listener.
     bell_pending: Arc<AtomicBool>,
     /// OSC 52 clipboard-write queue (shared with listener).
@@ -346,7 +346,7 @@ impl Terminal {
         let dark_mode_flag = Arc::new(AtomicBool::new(dark_mode));
         let mode_2031_flag = Arc::new(AtomicBool::new(false));
         let notifications: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-        let pending_title: Arc<Mutex<Option<TitleChange>>> = Arc::new(Mutex::new(None));
+        let pending_title: Arc<Mutex<Vec<TitleChange>>> = Arc::new(Mutex::new(Vec::new()));
         let bell_pending = Arc::new(AtomicBool::new(false));
         let clipboard_writes: Arc<Mutex<Vec<(ClipboardTarget, String)>>> =
             Arc::new(Mutex::new(Vec::new()));
@@ -588,7 +588,12 @@ impl Terminal {
     /// Drain the pending OSC 0/2 title change (last-write-wins). `None` if no
     /// title change since the last drain.
     pub fn drain_title(&self) -> Option<TitleChange> {
-        self.pending_title.lock().ok().and_then(|mut t| t.take())
+        self.drain_titles().pop()
+    }
+
+    /// Preserve lifecycle transitions even when multiple titles arrive per frame.
+    pub fn drain_titles(&self) -> Vec<TitleChange> {
+        self.pending_title.lock().map(|mut titles| std::mem::take(&mut *titles)).unwrap_or_default()
     }
 
     /// Take and clear the edge-triggered bell flag. Returns true if the program

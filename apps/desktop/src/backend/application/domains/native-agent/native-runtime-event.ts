@@ -1,6 +1,6 @@
 import type { ThreadId } from "../thread/thread.ts";
 
-export type NativeProviderId = "codex" | "claude" | "opencode" | "qwen";
+export type NativeProviderId = "codex" | "claude" | "opencode" | "vibe" | "qwen";
 
 export type NativeTransport = "codex_app_server" | "claude_stream_json" | "acp";
 
@@ -57,7 +57,7 @@ export type NativeLifecycleStatus =
   | "cancelled";
 
 export function isNativeProviderId(value: string): value is NativeProviderId {
-  return value === "codex" || value === "claude" || value === "opencode" || value === "qwen";
+  return value === "codex" || value === "claude" || value === "opencode" || value === "qwen" || value === "vibe";
 }
 
 export function nativeTransportFromLaunchTransport(value: string): NativeTransport | undefined {

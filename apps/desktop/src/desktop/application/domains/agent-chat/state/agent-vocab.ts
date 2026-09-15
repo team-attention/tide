@@ -6,16 +6,10 @@ import {
 } from "../../../../../shared/agent-descriptors.ts";
 // Extracted from agent-chat-shell-state.ts (spec: navigable-source-structure).
 
-// Codex fallback model catalog. The backend provider catalog replaces this with
-// `codex debug models` when the installed CLI can report its local runnable rows.
-// Codex's model field is still free-form, so custom provider-native ids remain
-// valid even when they are not listed here.
-export const CODEX_MODELS: CliModelOption[] = [
-  { value: "gpt-5.5", label: "GPT-5.5" },
-  { value: "gpt-5.4", label: "GPT-5.4" },
-  { value: "gpt-5.4-mini", label: "GPT-5.4-Mini" },
-  { value: "gpt-5.3-codex-spark", label: "GPT-5.3-Codex-Spark" },
-];
+// Before discovery, offer the provider default. The backend replaces this with
+// the installed CLI model catalog.
+// Existing custom provider-native ids remain valid even when unlisted.
+export const CODEX_MODELS: CliModelOption[] = [{ value: "", label: "Default" }];
 
 export function codexModelLabel(model: string): string {
   return CODEX_MODELS.find((m) => m.value === model)?.label ?? model;
@@ -85,7 +79,7 @@ export function isAgentComingSoon(agentId: string): boolean {
 }
 
 // Provider-CLI agents offered in the composer menu.
-const OFFERED_PROVIDER_AGENTS = ["codex", "claude", "opencode"] as const;
+const OFFERED_PROVIDER_AGENTS = ["codex", "claude", "opencode", "vibe"] as const;
 
 // Pick the agent a new thread should default to. Honors the user's last choice only if
 // it is still offered AND detected locally — so a persisted hidden/uninstalled agent
@@ -118,36 +112,17 @@ export interface CliModelOption {
   vendor?: string;
 }
 
-// A maintained, provider-native model list per CLI agent (models change rarely).
-// Claude values are accepted `--model` ids/aliases; "Claude default" passes no
-// --model and lets the CLI/account resolve its recommended default.
+// Only provider defaults are available before live discovery completes.
 export function cliModelOptionsForAgent(agentId: string): CliModelOption[] {
-  switch (agentId) {
-    case "claude":
-      // Verified against Claude Code model configuration docs and `claude --help`
-      // 2.1.202. The explicit rows use current Anthropic API model ids.
-      return [
-        { value: "Claude default", label: "Default", detail: "Recommended" },
-        { value: "claude-fable-5", label: "Fable 5" },
-        { value: "claude-opus-4-8", label: "Opus 4.8" },
-        { value: "claude-sonnet-5", label: "Sonnet 5" },
-        { value: "claude-opus-4-8[1m]", label: "Opus 4.8 (1M context)" },
-        { value: "claude-haiku-4-5", label: "Haiku 4.5" },
-        { value: "claude-sonnet-4-6", label: "Sonnet 4.6", detail: "Legacy" },
-        { value: "claude-opus-4-7", label: "Opus 4.7", detail: "Legacy" },
-        { value: "claude-opus-4-7[1m]", label: "Opus 4.7 (1M context)", detail: "Legacy" },
-        { value: "claude-opus-4-6", label: "Opus 4.6", detail: "Legacy" },
-      ];
-    case "opencode":
-      return [];
-    default:
-      return [];
-  }
+  if (agentId === "claude") return [{ value: "Claude default", label: "Default" }];
+  if (agentId === "vibe") return [{ value: "vibe default", label: "Default" }];
+  return [];
 }
 
-// Reasoning/thinking effort levels, shared by codex (`model_reasoning_effort`)
-// and claude (`--effort`). Codex offers low–xhigh; claude adds "max".
+// Display copy for familiar effort values. This is not a list of supported values;
+// providers supply those, and unfamiliar values retain their native label.
 export const REASONING_LEVELS: Record<string, { label: string; detail: string }> = {
+  off: { label: "Off", detail: "No thinking" },
   low: { label: "Low", detail: "fastest, least thorough" },
   medium: { label: "Medium", detail: "balanced" },
   high: { label: "High", detail: "slower, more thorough" },
@@ -161,7 +136,7 @@ export function runtimeSourceForBinding(binding: AgentChatAgentBinding): AgentCh
 
 export function runtimeSourceForAgent(agentId: string): AgentChatAgentRuntimeSource {
   const providerAgent =
-    agentId === "claude" || agentId === "opencode"
+    agentId === "claude" || agentId === "opencode" || agentId === "vibe"
       ? agentId
       : "codex";
   return {
@@ -174,10 +149,12 @@ export function defaultModelValueForAgent(agentId: string): string {
   switch (agentId) {
     case "claude":
       return "Claude default";
+    case "vibe":
+      return "vibe default";
     case "opencode":
       return "opencode default";
     default:
-      return "gpt-5.5";
+      return "";
   }
 }
 
@@ -218,6 +195,8 @@ export function modelLabelForAgent(
   }
   if (model === defaultModelValueForAgent(agentId)) {
     switch (agentId) {
+      case "codex":
+      case "vibe":
       case "claude":
       case "opencode":
         return "Default";

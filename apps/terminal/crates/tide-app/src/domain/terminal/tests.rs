@@ -655,3 +655,35 @@ mod tests {
         assert_eq!(terminal.history_size(), 0);
     }
 }
+
+#[test]
+fn native_title_transitions_are_preserved_in_one_output_batch() {
+    // Spec: docs/specs/vibe-wrapped-agent.md UC-2 BR-5.
+    let terminal = super::Terminal::new(80, 24).expect("terminal backend");
+    terminal
+        .bench_write_to_term(b"\x1b]0;>> Vibe\x07\x1b]0;? Vibe\x07\x1b]0;Vibe - Task Complete\x07");
+    assert_eq!(
+        terminal.drain_titles(),
+        vec![
+            super::TitleChange::Set(">> Vibe".into()),
+            super::TitleChange::Set("? Vibe".into()),
+            super::TitleChange::Set("Vibe - Task Complete".into())
+        ]
+    );
+    assert!(terminal.drain_titles().is_empty());
+}
+
+#[test]
+fn native_title_queue_is_bounded_and_keeps_latest_display_title() {
+    // Spec: docs/specs/vibe-wrapped-agent.md — UC-2 BR-5.
+    let terminal = super::Terminal::new(80, 24).expect("terminal backend");
+    for index in 0..300 {
+        terminal.bench_write_to_term(format!("\x1b]0;title-{index}\x07").as_bytes());
+    }
+    let titles = terminal.drain_titles();
+    assert_eq!(titles.len(), 256);
+    assert_eq!(
+        titles.last(),
+        Some(&super::TitleChange::Set("title-299".into()))
+    );
+}

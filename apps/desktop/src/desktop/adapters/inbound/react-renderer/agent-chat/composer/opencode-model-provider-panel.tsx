@@ -66,7 +66,7 @@ export function OpencodeModelProviderPanel(props: {
                 <OpencodeProviderDetail>{provider.detail}</OpencodeProviderDetail>
               </OpencodeProviderBody>
               <OpencodeProviderMeta>
-                {provider.selected ? "Current" : provider.needsReconnect ? "Reconnect" : provider.connected ? ">" : "Connect"}
+                {provider.needsReconnect ? "Review connection" : !provider.connected ? "Connect" : provider.selected ? "Current" : ">"}
               </OpencodeProviderMeta>
             </OpencodeProviderRowButton>
           )) : (
@@ -116,7 +116,7 @@ export function OpencodeModelProviderPanel(props: {
                 <OpencodeProviderDetail>{provider.detailForDisplay}</OpencodeProviderDetail>
               </OpencodeProviderBody>
               <OpencodeProviderMeta>
-                {provider.needsReconnect ? "Reconnect" : provider.connected ? ">" : "Connect"}
+                {provider.needsReconnect ? "Review connection" : provider.connected ? ">" : "Connect"}
               </OpencodeProviderMeta>
             </OpencodeProviderRowButton>
           ))}
@@ -180,6 +180,13 @@ export function OpencodeModelProviderPanel(props: {
       {data.step === "vendor_method" ? (
         <OpencodeProviderRows>
           <BackRow label="Back" detail={providerLabel} onClick={() => select("opencode-back")} />
+          <OpencodeProviderEmpty role="status">
+            {data.providerStatus === "No models available"
+              ? "A connection is saved, but OpenCode returned no models. Review your connection or choose another provider."
+              : data.providerStatus === "Connection required"
+                ? `Connect ${providerLabel} to load its models in OpenCode.`
+                : `Update your ${providerLabel} connection.`}
+          </OpencodeProviderEmpty>
           {data.method?.browserRowId ? (
             <OpencodeProviderMethodButton
               type="button"
@@ -199,7 +206,7 @@ export function OpencodeModelProviderPanel(props: {
             >
               <KeyRound size={15} strokeWidth={1.9} aria-hidden />
               <OpencodeProviderBody>
-                <OpencodeProviderName>{data.method.apiKeyLabel ?? "Paste API key"}</OpencodeProviderName>
+                <OpencodeProviderName>{data.method.apiKeyLabel ?? "Connect with API key"}</OpencodeProviderName>
                 <OpencodeProviderDetail>{data.method.apiKeyDetail ?? "stored by opencode, not Tide"}</OpencodeProviderDetail>
               </OpencodeProviderBody>
             </OpencodeProviderMethodButton>

@@ -1,0 +1,37 @@
+#!/bin/bash
+# Tide Terminal Vibe wrapper. VIBE_MCP_SERVERS is a process-local config layer;
+# Vibe merges MCP entries by name with the user's configuration.
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+REAL_CMD="$(PATH="$(echo "$PATH" | sed "s|${SELF_DIR}:||g; s|:${SELF_DIR}||g; s|${SELF_DIR}||g")" command -v vibe 2>/dev/null)"
+[ -z "$REAL_CMD" ] && echo "vibe: command not found" >&2 && exit 127
+[ -z "$TIDE_TERMINAL_BIN" ] && exec "$REAL_CMD" "$@"
+
+json_string() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\n'/\\n}"
+  value="${value//$'\r'/\\r}"
+  value="${value//$'\t'/\\t}"
+  printf '"%s"' "$value"
+}
+server="{\"name\":\"tide-terminal\",\"transport\":\"stdio\",\"command\":[$(json_string "$TIDE_TERMINAL_BIN")],\"args\":[\"mcp\"],\"env\":{\"TIDE_TERMINAL_SOCKET\":$(json_string "$TIDE_TERMINAL_SOCKET"),\"TIDE_TERMINAL_PANE\":$(json_string "$TIDE_TERMINAL_PANE"),\"TIDE_TERMINAL_WINDOW\":$(json_string "$TIDE_TERMINAL_WINDOW")}}"
+existing="${VIBE_MCP_SERVERS:-[]}"
+# Preserve all inherited MCP rows. Invalid inherited JSON remains a provider error.
+prefix="${existing%]*}"
+if [[ "$prefix" =~ ^\[[[:space:]]*$ ]]; then
+  export VIBE_MCP_SERVERS="[$server]"
+else
+  export VIBE_MCP_SERVERS="$prefix,$server]"
+fi
+
+tide_notify() {
+  "$TIDE_TERMINAL_BIN" notify "$1" --pane "$TIDE_TERMINAL_PANE" --agent vibe >/dev/null 2>&1 || \
+    printf '\033]9;tide:wrapped-agent:vibe:%s\007' "$1"
+}
+# Enable native lifecycle titles only for this wrapped process.
+export VIBE_EXPERIMENTAL_ENABLE_TAB_STATUS=true
+tide_notify agent-attached
+trap 'tide_notify agent-detached' EXIT
+"$REAL_CMD" "$@"
+exit $?

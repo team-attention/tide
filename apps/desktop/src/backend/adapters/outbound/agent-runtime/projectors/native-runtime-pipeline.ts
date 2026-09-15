@@ -50,6 +50,7 @@ function reducerForEvent(event: NativeRuntimeEvent) {
       return reduceCodexNativeEvent;
     case "claude":
       return reduceClaudeNativeEvent;
+    case "vibe":
     case "opencode":
     case "qwen":
       return reduceAcpNativeEvent;

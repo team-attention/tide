@@ -12,13 +12,14 @@ export // Extracted from live-backend.ts (spec: navigable-source-structure).
 // Provider CLI command names: pure registry data, the only place infrastructure
 // may know a provider-specific value.
 const providerCliCommands = {
+  vibe: "vibe-acp",
   codex: "codex",
   claude: "claude",
   opencode: "opencode",
 } as const;
 
 export function executableForAgent(
-  agentId: "codex" | "claude" | "opencode",
+  agentId: "codex" | "claude" | "opencode" | "vibe",
 ): string {
   return providerCliCommands[agentId];
 }
@@ -67,7 +68,7 @@ export function resolveExecutable(command: string): string | undefined {
 }
 
 export function updateReadinessTerminalActionForAgent(input: {
-  agentId: "codex" | "claude" | "opencode";
+  agentId: "codex" | "claude" | "opencode" | "vibe";
   cwd: string;
   executablePath?: string;
   nativeUpdateAvailable?: boolean;
@@ -90,7 +91,7 @@ export function updateReadinessTerminalActionForAgent(input: {
 
 export async function providerNativeUpdateCommandAvailable(input: {
   executablePath: string;
-  agentId: "codex" | "claude" | "opencode";
+  agentId: "codex" | "claude" | "opencode" | "vibe";
 }): Promise<boolean> {
   const providerNativeUpdateArgs = providerNativeUpdateArgsForAgent(input.agentId);
   if (providerNativeUpdateArgs === undefined) {
@@ -112,7 +113,7 @@ export async function providerNativeUpdateCommandAvailable(input: {
 }
 
 export function helpOutputAdvertisesProviderNativeUpdate(input: {
-  agentId: "codex" | "claude" | "opencode";
+  agentId: "codex" | "claude" | "opencode" | "vibe";
   helpOutput: string;
 }): boolean {
   const providerNativeUpdateArgs = providerNativeUpdateArgsForAgent(input.agentId);
@@ -124,7 +125,7 @@ export function helpOutputAdvertisesProviderNativeUpdate(input: {
 }
 
 export function providerNativeUpdateArgsForAgent(
-  agentId: "codex" | "claude" | "opencode",
+  agentId: "codex" | "claude" | "opencode" | "vibe",
 ): string[] | undefined {
   if (agentId === "codex" || agentId === "claude") {
     return ["update"];

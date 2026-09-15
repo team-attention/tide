@@ -1175,6 +1175,7 @@ impl App {
             use crate::tide_terminal::TitleChange;
 
             let mut terminal_notifications = Vec::new();
+            let mut title_transitions = Vec::new();
             let mut platform_commands = Vec::new();
             let mut title_changed = false;
 
@@ -1194,7 +1195,8 @@ impl App {
                     for msg in tp.backend.drain_notifications() {
                         terminal_notifications.push((id, msg));
                     }
-                    if let Some(change) = tp.backend.drain_title() {
+                    for change in tp.backend.drain_titles() {
+                        let previous = tp.context.osc_title.clone();
                         match change {
                             TitleChange::Set(title) => {
                                 tp.context.osc_title = Some(title);
@@ -1203,6 +1205,7 @@ impl App {
                                 tp.context.osc_title = None;
                             }
                         };
+                        title_transitions.push((id, previous, tp.context.osc_title.clone()));
                         title_changed = true;
                     }
                     if tp.backend.take_bell() {
@@ -1230,7 +1233,8 @@ impl App {
                         for msg in tp.backend.drain_notifications() {
                             terminal_notifications.push((id, msg));
                         }
-                        if let Some(change) = tp.backend.drain_title() {
+                        for change in tp.backend.drain_titles() {
+                            let previous = tp.context.osc_title.clone();
                             match change {
                                 TitleChange::Set(title) => {
                                     tp.context.osc_title = Some(title);
@@ -1239,6 +1243,7 @@ impl App {
                                     tp.context.osc_title = None;
                                 }
                             }
+                            title_transitions.push((id, previous, tp.context.osc_title.clone()));
                             title_changed = true;
                         }
                         if tp.backend.take_bell() {
@@ -1258,7 +1263,7 @@ impl App {
             }
 
             if title_changed {
-                self.cache.invalidate_chrome();
+                crate::AppCorePort::invalidate_chrome(self);
                 crate::AppCorePort::request_redraw(self);
             }
             let focused_window_title = self
@@ -1277,6 +1282,11 @@ impl App {
 
             for (id, msg) in terminal_notifications {
                 self.handle_terminal_notification(id, &msg);
+            }
+            for (id, previous, title) in title_transitions {
+                crate::adapter::inward::vibe_title_adapter::handle_vibe_title_change(
+                    self, id, previous.as_deref(), title.as_deref(),
+                );
             }
         }
 

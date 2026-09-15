@@ -48,7 +48,7 @@ export type GitPushTargetResult =
     }
   | { ok: false; message: string };
 
-export type ReviewProvider = "codex" | "claude" | "opencode";
+export type ReviewProvider = "codex" | "claude" | "opencode" | "vibe";
 
 export type ReviewTarget =
   | { kind: "uncommitted" }

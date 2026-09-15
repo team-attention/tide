@@ -17,7 +17,7 @@ import type {
 } from "../../../../application/domains/agent-runtime/agent-runtime.ts";
 import type { ProviderTurnTerminalStatus } from "../../../../application/domains/agent-runtime/agent-runtime.ts";
 
-export type StructuredProviderId = "codex" | "claude" | "opencode" | "qwen";
+export type StructuredProviderId = "codex" | "claude" | "opencode" | "vibe" | "qwen";
 
 export function normalizeProviderTerminalStatus(
   _provider: StructuredProviderId,

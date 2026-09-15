@@ -122,6 +122,7 @@ function transportForAgent(agentId: ProviderCliAgentId): NativeTransport {
       return "codex_app_server";
     case "claude":
       return "claude_stream_json";
+    case "vibe":
     case "opencode":
       return "acp";
   }

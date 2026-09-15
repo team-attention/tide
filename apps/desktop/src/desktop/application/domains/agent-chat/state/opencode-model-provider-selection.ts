@@ -155,21 +155,7 @@ function modelForOpencodeRow(rowId: string): string | undefined {
   return rowId.startsWith("model:") ? rowId.slice("model:".length) : undefined;
 }
 
-function reasoningForOpencodeRow(
-  rowId: string,
-): "low" | "medium" | "high" | "xhigh" | "max" | undefined {
-  switch (rowId) {
-    case "reasoning-low":
-      return "low";
-    case "reasoning-medium":
-      return "medium";
-    case "reasoning-high":
-      return "high";
-    case "reasoning-xhigh":
-      return "xhigh";
-    case "reasoning-max":
-      return "max";
-    default:
-      return undefined;
-  }
+function reasoningForOpencodeRow(rowId: string): string | undefined {
+  return rowId.startsWith("reasoning-") && rowId !== "reasoning-section"
+    ? rowId.slice("reasoning-".length) : undefined;
 }

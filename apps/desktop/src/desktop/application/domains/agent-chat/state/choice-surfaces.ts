@@ -121,7 +121,7 @@ export function selectAgentChatChoiceSurfaceRow(
       return selectComposerAgent(state, agentId);
     }
     case "model_menu": {
-      const reasoning = reasoningForRow(rowId);
+      const reasoning = reasoningForRow(rowId, state);
       if (reasoning !== undefined) {
         return updateComposerLaunchOptions(state, { reasoning });
       }
@@ -247,6 +247,7 @@ export function createActiveComposerSurface(
           agentMenuRow("codex", "Codex CLI", binding.agentId, state),
           agentMenuRow("claude", "Claude Code", binding.agentId, state),
           agentMenuRow("opencode", "opencode", binding.agentId, state),
+          agentMenuRow("vibe", "Mistral Vibe", binding.agentId, state),
         ],
       };
     case "model_menu":
@@ -266,19 +267,19 @@ export function createActiveComposerSurface(
         rows:
           binding.agentId === "codex"
               ? codexModelMenuRows(state, selectedModel)
-              : binding.agentId === "claude"
+              : binding.agentId === "claude" || binding.agentId === "vibe"
                 ? [
-                    ...cliModelMenuRows("claude", agentLabel, selectedModel),
+                    ...cliModelMenuRows(binding.agentId, agentLabel, selectedModel, state),
                     // The Claude Code app's "Effort" control → `--effort`.
                     row("effort-section", "Effort", "thinking effort", "source", "source"),
                     ...effortRows(
                       String(launchOptionsForState(state)?.reasoning ?? "high"),
-                      ["low", "medium", "high", "xhigh", "max"],
+                      state.availableProviderCatalogs?.[binding.agentId]?.models.find((m) => m.value === selectedModel)?.effortOptions ?? [],
                     ),
                   ]
                 : binding.agentId === "opencode"
                   ? []
-                  : cliModelMenuRows(binding.agentId, agentLabel, selectedModel),
+                  : cliModelMenuRows(binding.agentId, agentLabel, selectedModel, state),
       };
     case "opencode_model_provider":
       {
@@ -459,6 +460,8 @@ function composerAgentIdForRow(
       return "codex";
     case "claude":
       return "claude";
+    case "vibe":
+      return "vibe";
     case "opencode":
       return "opencode";
     default:
@@ -501,13 +504,15 @@ function cliModelMenuRows(
   agentId: string,
   agentLabel: string,
   selectedModel: string,
+  state: AgentChatShellState,
 ): AgentChatChoiceSurfaceRowView[] {
   void agentLabel;
   // No noisy fallback detail (matches the provider apps' clean model lists): a
   // model shows its own detail (e.g. "Legacy") or nothing. Multi-vendor agents
   // (opencode) carry a `vendor` per model → emit a section header per vendor so
   // the long cross-vendor list stays legible.
-  const options = cliModelOptionsForAgent(agentId);
+  const catalog = state.availableProviderCatalogs?.[agentId];
+  const options = catalog?.models.length ? catalog.models : cliModelOptionsForAgent(agentId);
   const rows: AgentChatChoiceSurfaceRowView[] = [];
   let lastVendor: string | undefined;
   for (const option of options) {
@@ -533,8 +538,8 @@ function effortRows(current: string, levels: string[]): AgentChatChoiceSurfaceRo
   return levels.map((level) =>
     row(
       `reasoning-${level}`,
-      REASONING_LEVELS[level].label,
-      REASONING_LEVELS[level].detail,
+      REASONING_LEVELS[level]?.label ?? level,
+      REASONING_LEVELS[level]?.detail,
       undefined,
       current === level ? "check" : "",
       current === level,
@@ -542,21 +547,14 @@ function effortRows(current: string, levels: string[]): AgentChatChoiceSurfaceRo
   );
 }
 
-function reasoningForRow(rowId: string): "low" | "medium" | "high" | "xhigh" | "max" | undefined {
-  switch (rowId) {
-    case "reasoning-low":
-      return "low";
-    case "reasoning-medium":
-      return "medium";
-    case "reasoning-high":
-      return "high";
-    case "reasoning-xhigh":
-      return "xhigh";
-    case "reasoning-max":
-      return "max";
-    default:
-      return undefined;
-  }
+function reasoningForRow(rowId: string, state: AgentChatShellState): string | undefined {
+  if (!rowId.startsWith("reasoning-") || rowId === "reasoning-section") return undefined;
+  const value = rowId.slice("reasoning-".length);
+  const binding = state.thread?.agentBinding ?? state.composer.startOptions.agentBinding;
+  const selectedModel = String(launchOptionsForState(state)?.model ?? defaultModelValueForAgent(binding.agentId));
+  const nativeOptions = state.availableProviderCatalogs?.[binding.agentId]?.models
+    .find((model) => model.value === selectedModel)?.effortOptions ?? [];
+  return nativeOptions.includes(value) || Object.hasOwn(REASONING_LEVELS, value) ? value : undefined;
 }
 
 // Codex uses the local runtime catalog when available, with a conservative fallback
@@ -569,9 +567,7 @@ function codexModelMenuRows(
     launchOptionsForState(state)?.reasoning ??
       defaultReasoningValueForAgent("codex", selectedModel),
   );
-  const reasoningLevels = selectedModel.startsWith("gpt-5.6-")
-    ? ["low", "medium", "high", "xhigh", "max"]
-    : ["low", "medium", "high", "xhigh"];
+  const reasoningLevels = state.availableProviderCatalogs?.codex?.models.find((model) => model.value === selectedModel)?.effortOptions ?? [];
   const rows: AgentChatChoiceSurfaceRowView[] = [
     row("model-section", "Model", "Codex Agent Integration", "source", "source"),
   ];
@@ -587,7 +583,7 @@ function codexModelMenuRows(
       ),
     );
   }
-  rows.push(
+  if (reasoningLevels.length > 0) rows.push(
     row("reasoning-section", "Reasoning effort", "model_reasoning_effort", "source", "source"),
     ...effortRows(reasoning, reasoningLevels),
   );

@@ -57,7 +57,7 @@ function unavailableOpencodeCatalogSurface(
       : status === "unavailable"
         ? "provider-catalog-unavailable"
         : "provider-catalog-loading";
-  const effortRows = opencodeEffortRows(currentEffort);
+  const effortRows = opencodeEffortRows(currentEffort, catalog?.models.find(model => model.value === currentModel)?.effortOptions ?? []);
   return {
     surfaceKind: "opencode_model_provider",
     title: "Provider",
@@ -107,7 +107,7 @@ export function buildOpencodeModelProviderSurface(
     providers.find((candidate) => candidate.id === providerId) ??
     searchProviders.find((candidate) => candidate.id === providerId);
   const models = modelViewsForProvider(providerId, currentModel, catalog);
-  const effortRows = opencodeEffortRows(currentEffort);
+  const effortRows = opencodeEffortRows(currentEffort, catalog?.models.find(model => model.value === currentModel)?.effortOptions ?? []);
   const rows = rowsForStep(step, providerId, providers, models, effortRows, catalog);
 
   return {
@@ -378,12 +378,12 @@ function providerViewModels(catalog?: AgentChatProviderCatalog): ProviderViewMod
       id: vendor.id,
       label: vendor.label,
       detail: needsReconnect
-        ? "Reconnect"
+        ? "No models available"
         : connected
           ? vendor.method === undefined
             ? "Connected"
             : `${vendor.method} connected`
-          : "Connect",
+          : "Connection required",
       monogram: opencodeVendorMonogram(vendor),
       connected,
       needsReconnect,
@@ -423,10 +423,10 @@ function providerSearchViewModels(catalog?: AgentChatProviderCatalog): ProviderS
       id: option.id,
       label: option.label,
       detail: needsReconnect
-        ? "Reconnect"
+        ? "No models available"
         : connected
           ? "Connected"
-          : `${option.modelCount} models`,
+          : "Connection required",
       monogram: opencodeVendorMonogram({ id: option.id, label: option.label }),
       connected,
       needsReconnect,
@@ -516,12 +516,12 @@ function modelViewsForProvider(
     }));
 }
 
-function opencodeEffortRows(currentEffort: string): AgentChatChoiceSurfaceRowView[] {
-  return ["low", "medium", "high", "xhigh", "max"].map((level) =>
+function opencodeEffortRows(currentEffort: string, levels: string[]): AgentChatChoiceSurfaceRowView[] {
+  return levels.map((level) =>
     row(
       `reasoning-${level}`,
-      REASONING_LEVELS[level].label,
-      REASONING_LEVELS[level].detail,
+      REASONING_LEVELS[level]?.label ?? level,
+      REASONING_LEVELS[level]?.detail,
       undefined,
       currentEffort === level ? "check" : "",
       currentEffort === level,
@@ -570,7 +570,7 @@ function methodViewForProvider(
     ...(hasPromptlessApi
       ? {
           apiKeyRowId: apiKeyRowId(providerId),
-          apiKeyLabel: "Paste API key",
+          apiKeyLabel: "Connect with API key",
           apiKeyDetail: "stored by opencode, not Tide",
         }
       : {}),

@@ -211,12 +211,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       }
       if (key === "reasoning") {
         const reasoning = stringValue(input.launchOptions.reasoning);
-        if (
-          reasoning !== "low" &&
-          reasoning !== "medium" &&
-          reasoning !== "high" &&
-          reasoning !== "xhigh"
-        ) {
+        if (reasoning === undefined) {
           return { kind: "restart" };
         }
         params.effort = reasoning;
@@ -263,7 +258,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
     const reasoning = stringValue(input.launchOptions?.reasoning);
     const args = [
       "app-server",
-      ...(reasoning === "low" || reasoning === "medium" || reasoning === "high" || reasoning === "xhigh"
+      ...(reasoning !== undefined
         ? ["-c", `model_reasoning_effort=${codexConfigString(reasoning)}`]
         : []),
       ...codexPermissionConfigArgs(input.launchOptions, workspaceWritableRoots),

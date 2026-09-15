@@ -1,3 +1,5 @@
+import { providerCatalogChangedEvent } from "../../../adapters/inbound/contract-message-adapter/dto/provider-dtos.ts";
+import { createVibeAgentIntegration } from "../../../adapters/outbound/agent-integrations/vibe/vibe-agent-integration.ts";
 import { resolveExecutable } from "../../../adapters/outbound/agent-integrations/shared/provider-cli-commands.ts";
 import { createLiveAgentUpdateChecker } from "../provider/agent-update-checker.ts";
 import { locateClaudeTranscriptFile } from "../../../adapters/outbound/agent-integrations/claude/claude-history-connector.ts";
@@ -294,6 +296,7 @@ export function createLiveBackendContractMessageAdapter(
     return codexHome;
   };
   const integrations = {
+    vibe: createVibeAgentIntegration({ resolveExecutable, defaultCwd: process.cwd(), tideMcp: { command: tideCommand, args: [tideMcpEntrypoint, "mcp"], env: { ELECTRON_RUN_AS_NODE: "1", TIDE_SOCKET: tideSocket } } }),
     codex: createCodexAgentIntegration({
       resolveExecutable: () => resolveExecutable("codex"),
       readProviderState: ({ cwd }) =>
@@ -475,15 +478,11 @@ export function createLiveBackendContractMessageAdapter(
     void (async () => {
       try {
         emitBackendEvents([
-          {
-            contractVersion: CONTRACT_VERSION,
+          providerCatalogChangedEvent({
             eventId: nextEventId(),
-            kind: "providerCatalog.changed",
             emittedAt: new Date().toISOString(),
-            payload: {
-              catalog: await detection.getProviderCatalog({ agentId }),
-            },
-          },
+            catalog: await detection.getProviderCatalog({ agentId }),
+          }),
         ]);
       } catch (error) {
         process.emitWarning(
@@ -513,7 +512,7 @@ export function createLiveBackendContractMessageAdapter(
       },
     ]);
   });
-  // Preload opencode's catalog OUT OF BAND so Thread list delivery is never blocked
+  // Preload installed providers' catalogs asynchronously so Thread list delivery is never blocked
   // behind opencode's slower subprocesses. Renderer requests via provider.catalog.get
   // remain the correctness path; this push is only an opportunistic warm update.
   if (input.preloadProviderCatalog !== false) {
@@ -522,7 +521,7 @@ export function createLiveBackendContractMessageAdapter(
       // synchronously here froze the backend event loop — delaying the already-computed
       // thread.list reply (and so the cold-boot rail skeleton) by ~2.5s. Off the loop, the
       // catalog simply arrives a moment later without blocking anything.
-      emitProviderCatalogChanged("opencode");
+      for (const agentId of detection.detectAvailableAgents()) emitProviderCatalogChanged(agentId);
     });
   }
 

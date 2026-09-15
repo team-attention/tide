@@ -314,3 +314,10 @@ function sourceFiles(root: string): string[] {
 
   return files;
 }
+
+test("claude passes provider-native model and effort through startup", async () => {
+  const integration = claudeIntegration();
+  const plan = await integration.buildStartPlan({ agentId: "claude", scope: projectScope, launchOptions: { model: "future-model", reasoning: "future-effort" } });
+  assert.equal(plan.args[plan.args.indexOf("--effort") + 1], "future-effort");
+  assert.equal(plan.args[plan.args.indexOf("--model") + 1], "future-model");
+});

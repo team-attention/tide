@@ -1,3 +1,4 @@
+import { createProtocolModelCatalog } from "./protocol-model-catalog.ts";
 import { executableForAgent } from "../../../adapters/outbound/agent-integrations/shared/provider-cli-commands.ts";
 import { PROVIDER_CLI_AGENT_IDS } from "../../../../shared/agent-descriptors.ts";
 import type {
@@ -41,29 +42,9 @@ export interface ProviderDetection {
   shutdown: () => Promise<void>;
 }
 
-const STATIC_PROVIDER_MODELS: Record<"codex" | "claude", ProviderModelDto[]> = {
-  codex: [
-    { value: "gpt-5.5", label: "GPT-5.5" },
-    { value: "gpt-5.4", label: "GPT-5.4" },
-    { value: "gpt-5.4-mini", label: "GPT-5.4-Mini" },
-    { value: "gpt-5.3-codex-spark", label: "GPT-5.3-Codex-Spark" },
-  ],
-  claude: [
-    { value: "Claude default", label: "Default", detail: "Recommended" },
-    { value: "claude-fable-5", label: "Fable 5" },
-    { value: "claude-opus-4-8", label: "Opus 4.8" },
-    { value: "claude-sonnet-5", label: "Sonnet 5" },
-    { value: "claude-opus-4-8[1m]", label: "Opus 4.8 (1M context)" },
-    { value: "claude-haiku-4-5", label: "Haiku 4.5" },
-    { value: "claude-sonnet-4-6", label: "Sonnet 4.6", detail: "Legacy" },
-    { value: "claude-opus-4-7", label: "Opus 4.7", detail: "Legacy" },
-    { value: "claude-opus-4-7[1m]", label: "Opus 4.7 (1M context)", detail: "Legacy" },
-    { value: "claude-opus-4-6", label: "Opus 4.6", detail: "Legacy" },
-  ],
-};
-
 const DEFAULT_PROVIDER_MODEL: Record<ProviderCliAgentId, string> = {
-  codex: "gpt-5.5",
+  codex: "",
+  vibe: "vibe default",
   claude: "Claude default",
   opencode: "opencode default",
 };
@@ -75,6 +56,8 @@ export function createProviderDetection(input: {
   updateChecker?: AgentCliUpdateChecker;
   processSpawner?: BackendOwnedProcessSpawner;
 }): ProviderDetection {
+  const claudeCatalog = createProtocolModelCatalog("claude", input.resolveExecutable, undefined, input.processSpawner);
+  const vibeCatalog = createProtocolModelCatalog("vibe", input.resolveExecutable, undefined, input.processSpawner);
   const codexCatalog = createCodexModelCatalog((command) => input.resolveExecutable(command));
   const opencodeCatalog = createOpencodeModelCatalog((command) => input.resolveExecutable(command));
   const opencodeVendorCatalog = createOpencodeVendorCatalog((command) => input.resolveExecutable(command));
@@ -106,7 +89,7 @@ export function createProviderDetection(input: {
     }
     try {
       const [models, vendors, environment, providerOptions] = await Promise.all([
-        opencodeCatalog.get(),
+        opencodeCatalog.get(scope?.cwd ?? input.defaultCwd),
         opencodeVendorCatalog.get(),
         opencodeVendorCatalog.environment(),
         bestEffortOpencodeProviderOptions(() => opencodeAuthServer.listProviderOptions()),
@@ -154,7 +137,7 @@ export function createProviderDetection(input: {
       };
     }
     try {
-      const catalog = await codexCatalog.get();
+      const catalog = await codexCatalog.get(scope?.cwd ?? input.defaultCwd);
       return {
         agentId: "codex",
         status: "ready",
@@ -168,7 +151,7 @@ export function createProviderDetection(input: {
         agentId: "codex",
         status: "error",
         scope,
-        models: STATIC_PROVIDER_MODELS.codex,
+        models: [],
         defaultModel: DEFAULT_PROVIDER_MODEL.codex,
         error: {
           code: providerCatalogErrorCode(error),
@@ -211,13 +194,14 @@ export function createProviderDetection(input: {
       if (agentId === "opencode") {
         return opencodeCatalogSnapshot(scope);
       }
-      return {
-        agentId,
-        status: "ready",
-        scope,
-        models: STATIC_PROVIDER_MODELS[agentId],
-        defaultModel: DEFAULT_PROVIDER_MODEL[agentId],
-      };
+      const executable = input.resolveExecutable(executableForAgent(agentId));
+      if (!executable) return { agentId, status: "unavailable", scope, models: [], defaultModel: DEFAULT_PROVIDER_MODEL[agentId], error: { code: "not_installed", message: agentId + " executable was not found.", retryable: true } };
+      try {
+        const catalog = await (agentId === "vibe" ? vibeCatalog : claudeCatalog).get(scope?.cwd ?? input.defaultCwd ?? process.cwd());
+        return { agentId, status: "ready", scope, ...catalog };
+      } catch (error) {
+        return { agentId, status: "error", scope, models: [], defaultModel: DEFAULT_PROVIDER_MODEL[agentId], error: { code: providerCatalogErrorCode(error), message: error instanceof Error ? error.message : "Model discovery failed.", retryable: true } };
+      }
     },
     enumerateOpencodeModels: () => opencodeCatalog.get(),
     // Mark connected-but-unusable vendors (e.g. expired auth) by cross-referencing the

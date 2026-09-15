@@ -390,3 +390,33 @@ function codexDebugModelsFixture(slug: string, displayName: string): string {
     models: [{ slug, display_name: displayName, visibility: "list" }],
   });
 }
+
+test("catalog refresh crosses the JSON boundary and replaces stale saved models", async () => {
+  const { providerCatalogChangedEvent } = await import("../src/backend/adapters/inbound/contract-message-adapter/dto/provider-dtos.ts");
+  const { validateBackendEventEnvelope } = await import("../src/shared/contracts/index.ts");
+  for (const requestId of [undefined, "refresh-models"]) {
+    const event = providerCatalogChangedEvent({
+      eventId: "catalog-refresh", emittedAt: new Date().toISOString(), requestId,
+      catalog: {
+        agentId: "codex", status: "ready", scope: undefined,
+        models: [{ value: "gpt-6-astra", label: "GPT-6-Astra", detail: undefined, effortOptions: ["high", "ultra", "future-effort"] }],
+        defaultModel: "gpt-6-astra",
+      },
+    });
+    const validated = validateBackendEventEnvelope(event);
+    assert.equal(validated.ok, true, JSON.stringify(validated));
+    const state = createProductShellState();
+    state.providerCatalogs.codex = { agentId: "codex", status: "ready", models: [{ value: "old", label: "Old" }], defaultModel: "old" };
+    const updated = applyProductShellBackendEvent(state, event);
+    assert.deepEqual(updated.providerCatalogs.codex?.models.map(model => model.value), ["gpt-6-astra"]);
+    const opened = setProductShellComposerActiveSurface(updated, "model_menu");
+    const refreshed = applyProductShellBackendEvent(opened, event);
+    assert.equal(refreshed.agentChat.composer.activeSurface, "model_menu");
+    const menu = createProductShellViewModel(refreshed).agentChat.composer.activeSurface;
+    assert.ok(menu?.rows.some(row => row.rowId === "reasoning-ultra"));
+    assert.ok(menu?.rows.some(row => row.rowId === "reasoning-future-effort"));
+    const { selectProductShellChoiceSurfaceRow } = await import("../src/desktop/application/domains/product-shell/product-shell.ts");
+    const selected = selectProductShellChoiceSurfaceRow(refreshed, "model_menu", "reasoning-ultra");
+    assert.equal(selected.state.agentChat.composer.startOptions.launchOptions?.reasoning, "ultra");
+  }
+});

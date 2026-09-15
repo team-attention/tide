@@ -321,6 +321,8 @@ export function ReviewPanel(props: {
 
 function providerLabel(provider: ReviewProvider): string {
   switch (provider) {
+    case "vibe":
+      return "Mistral Vibe";
     case "codex":
       return "Codex";
     case "claude":

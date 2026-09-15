@@ -84,6 +84,16 @@ export const AGENT_DESCRIPTORS: Record<AgentId, AgentDescriptor> = {
       legacyValueMap: { dontAsk: "acceptEdits" },
     },
   },
+  vibe: {
+    id: "vibe", displayName: "Mistral Vibe", monogram: "Vi", isProviderCli: true, sessionRefKind: "provider_native",
+    permission: { default: "default", options: [
+      { id: "vibe-default", value: "default", label: "Default", detail: "Use Vibe tool approval settings" },
+      { id: "vibe-plan", value: "plan", label: "Plan", detail: "Plan without editing" },
+      { id: "vibe-edits", value: "accept-edits", label: "Accept edits", detail: "Auto-approve file edits only" },
+      { id: "vibe-auto", value: "auto-approve", label: "Auto approve", detail: "Auto-approve all tool executions", danger: true },
+      { id: "vibe-chat", value: "chat", label: "Chat", detail: "Read-only conversation" },
+    ] },
+  },
   opencode: {
     id: "opencode",
     displayName: "opencode",

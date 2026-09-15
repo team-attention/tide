@@ -62,7 +62,7 @@ export interface GitChangesView {
   files: GitChangesResult["files"];
 }
 
-export type ReviewProvider = "codex" | "claude" | "opencode";
+export type ReviewProvider = "codex" | "claude" | "opencode" | "vibe";
 
 export type ReviewTarget =
   | { kind: "uncommitted" }

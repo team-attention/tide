@@ -2574,6 +2574,7 @@ fn workspace_agent_resume_policy_json() -> Value {
             workspace_agent_resume_provider_policy_json("codex", "Codex", "codex"),
             workspace_agent_resume_provider_policy_json("agy", "Antigravity", "agy"),
             workspace_agent_resume_provider_policy_json("opencode", "opencode", "opencode"),
+            workspace_agent_resume_provider_policy_json("vibe", "Mistral Vibe", "vibe"),
         ],
     })
 }

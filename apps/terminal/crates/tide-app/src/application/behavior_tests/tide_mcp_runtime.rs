@@ -140,7 +140,7 @@ fn observing_workspace_reports_provider_neutral_surfaces_and_panes() {
         false
     );
     let providers = resume_policy["providers"].as_array().unwrap();
-    for provider in ["claude", "codex", "agy", "opencode"] {
+    for provider in ["claude", "codex", "agy", "opencode", "vibe"] {
         assert!(
             providers
                 .iter()

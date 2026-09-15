@@ -223,7 +223,6 @@ class AcpClient implements StructuredRuntimeClient {
       return;
     }
     this.sessionId = sessionId;
-    this.resolveReadiness();
     this.onEvent({
       kind: "session_ref",
       ref: { agentId: this.agentId, kind: this.sessionRefKind, value: sessionId },
@@ -246,14 +245,17 @@ class AcpClient implements StructuredRuntimeClient {
     const initialConfigOptions =
       this.pendingConfigOptions ?? parseConfigOptions(this.protocolParams.configOptions);
     this.pendingConfigOptions = undefined;
-    this.sendConfigOptions(sessionId, initialConfigOptions);
-    if (initialPrompt !== undefined && initialPrompt.length > 0) {
-      void this.startTurn(
-        withGoalPreamble(this.goalObjective, initialPrompt),
-        initialAttachments,
-        initialDeliveryId,
-      );
-    }
+    this.sendConfigOptions(sessionId, initialConfigOptions, (error) => {
+      if (error) {
+        this.rejectReadiness(error);
+        this.onEvent({ kind: "turn_completed", status: "failed", nativeStatus: "config_error", notice: error.message });
+        return;
+      }
+      this.resolveReadiness();
+      if (initialPrompt !== undefined && initialPrompt.length > 0) {
+        this.startTurn(withGoalPreamble(this.goalObjective, initialPrompt), initialAttachments, initialDeliveryId);
+      }
+    });
   }
 
   // Mid-thread Launch Options change. opencode delivers model / effort / mode as
@@ -302,17 +304,26 @@ class AcpClient implements StructuredRuntimeClient {
   private sendConfigOptions(
     sessionId: string,
     configOptions: Array<{ configId: string; value: string }> | undefined,
+    onComplete: (error?: Error) => void = () => undefined,
   ): void {
     const options = configOptions ?? [];
     const sendNext = (index: number): void => {
       if (index >= options.length) {
+        onComplete();
         return;
       }
       const option = options[index];
       this.request(
         "session/set_config_option",
         { sessionId, configId: option.configId, value: option.value },
-        () => sendNext(index + 1),
+        (response) => {
+          if (response.error !== undefined) {
+            onComplete(new Error(`ACP rejected initial ${option.configId} configuration.`));
+            return;
+          }
+          this.emitModelCatalog(isRecord(response.result) ? response.result : {});
+          sendNext(index + 1);
+        },
       );
     };
     sendNext(0);

@@ -7,7 +7,7 @@ import type {
   WorkbenchState,
 } from "../workbench/workbench.ts";
 
-export type ProviderCliAgentId = "codex" | "claude" | "opencode";
+export type ProviderCliAgentId = "codex" | "claude" | "opencode" | "vibe";
 export type AgentId = ProviderCliAgentId;
 export type ThreadId = string;
 export type ProjectId = string;

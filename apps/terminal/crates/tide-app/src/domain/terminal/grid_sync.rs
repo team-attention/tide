@@ -85,8 +85,8 @@ pub(super) struct TermEventListener {
     pub(super) mode_2031: Arc<AtomicBool>,
     /// OSC 9 notification messages queued for main thread processing.
     pub(super) notifications: Arc<Mutex<Vec<String>>>,
-    /// Pending OSC 0/2 title change (last-write-wins).
-    pub(super) pending_title: Arc<Mutex<Option<TitleChange>>>,
+    /// Ordered, bounded OSC 0/2 title changes.
+    pub(super) pending_title: Arc<Mutex<Vec<TitleChange>>>,
     /// Edge-triggered BEL flag.
     pub(super) bell_pending: Arc<AtomicBool>,
     /// OSC 52 clipboard-write requests queued for the main thread.
@@ -222,15 +222,21 @@ impl EventListener for TermEventListener {
                 // Mark dirty + wake so main thread processes the notification
             }
             Event::Title(title) => {
-                // OSC 0 / OSC 2: program sets the window title. Last write wins.
+                // OSC 0 / OSC 2: preserve bounded lifecycle transitions.
                 if let Ok(mut pending) = self.pending_title.lock() {
-                    *pending = Some(TitleChange::Set(title.clone()));
+                    if pending.len() == 256 {
+                        pending.remove(0);
+                    }
+                    pending.push(TitleChange::Set(title.clone()));
                 }
                 // Mark dirty + wake so the main thread applies the title.
             }
             Event::ResetTitle => {
                 if let Ok(mut pending) = self.pending_title.lock() {
-                    *pending = Some(TitleChange::Reset);
+                    if pending.len() == 256 {
+                        pending.remove(0);
+                    }
+                    pending.push(TitleChange::Reset);
                 }
             }
             Event::Bell => {

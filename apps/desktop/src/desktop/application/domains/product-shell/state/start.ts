@@ -247,6 +247,7 @@ const PRODUCT_SHELL_AGENT_IDENTITIES: ReadonlySet<string> = new Set<ProductShell
   "codex",
   "claude",
   "opencode",
+  "vibe",
 ]);
 
 export function isProductShellAgentIdentity(
