@@ -43,7 +43,7 @@ On `v*` tags it:
 
 1. Runs from `apps/terminal`.
 2. Installs Rust and `cargo-bundle`.
-3. Builds the app bundle with:
+3. Requires strict Clippy, workspace tests, Vibe wrapper behavior, and architecture checks to pass with the pinned Rust 1.92.0 toolchain, then builds the app bundle with:
 
    ```bash
    cargo bundle --profile dist -p tide-app

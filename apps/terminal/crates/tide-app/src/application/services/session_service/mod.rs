@@ -263,6 +263,7 @@ impl App {
         });
     }
 
+    #[expect(clippy::manual_clamp, reason = "Preserve min/max behavior for non-finite geometry values.")]
     pub(crate) fn restore_from_session(&mut self, session: Session) -> bool {
         // Rebuild layout tree from session, collecting pane info
         let mut pane_infos: Vec<(PaneId, Option<PathBuf>)> = Vec::new();

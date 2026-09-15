@@ -147,7 +147,7 @@ impl LspClient {
         Some(client)
     }
 
-    fn send_initialize(&mut self, root_path: &PathBuf) {
+    fn send_initialize(&mut self, root_path: &std::path::Path) {
         let root_uri = format!("file://{}", root_path.display());
         let params = InitializeParams {
             process_id: Some(std::process::id()),

@@ -1091,9 +1091,7 @@ impl EditorPane {
     pub(crate) fn preview_wrap_width_for_rect(&self, rect: Rect, cell_size: Size) -> usize {
         let available_cols =
             ((rect.width - SCROLLBAR_WIDTH).max(0.0) / cell_size.width).floor() as usize;
-        available_cols
-            .min(MARKDOWN_PREVIEW_READABLE_WIDTH_CELLS)
-            .max(1)
+        available_cols.clamp(1, MARKDOWN_PREVIEW_READABLE_WIDTH_CELLS)
     }
 
     /// Horizontal inset for centered full-preview content on wide Panes.

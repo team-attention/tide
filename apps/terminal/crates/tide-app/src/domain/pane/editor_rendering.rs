@@ -154,6 +154,7 @@ impl EditorPane {
     }
 
     /// Render the editor grid cells into the cached grid layer, with optional diff colors.
+    #[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
     pub fn render_grid_full(
         &self,
         rect: Rect,
@@ -218,6 +219,7 @@ impl EditorPane {
         );
     }
 
+    #[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
     fn render_authoring_grid(
         &self,
         rect: Rect,
@@ -466,6 +468,7 @@ impl EditorPane {
     }
 
     /// Render the editor grid with soft wrapping (prose files).
+    #[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
     fn render_soft_wrap_grid(
         &self,
         rect: Rect,
@@ -492,6 +495,7 @@ impl EditorPane {
         );
     }
 
+    #[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
     fn render_soft_wrap_grid_with_map(
         &self,
         rect: Rect,
@@ -680,6 +684,7 @@ impl EditorPane {
     }
 
     /// Render the diff view grid.
+    #[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
     fn render_diff_grid(
         &self,
         rect: Rect,
@@ -966,7 +971,7 @@ impl EditorPane {
         let ratio = self.editor.scroll_offset() as f64 / raw_line_count as f64;
         let preview_scroll = ((ratio * preview_lines.len() as f64).round() as usize)
             .min(preview_lines.len().saturating_sub(1));
-        self.render_preview_lines_grid(rect, renderer, &preview_lines, preview_scroll, 0);
+        self.render_preview_lines_grid(rect, renderer, preview_lines, preview_scroll, 0);
     }
 
     /// Whether the preview content is long enough to need a scrollbar.

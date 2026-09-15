@@ -122,8 +122,8 @@ impl TerminalGraphicsState {
             protocol: TerminalGraphicProtocol::Sixel,
             row: data.row,
             col: data.col,
-            width_cells: ((width + 7) / 8).clamp(1, u32::from(u16::MAX)) as u16,
-            height_cells: ((height + 15) / 16).clamp(1, u32::from(u16::MAX)) as u16,
+            width_cells: width.div_ceil(8).clamp(1, u32::from(u16::MAX)) as u16,
+            height_cells: height.div_ceil(16).clamp(1, u32::from(u16::MAX)) as u16,
             width_px: width,
             height_px: height,
             rgba,
@@ -208,11 +208,11 @@ fn kitty_cells_field(fields: &HashMap<&str, &str>, key: &str) -> Option<u16> {
 }
 
 fn pixel_width_to_cells(width_px: u32) -> u16 {
-    ((width_px + 7) / 8).clamp(1, u32::from(u16::MAX)) as u16
+    width_px.div_ceil(8).clamp(1, u32::from(u16::MAX)) as u16
 }
 
 fn pixel_height_to_cells(height_px: u32) -> u16 {
-    ((height_px + 15) / 16).clamp(1, u32::from(u16::MAX)) as u16
+    height_px.div_ceil(16).clamp(1, u32::from(u16::MAX)) as u16
 }
 
 fn decode_sixel_to_rgba(payload: &[u8]) -> Option<(Vec<u8>, u32, u32)> {

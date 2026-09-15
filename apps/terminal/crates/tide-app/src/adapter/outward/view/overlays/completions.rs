@@ -53,11 +53,7 @@ pub(super) fn render_completion_popups(
         } else {
             0
         };
-        let visual_col = if cursor_char_col >= h_scroll {
-            cursor_char_col - h_scroll
-        } else {
-            0
-        };
+        let visual_col = cursor_char_col.saturating_sub(h_scroll);
 
         let content_top = crate::theme::TAB_BAR_HEIGHT;
         let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width;

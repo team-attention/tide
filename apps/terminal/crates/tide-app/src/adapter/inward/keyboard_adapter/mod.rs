@@ -107,15 +107,14 @@ pub(crate) fn handle_key_down(
     chars: Option<String>,
 ) {
     // Cancel pane drag on Escape
-    if !matches!(ctx.interaction().pane_drag, PaneDragState::Idle) {
-        if matches!(key, Key::Escape) {
+    if !matches!(ctx.interaction().pane_drag, PaneDragState::Idle)
+        && matches!(key, Key::Escape) {
             let interaction = ctx.interaction_mut();
             interaction.pane_drag = PaneDragState::Idle;
             interaction.drop_preview_start = None;
             ctx.request_redraw();
             return;
         }
-    }
 
     // If the key produced text and no command modifiers are held,
     // route via the text input system.

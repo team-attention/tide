@@ -1,29 +1,23 @@
 // FocusArea, FocusState, ViewMode, LayoutSide
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub(crate) enum FocusArea {
     FileTree,
+    #[default]
     Stage,
     Dock,
 }
 
-impl Default for FocusArea {
-    fn default() -> Self {
-        FocusArea::Stage
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub(crate) enum ViewMode {
+    #[default]
     Split,
     Stacked,
 }
 
-impl Default for ViewMode {
-    fn default() -> Self {
-        ViewMode::Split
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LayoutSide {

@@ -264,6 +264,7 @@ pub struct Terminal {
     /// Dirty flag (shared with PTY thread and sync thread)
     dirty: Arc<AtomicBool>,
     /// Shared waker callback — installed by main thread, called by sync thread
+    #[expect(clippy::type_complexity, reason = "Keep the established callback or result contract without an unrelated API refactor.")]
     waker: Arc<Mutex<Option<Box<dyn Fn() + Send>>>>,
     /// Pending PTY resize notification retained for compatibility with older queued paths.
     pending_pty_resize: Option<(WindowSize, Instant)>,
@@ -314,6 +315,7 @@ impl Terminal {
         Self::with_cwd_for_window(cols, rows, cwd, dark_mode, pane_id, None, None, None)
     }
 
+    #[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
     pub fn with_cwd_for_window(
         cols: u16,
         rows: u16,
@@ -369,16 +371,13 @@ impl Terminal {
             graphics_events: graphics_events.clone(),
         };
 
-        let mut config = TermConfig::default();
-        config.scrolling_history = scrollback_lines;
+        let config = TermConfig { scrolling_history: scrollback_lines, osc52: alacritty_terminal::term::Osc52::CopyPaste, kitty_keyboard: true, ..TermConfig::default() };
         // Allow OSC 52 copy and paste at the engine level. The actual paste
         // (clipboard read) is additionally gated by `clipboard_read_allowed`
         // (default off) in the listener — engine `OnlyCopy` would deny reads
         // outright before our policy can apply.
-        config.osc52 = alacritty_terminal::term::Osc52::CopyPaste;
         // Let applications opt into Kitty keyboard protocol modes with
         // CSI = Ps u / CSI > Ps u. Encoding is applied at input time.
-        config.kitty_keyboard = true;
         let term = Term::new(config, &term_size, listener.clone());
         let term = Arc::new(FairMutex::new(term));
 
@@ -441,6 +440,7 @@ impl Terminal {
         let dark_mode_changed = Arc::new(AtomicBool::new(false));
         let snapshot_ready = Arc::new(AtomicBool::new(false));
         let sync_shutdown = Arc::new(AtomicBool::new(false));
+        #[expect(clippy::type_complexity, reason = "Keep the established callback or result contract without an unrelated API refactor.")]
         let waker: Arc<Mutex<Option<Box<dyn Fn() + Send>>>> = Arc::new(Mutex::new(None));
 
         let snapshot = Arc::new(Mutex::new(SharedSnapshot {
@@ -633,10 +633,7 @@ impl Terminal {
             return;
         }
         self.scrollback_lines = lines;
-        let mut config = TermConfig::default();
-        config.scrolling_history = lines;
-        config.osc52 = alacritty_terminal::term::Osc52::CopyPaste;
-        config.kitty_keyboard = true;
+        let config = TermConfig { scrolling_history: lines, osc52: alacritty_terminal::term::Osc52::CopyPaste, kitty_keyboard: true, ..TermConfig::default() };
         {
             let mut term = self.term.lock();
             term.set_options(config);
@@ -750,6 +747,7 @@ impl Terminal {
             return;
         }
         if let Ok(mut snap) = self.snapshot.lock() {
+            if !self.snapshot_ready.swap(false, Ordering::Relaxed) { return; }
             std::mem::swap(&mut self.cached_grid, &mut snap.grid);
             self.inverse_cursor = snap.inverse_cursor;
             std::mem::swap(&mut self.url_ranges, &mut snap.url_ranges);
@@ -758,7 +756,6 @@ impl Terminal {
             self.grid_generation = snap.generation;
             self.cached_cursor = snap.cursor;
         }
-        self.snapshot_ready.store(false, Ordering::Relaxed);
     }
 }
 
@@ -839,13 +836,22 @@ impl Terminal {
     /// Sets the dirty flag, wakes the sync thread, and spins until the snapshot is ready.
     #[doc(hidden)]
     pub fn bench_sync_grid(&mut self) {
-        self.dirty.store(true, Ordering::Relaxed);
-        self.notify_sync_thread();
-        // Spin until snapshot is ready
-        while !self.snapshot_ready.load(Ordering::Relaxed) {
-            std::thread::yield_now();
+        // One copy may already be in flight. The second fresh completion
+        // guarantees a copy started after this call, including injected output.
+        for _ in 0..2 {
+            {
+                let _snapshot = self.snapshot.lock().unwrap();
+                self.snapshot_ready.store(false, Ordering::Relaxed);
+            }
+            self.dirty.store(true, Ordering::Relaxed);
+            self.notify_sync_thread();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while !self.snapshot_ready.load(Ordering::Relaxed) {
+                assert!(std::time::Instant::now() < deadline, "grid synchronization timed out");
+                std::thread::yield_now();
+            }
+            self.consume_snapshot();
         }
-        self.consume_snapshot();
     }
 
     /// Inject bytes directly into the terminal emulator for benchmarking.
@@ -889,13 +895,11 @@ impl Terminal {
         for col_idx in 0..cols {
             let point = Point::new(line, Column(col_idx));
             let cell = &grid[point];
-            let mut terminal_cell = TerminalCell::default();
-            terminal_cell.character = if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
-                '\0'
-            } else {
-                cell.c
+            let terminal_cell = TerminalCell {
+                character: if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) { '\0' } else { cell.c },
+                hyperlink: cell.hyperlink().map(|link| link.uri().to_string()),
+                ..TerminalCell::default()
             };
-            terminal_cell.hyperlink = cell.hyperlink().map(|link| link.uri().to_string());
             cells.push(terminal_cell);
         }
         Some(cells)

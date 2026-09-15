@@ -169,7 +169,7 @@ impl Buffer {
         let path = self
             .file_path
             .as_ref()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "No file path set"))?;
+            .ok_or_else(|| io::Error::other("No file path set"))?;
         let content = fs::read_to_string(path)?;
         self.trailing_newline = content.ends_with('\n');
         let lines: Vec<String> = if content.is_empty() {
@@ -199,7 +199,7 @@ impl Buffer {
         let path = self
             .file_path
             .as_ref()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "No file path set"))?;
+            .ok_or_else(|| io::Error::other("No file path set"))?;
         let mut content = self.lines.join("\n");
         if self.trailing_newline {
             content.push('\n');

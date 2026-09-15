@@ -687,3 +687,22 @@ fn native_title_queue_is_bounded_and_keeps_latest_display_title() {
         Some(&super::TitleChange::Set("title-299".into()))
     );
 }
+
+#[test]
+fn synchronization_exposes_latest_output_with_an_older_snapshot_pending() {
+    // Spec: docs/specs/terminal-snapshot-handoff.md — UC-1 BR-1/2/3.
+    use crate::tide_core::TerminalBackend;
+    let mut terminal = super::Terminal::new(80, 24).expect("terminal backend");
+    for index in 0..100 {
+        // Leave the previous frame published but unconsumed before injecting new output.
+        {
+            let mut snapshot = terminal.snapshot.lock().unwrap();
+            snapshot.grid = terminal.grid().clone();
+            terminal.snapshot_ready.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        terminal.bench_write_to_term(format!("\x1b[2J\x1b[Hframe-{index}").as_bytes());
+        terminal.bench_sync_grid();
+        let text: String = terminal.grid().cells[0].iter().map(|cell| cell.character).collect();
+        assert!(text.starts_with(&format!("frame-{index}")), "stale snapshot: {text:?}");
+    }
+}

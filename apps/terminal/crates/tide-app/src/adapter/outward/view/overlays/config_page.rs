@@ -231,7 +231,7 @@ pub(super) fn render_config_page(
                 let is_recording = page
                     .recording
                     .as_ref()
-                    .map_or(false, |r| r.action_index == fi);
+                    .is_some_and(|r| r.action_index == fi);
                 let hotkey_x = popup_x + popup_w * 0.55;
                 let hotkey_clip = Rect::new(hotkey_x, y, popup_w * 0.35, line_height);
 

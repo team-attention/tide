@@ -143,7 +143,7 @@ fn subsequence_highlight_mask(lower_text: &[char], query_lower: &str) -> Vec<boo
                         ' ' | '_' | '-' | '.' | '/' | ':' | '<' | '('
                     );
                 let rank = if boundary { 0u8 } else { 1u8 };
-                if best.map_or(true, |(r, _)| rank < r) {
+                if best.is_none_or(|(r, _)| rank < r) {
                     best = Some((rank, start));
                     if rank == 0 {
                         break;

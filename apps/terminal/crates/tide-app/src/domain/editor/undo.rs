@@ -164,7 +164,7 @@ impl Buffer {
                         let suffix = self.lines[end_line][end_col..].to_string();
                         self.lines[pos.line].truncate(start_col);
                         self.lines[pos.line].push_str(&suffix);
-                        if pos.line + 1 <= end_line {
+                        if pos.line < end_line {
                             self.lines.drain((pos.line + 1)..=end_line);
                         }
                     }
@@ -303,7 +303,7 @@ impl Buffer {
                         let suffix = self.lines[end_line][end_col..].to_string();
                         self.lines[start.line].truncate(start_col);
                         self.lines[start.line].push_str(&suffix);
-                        if start.line + 1 <= end_line {
+                        if start.line < end_line {
                             self.lines.drain((start.line + 1)..=end_line);
                         }
                     }

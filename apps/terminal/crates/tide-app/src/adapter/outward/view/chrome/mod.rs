@@ -40,6 +40,7 @@ pub(crate) use titlebar::{
 ///
 /// This is called only when `chrome_dirty` is true (i.e. chrome_generation changed).
 /// Returns the computed header hit zones for click handling.
+#[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
 pub(crate) fn render_chrome(
     app: &App,
     renderer: &mut crate::tide_renderer::WgpuRenderer,

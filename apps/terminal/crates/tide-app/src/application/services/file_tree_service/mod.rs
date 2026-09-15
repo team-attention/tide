@@ -60,7 +60,7 @@ pub(crate) fn cwd_wants_diff(
     diff_pane_repo_roots: &HashSet<PathBuf>,
 ) -> bool {
     diff_pane_cwds.contains(cwd)
-        || repo_root.map_or(false, |root| diff_pane_repo_roots.contains(root))
+        || repo_root.is_some_and(|root| diff_pane_repo_roots.contains(root))
 }
 
 fn collect_git_poll_results_for_cwds(
@@ -267,7 +267,7 @@ impl App {
     /// Called from consume_git_poll_results with data from the background thread.
     fn apply_file_tree_git_status(
         &mut self,
-        git_root: &PathBuf,
+        git_root: &std::path::Path,
         entries: &[crate::tide_terminal::git::StatusEntry],
     ) {
         let tree_root = match self.ft.tree.as_ref() {
@@ -312,7 +312,7 @@ impl App {
 
         self.ft.git_status = status_map;
         self.ft.dir_git_status = dir_status;
-        self.ft.git_root = Some(git_root.clone());
+        self.ft.git_root = Some(git_root.to_path_buf());
     }
 
     /// Trigger the git poller to re-run for the current CWDs.
@@ -443,7 +443,7 @@ impl App {
                             // Preserve wrapper-managed connected-idle presence when shell-idle
                             // polling temporarily outruns agent process re-detection.
                             let keep_existing =
-                                self.gateway.detected_agents.get(id).map_or(false, |a| {
+                                self.gateway.detected_agents.get(id).is_some_and(|a| {
                                     a.status.is_some() || (a.wrapper_managed && a.gateway_connected)
                                 });
                             if !keep_existing {

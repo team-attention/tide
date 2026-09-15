@@ -45,7 +45,7 @@ pub(crate) fn last_ime_target(tide_window_id: TideWindowId) -> u64 {
 thread_local! {
     /// Queue for events that arrive during re-entrancy (callback already borrowed).
     /// Drained after the outer callback returns, so no events are lost.
-    static REENTRANT_QUEUE: RefCell<Vec<PlatformEvent>> = RefCell::new(Vec::new());
+    static REENTRANT_QUEUE: RefCell<Vec<PlatformEvent>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Emit a platform event through the callback, catching panics at the FFI boundary.

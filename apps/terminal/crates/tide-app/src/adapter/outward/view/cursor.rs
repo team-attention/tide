@@ -202,12 +202,11 @@ pub(crate) fn editor_selection_rects(
         return Vec::new();
     }
 
-    if pane.effective_soft_wrap() {
-        if pane.wrap_map().is_some() {
+    if pane.effective_soft_wrap()
+        && pane.wrap_map().is_some() {
             let authoring = pane.authoring_rect(inner, cell_size);
             return soft_wrap_editor_selection_rects(pane, authoring, cell_size, start, end);
         }
-    }
 
     let authoring = pane.authoring_rect(inner, cell_size);
     plain_editor_selection_rects(pane, authoring, cell_size, start, end)
@@ -374,11 +373,7 @@ fn render_editor_search_highlights(
                 continue;
             }
             let visual_row = m.line - scroll;
-            let visual_col = if m.col >= h_scroll {
-                m.col - h_scroll
-            } else {
-                0
-            };
+            let visual_col = m.col.saturating_sub(h_scroll);
             let draw_len = if m.col >= h_scroll {
                 m.len
             } else {
@@ -682,11 +677,7 @@ fn render_preview_search_highlights(
             continue;
         }
         let visual_row = m.line - scroll;
-        let visual_col = if m.col >= h_scroll {
-            m.col - h_scroll
-        } else {
-            0
-        };
+        let visual_col = m.col.saturating_sub(h_scroll);
         let draw_len = if m.col >= h_scroll {
             m.len
         } else {

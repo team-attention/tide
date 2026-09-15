@@ -421,7 +421,7 @@ fn build_terminal_payload(lines: usize, cols: u16) -> Vec<u8> {
 
 fn build_render_input_payload(event_index: usize, cols: u16) -> Vec<u8> {
     let line_width = (cols as usize).saturating_sub(8).clamp(24, 160);
-    let mut row = if event_index % 4 == 0 {
+    let mut row = if event_index.is_multiple_of(4) {
         format!("\r\ntide input {event_index:06} ")
     } else {
         format!("\rtide input {event_index:06} ")

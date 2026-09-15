@@ -192,7 +192,7 @@ impl LspManager {
 
         // Try to resolve the server command (managed path or system PATH)
         if let Some((cmd, args)) = lang.resolve_command(&self.shell_path) {
-            let args_refs: Vec<&str> = args.iter().map(|s| *s).collect();
+            let args_refs: Vec<&str> = args.to_vec();
             match LspClient::start(
                 &cmd,
                 &args_refs,

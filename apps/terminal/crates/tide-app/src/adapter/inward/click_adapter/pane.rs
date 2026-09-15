@@ -559,15 +559,13 @@ pub(crate) fn handle_drop(
             } else if !source_in_dock && target_in_dock {
                 // Block stage-to-dock drops
                 return;
+            } else if zone == DropZone::Center {
+                ctx.layout_swap_panes(source, target_id);
+            } else if source == target_id {
+                return;
             } else {
-                if zone == DropZone::Center {
-                    ctx.layout_swap_panes(source, target_id);
-                } else if source == target_id {
-                    return;
-                } else {
-                    ctx.layout_remove(source);
-                    ctx.layout_insert_pane(target_id, source, direction, insert_first);
-                }
+                ctx.layout_remove(source);
+                ctx.layout_insert_pane(target_id, source, direction, insert_first);
             }
             ctx.focus_pane(source);
             ctx.invalidate_chrome();

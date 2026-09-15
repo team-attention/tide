@@ -97,10 +97,7 @@ impl App {
         context_terminal: Option<PaneId>,
         activate: bool,
     ) -> Option<PaneId> {
-        let focused = match self.focus.focused {
-            Some(id) => id,
-            None => return None,
-        };
+        let focused = self.focus.focused?;
 
         if let Some(existing_id) = self.open_target_editor_for_path(&path, context_terminal) {
             if activate {
@@ -158,6 +155,7 @@ impl App {
 }
 
 impl crate::application::ports::inward::PaneLifecyclePort for App {
+    #[expect(clippy::manual_clamp, reason = "Preserve min/max behavior for non-finite geometry values.")]
     fn create_terminal_pane(
         &mut self,
         id: crate::tide_core::PaneId,
@@ -516,7 +514,6 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                 } else {
                     self.dock_split_new_tab_group(direction);
                 }
-                return;
             }
             _ => {
                 // Stage: create Terminal directly. If Stage is stacked, keep zoom active so
@@ -534,7 +531,6 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                 }
                 self.focus_terminal(new_id);
                 self.compute_layout();
-                return;
             }
         }
     }
@@ -551,10 +547,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         context_terminal: Option<PaneId>,
         activate: bool,
     ) -> Option<PaneId> {
-        let focused = match self.focus.focused {
-            Some(id) => id,
-            None => return None,
-        };
+        let focused = self.focus.focused?;
         let new_id = self.layout.alloc_id();
         let pane = match url {
             Some(ref u) => BrowserPane::with_url(new_id, u.clone()),

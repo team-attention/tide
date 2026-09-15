@@ -450,10 +450,8 @@ fn execute_search(ctx: &mut impl PaneAccessPort, pane_id: PaneId) {
         Some(PaneKind::Editor(pane)) => {
             if pane.preview_mode {
                 pane.execute_preview_search();
-            } else {
-                if let Some(ref mut s) = pane.search {
-                    search::execute_search_editor(s, &pane.editor.buffer.lines);
-                }
+            } else if let Some(ref mut s) = pane.search {
+                search::execute_search_editor(s, &pane.editor.buffer.lines);
             }
         }
         Some(PaneKind::Diff(_)) | Some(PaneKind::Browser(_)) | Some(PaneKind::Launcher(_)) => {}

@@ -174,8 +174,7 @@ pub(crate) fn handle_ime_preedit(
         || ctx.modal().save_as_input.is_some()
         || ctx.modal().context_comment_composer.is_some()
         || ctx.search_focus().is_some()
-        || ctx.focused_pane().and_then(|id| ctx.pane(id)).map_or(
-            false,
+        || ctx.focused_pane().and_then(|id| ctx.pane(id)).is_some_and(
             |p| matches!(p, PaneKind::Browser(bp) if bp.url_input_focused),
         )
     {

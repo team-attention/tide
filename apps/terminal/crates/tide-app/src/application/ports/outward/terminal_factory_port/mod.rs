@@ -7,6 +7,7 @@ use std::path::Path;
 type BoxErr = Box<dyn std::error::Error>;
 
 pub(crate) trait TerminalFactoryPort {
+    #[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
     fn create_terminal(
         &self,
         id: PaneId,

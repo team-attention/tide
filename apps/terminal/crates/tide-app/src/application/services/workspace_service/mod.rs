@@ -995,16 +995,13 @@ impl App {
             return;
         }
 
-        match action {
-            crate::ContextMenuAction::Rename => {
-                let current = self.ws.workspaces[ws_index].name.clone();
-                self.modal.workspace_rename = Some(crate::WorkspaceRenameState {
-                    ws_index,
-                    input: crate::InputLine::with_text(current),
-                });
-                self.cache.invalidate_chrome();
-            }
-            _ => {}
+        if action == crate::ContextMenuAction::Rename {
+            let current = self.ws.workspaces[ws_index].name.clone();
+            self.modal.workspace_rename = Some(crate::WorkspaceRenameState {
+                ws_index,
+                input: crate::InputLine::with_text(current),
+            });
+            self.cache.invalidate_chrome();
         }
         self.cache.needs_redraw = true;
     }

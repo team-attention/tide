@@ -91,6 +91,7 @@ fn push_comment_text(
     }
 }
 
+#[expect(clippy::manual_clamp, reason = "Preserve min/max behavior for non-finite geometry values.")]
 pub(crate) fn composer_popup_rect(logical: Size) -> Rect {
     let popup_w = if logical.width > 560.0 {
         (logical.width - 48.0).min(760.0).max(520.0)

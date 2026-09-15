@@ -239,12 +239,11 @@ pub(crate) fn handle_mouse_down(
     }
 
     // Handle search bar clicks
-    if button == MouseButton::Left {
-        if crate::adapter::inward::search_adapter::check_search_bar_click(ctx) {
+    if button == MouseButton::Left
+        && crate::adapter::inward::search_adapter::check_search_bar_click(ctx) {
             ctx.request_redraw();
             return;
         }
-    }
 
     if button == MouseButton::Left
         && !ctx.modal().is_any_open()
@@ -334,31 +333,28 @@ pub(crate) fn handle_mouse_down(
     }
 
     // Branch cleanup bar clicks
-    if button == MouseButton::Left && ctx.modal().branch_cleanup.is_some() {
-        if crate::adapter::inward::click_adapter::pane::handle_branch_cleanup_click(
+    if button == MouseButton::Left && ctx.modal().branch_cleanup.is_some()
+        && crate::adapter::inward::click_adapter::pane::handle_branch_cleanup_click(
             ctx,
             ctx.last_cursor_pos(),
         ) {
             return;
         }
-    }
 
     // Notification bar clicks
-    if button == MouseButton::Left {
-        if crate::adapter::inward::click_adapter::pane::handle_notification_bar_click(
+    if button == MouseButton::Left
+        && crate::adapter::inward::click_adapter::pane::handle_notification_bar_click(
             ctx,
             ctx.last_cursor_pos(),
         ) {
             return;
         }
-    }
 
     // Header clicks
-    if button == MouseButton::Left {
-        if crate::adapter::inward::click_adapter::header::check_header_click(ctx) {
+    if button == MouseButton::Left
+        && crate::adapter::inward::click_adapter::header::check_header_click(ctx) {
             return;
         }
-    }
 
     // Pane tab close
     if button == MouseButton::Left {
@@ -370,14 +366,13 @@ pub(crate) fn handle_mouse_down(
     }
 
     // Launcher Pane choice rows
-    if button == MouseButton::Left {
-        if crate::adapter::inward::click_adapter::pane::handle_launcher_choice_click(
+    if button == MouseButton::Left
+        && crate::adapter::inward::click_adapter::pane::handle_launcher_choice_click(
             ctx,
             ctx.last_cursor_pos(),
         ) {
             return;
         }
-    }
 
     // Right-click on Workspace rail item
     if button == MouseButton::Right {
@@ -398,8 +393,8 @@ pub(crate) fn handle_mouse_down(
     }
 
     // Right-click on file tree
-    if button == MouseButton::Right {
-        if ctx.ft().visible {
+    if button == MouseButton::Right
+        && ctx.ft().visible {
             if let Some(ft_rect) = ctx.ft().rect {
                 let pos = ctx.last_cursor_pos();
                 if pos.x >= ft_rect.x
@@ -457,7 +452,6 @@ pub(crate) fn handle_mouse_down(
                 }
             }
         }
-    }
 
     // Right-click on an Editor Pane: open the Go to Definition / Find
     // References context menu for the identifier under the pointer.
@@ -483,8 +477,8 @@ pub(crate) fn handle_mouse_down(
     }
 
     // File tree clicks
-    if button == MouseButton::Left {
-        if ctx.ft().visible {
+    if button == MouseButton::Left
+        && ctx.ft().visible {
             if let Some(ft_rect) = ctx.ft().rect {
                 let pos = ctx.last_cursor_pos();
                 if pos.x >= ft_rect.x
@@ -497,7 +491,6 @@ pub(crate) fn handle_mouse_down(
                 }
             }
         }
-    }
 
     // Diff pane file header click (toggle expand/collapse) — only on header rows
     if button == MouseButton::Left {

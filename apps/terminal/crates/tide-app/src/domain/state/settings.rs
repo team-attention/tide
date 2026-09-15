@@ -196,6 +196,7 @@ impl KeybindingOverride {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct WorktreeSettings {
     /// Pattern for worktree base directory. Variables: {repo_root}, {branch}.
     /// Example: "{repo_root}.worktree/{branch}"
@@ -207,14 +208,6 @@ pub struct WorktreeSettings {
     pub copy_files: Option<Vec<String>>,
 }
 
-impl Default for WorktreeSettings {
-    fn default() -> Self {
-        Self {
-            base_dir_pattern: None,
-            copy_files: None,
-        }
-    }
-}
 
 impl WorktreeSettings {
     /// Copy configured files from repo root into a newly created worktree.

@@ -145,11 +145,11 @@ declare_class!(
                 let first_responder_is_webview = unsafe {
                     let window: Option<Retained<objc2_app_kit::NSWindow>> =
                         msg_send_id![self, window];
-                    window.map_or(false, |window| {
+                    window.is_some_and(|window| {
                         let responder: Option<
                             Retained<objc2::runtime::AnyObject>,
                         > = msg_send_id![&window, firstResponder];
-                        responder.map_or(false, |r| {
+                        responder.is_some_and(|r| {
                             let name = (*r).class().name();
                             name != "ImeProxyView" && name != "TideView"
                         })
@@ -225,11 +225,11 @@ declare_class!(
                 let first_responder_is_ime_proxy = unsafe {
                     let window: Option<Retained<objc2_app_kit::NSWindow>> =
                         msg_send_id![self, window];
-                    window.map_or(false, |window| {
+                    window.is_some_and(|window| {
                         let responder: Option<
                             Retained<objc2::runtime::AnyObject>,
                         > = msg_send_id![&window, firstResponder];
-                        responder.map_or(false, |r| {
+                        responder.is_some_and(|r| {
                             (*r).class().name() == "ImeProxyView"
                         })
                     })
@@ -358,7 +358,7 @@ declare_class!(
                     // NSEventTypeLeftMouseDown = 1
                     if event_type == 1 {
                         let self_ptr = self as *const Self as *const AnyObject;
-                        if (target as *const AnyObject) != self_ptr {
+                        if !std::ptr::eq(target, self_ptr) {
                             let cls = (*(target as *const AnyObject)).class();
                             let name = cls.name();
                             if name != "ImeProxyView" && name != "TideView" {
@@ -391,7 +391,7 @@ declare_class!(
                         msg_send_id![&w, firstResponder];
                     responder.filter(|r| {
                         let cls = objc2::runtime::AnyClass::get("ImeProxyView");
-                        cls.map_or(false, |c| {
+                        cls.is_some_and(|c| {
                             let yes: Bool = msg_send![&**r, isKindOfClass: c];
                             yes.as_bool()
                         })

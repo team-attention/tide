@@ -53,7 +53,7 @@ impl TerminalFactoryPort for RealTerminalFactory {
             rows,
             None,
             dark_mode,
-            pane_id.map(|id| id as u64),
+            pane_id,
             Some(tide_window_id),
             workspace_name,
             Some(&self.config),

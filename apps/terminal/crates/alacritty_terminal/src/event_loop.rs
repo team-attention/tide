@@ -419,19 +419,15 @@ struct GraphicsEscapeExtractor {
     plain: Vec<u8>,
 }
 
+#[derive(Default)]
 enum GraphicsState {
+    #[default]
     Ground,
     Esc,
     KittyApc(Vec<u8>),
     KittyApcEsc(Vec<u8>),
     Dcs(Vec<u8>),
     DcsEsc(Vec<u8>),
-}
-
-impl Default for GraphicsState {
-    fn default() -> Self {
-        Self::Ground
-    }
 }
 
 impl GraphicsEscapeExtractor {

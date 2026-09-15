@@ -269,7 +269,7 @@ pub(crate) fn clear_wakeup_pending() {
 
 thread_local! {
     static WINDOWS: RefCell<HashMap<TideWindowId, Rc<MacosWindow>>> = RefCell::new(HashMap::new());
-    static NEXT_TIDE_TERMINAL_WINDOW_ID: RefCell<u64> = RefCell::new(TideWindowId::MAIN.get());
+    static NEXT_TIDE_TERMINAL_WINDOW_ID: RefCell<u64> = const { RefCell::new(TideWindowId::MAIN.get()) };
     static NEXT_CASCADE_TOP_LEFT: RefCell<Option<NSPoint>> = const { RefCell::new(None) };
 }
 

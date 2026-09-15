@@ -34,7 +34,7 @@ pub(crate) fn shared_tab_scroll_is_new_gesture(
     }
 
     let direction = scroll_delta.signum();
-    last_event_age.map_or(true, |age| age > SHARED_TAB_SCROLL_IDLE_WINDOW)
+    last_event_age.is_none_or(|age| age > SHARED_TAB_SCROLL_IDLE_WINDOW)
         || last_direction.is_some_and(|prev| prev != 0.0 && prev != direction)
 }
 

@@ -46,6 +46,7 @@ pub(crate) fn terminal_grid_cols(content_rect: Rect, cell_size: Size) -> usize {
 const MIN_READABLE_TERMINAL_BACKEND_COLS: u16 = 4;
 
 /// Polymorphic pane: terminal, editor, diff viewer, embedded browser, or launcher.
+#[expect(clippy::large_enum_variant, reason = "PaneKind owns each Pane directly; boxing changes layout and allocation behavior.")]
 pub enum PaneKind {
     Terminal(TerminalPane),
     Editor(EditorPane),
@@ -119,8 +120,7 @@ fn terminal_selection_row_starts_new_block(trimmed: &str) -> bool {
         || trimmed.chars().next().is_some_and(|ch| ch.is_ascii_digit())
             && trimmed
                 .chars()
-                .skip_while(|ch| ch.is_ascii_digit())
-                .next()
+                .find(|ch| !ch.is_ascii_digit())
                 .is_some_and(|ch| ch == '.' || ch == ')')
 }
 
@@ -166,6 +166,7 @@ impl TerminalPane {
         )
     }
 
+    #[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
     pub fn with_cwd_for_window(
         id: PaneId,
         cols: u16,
@@ -350,8 +351,8 @@ impl TerminalPane {
             line.len()
         };
         let mut text = String::new();
-        for col in 0..col_end {
-            let ch = line[col].character;
+        for cell in line.iter().take(col_end) {
+            let ch = cell.character;
             if ch != '\0' {
                 text.push(ch);
             }
@@ -554,6 +555,7 @@ impl TerminalPane {
         self.backend.scroll_display(delta);
     }
 
+    #[expect(clippy::manual_clamp, reason = "Preserve min/max behavior for non-finite geometry values.")]
     pub fn resize_to_rect(&mut self, rect: Rect, cell_size: Size) {
         let cols = ((rect.width / cell_size.width).max(1.0).min(1000.0)) as u16;
         let rows = ((rect.height / cell_size.height).max(1.0).min(500.0)) as u16;

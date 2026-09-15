@@ -284,8 +284,6 @@ impl WgpuRenderer {
         if italic || bold {
             let fallback_attempts: &[(bool, bool)] = if bold && italic {
                 &[(false, true), (true, false), (false, false)]
-            } else if italic {
-                &[(false, false)]
             } else {
                 &[(false, false)]
             };

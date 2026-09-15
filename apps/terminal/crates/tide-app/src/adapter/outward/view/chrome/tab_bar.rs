@@ -290,7 +290,7 @@ pub(super) fn render_pane_chrome(
                 continue;
             };
             if let Some(tg) = tp.dock_layout.tab_group_containing(pid) {
-                if !header::dock_tab_group_uses_shared_tab_bar(&tg) {
+                if !header::dock_tab_group_uses_shared_tab_bar(tg) {
                     continue;
                 }
                 dock_tab_groups.insert(pid, tg.clone());

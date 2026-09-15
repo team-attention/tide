@@ -125,6 +125,7 @@ fn draw_file_tree_row_slab(
     }
 }
 
+#[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
 fn draw_file_tree_icon_columns(
     renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,

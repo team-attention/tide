@@ -128,7 +128,7 @@ impl GatewayStatus {
             if matches {
                 sub.tx.send(msg.clone()).is_ok()
             } else {
-                !sub.tx.send(String::new()).is_err()
+                sub.tx.send(String::new()).is_ok()
             }
         });
     }

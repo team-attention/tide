@@ -201,7 +201,7 @@ pub(crate) fn render_ime_and_drop_preview(
                 underline: false,
             };
             let clip = Rect::new(bg_x, bg_y, bg_w, bg_h);
-            renderer.draw_top_text(&source_label, text_pos, label_style, clip);
+            renderer.draw_top_text(source_label, text_pos, label_style, clip);
         }
     }
 }

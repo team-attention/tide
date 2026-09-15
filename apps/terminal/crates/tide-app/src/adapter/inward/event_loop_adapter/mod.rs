@@ -121,11 +121,10 @@ pub(crate) fn handle_platform_event(
         }
         PlatformEvent::CloseRequested => {
             // Check if there are running terminals or dirty editors
-            if ctx.has_terminals() || ctx.has_dirty_editors() {
-                if !crate::tide_platform::show_close_confirm() {
+            if (ctx.has_terminals() || ctx.has_dirty_editors())
+                && !crate::tide_platform::show_close_confirm() {
                     return PlatformEventOutcome::Continue;
                 }
-            }
             ctx.save_full_session();
             window.close_window();
             return PlatformEventOutcome::ShutdownWindow;
@@ -907,7 +906,7 @@ impl App {
                                 // Keep wrapper-managed presence even when process scan misses a
                                 // launch window or intermittently fails across Workspace swaps.
                                 let keep_existing =
-                                    self.gateway.detected_agents.get(&id).map_or(false, |a| {
+                                    self.gateway.detected_agents.get(&id).is_some_and(|a| {
                                         a.status.is_some()
                                             || (a.wrapper_managed && a.gateway_connected)
                                     });
@@ -938,7 +937,7 @@ impl App {
                 .clock
                 .now()
                 .duration_since(self.timing.cursor_blink_at);
-            let blink_phase = (blink_elapsed.as_millis() / 530) % 2 == 0;
+            let blink_phase = (blink_elapsed.as_millis() / 530).is_multiple_of(2);
             if blink_phase != self.timing.cursor_visible {
                 self.timing.cursor_visible = blink_phase;
                 crate::AppCorePort::request_redraw(&mut self);
@@ -963,10 +962,10 @@ impl App {
             if self.cache.needs_redraw && !self.window.is_occluded && self.input.batch_depth == 0 {
                 let now = self.ports.clock.now();
                 let skip_coalesce = self.input.input_just_sent
-                    || self.input.input_sent_at.map_or(false, |at| {
+                    || self.input.input_sent_at.is_some_and(|at| {
                         now.duration_since(at) < Duration::from_millis(16)
                     })
-                    || self.input.scroll_at.map_or(false, |at| {
+                    || self.input.scroll_at.is_some_and(|at| {
                         now.duration_since(at) < Duration::from_millis(32)
                     });
                 if skip_coalesce
@@ -1035,10 +1034,10 @@ impl App {
         // Frame pacing: if we need to render but are within 2ms coalescing window
         if self.cache.needs_redraw && !self.window.is_occluded && self.input.batch_depth == 0 {
             let skip_coalesce = self.input.input_just_sent
-                || self.input.input_sent_at.map_or(false, |at| {
+                || self.input.input_sent_at.is_some_and(|at| {
                     now.duration_since(at) < Duration::from_millis(16)
                 })
-                || self.input.scroll_at.map_or(false, |at| {
+                || self.input.scroll_at.is_some_and(|at| {
                     now.duration_since(at) < Duration::from_millis(32)
                 });
             if skip_coalesce {
@@ -1078,7 +1077,8 @@ impl App {
         if target != self.ime_last_target() {
             if !self.ime_preedit().is_empty() {
                 if let Some(old_target) = self.ime_last_target() {
-                    self.commit_text_to_pane(old_target, &self.ime_preedit().to_string());
+                    let preedit = self.ime_preedit().to_owned();
+                    self.commit_text_to_pane(old_target, &preedit);
                 }
             }
             self.set_ime_composing(false);
@@ -1507,6 +1507,7 @@ pub(crate) fn effective_ime_target(
     target
 }
 
+#[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
 pub(crate) fn overlay_ime_cursor_area(
     focused: Option<crate::tide_core::PaneId>,
     search_focus: Option<crate::tide_core::PaneId>,

@@ -213,7 +213,7 @@ impl App {
             Some(chrome::render_chrome(
                 self,
                 &mut renderer,
-                &p,
+                p,
                 logical,
                 focused,
                 show_file_tree,
@@ -227,7 +227,7 @@ impl App {
 
         let t_chrome = t0.elapsed();
 
-        let gen_updates = grid::render_grid(self, &mut renderer, &p, &visual_pane_rects);
+        let gen_updates = grid::render_grid(self, &mut renderer, p, &visual_pane_rects);
 
         {
             let order: Vec<u64> = visual_pane_rects.iter().map(|(id, _)| *id).collect();
@@ -239,7 +239,7 @@ impl App {
         cursor::render_cursor_and_highlights(
             self,
             &mut renderer,
-            &p,
+            p,
             &visual_pane_rects,
             focused,
             search_focus,
@@ -248,16 +248,16 @@ impl App {
         hover::render_hover(
             self,
             &mut renderer,
-            &p,
+            p,
             logical,
             &visual_pane_rects,
             show_file_tree,
             file_tree_scroll,
         );
 
-        overlays::render_overlays(self, &mut renderer, &p, &visual_pane_rects);
+        overlays::render_overlays(self, &mut renderer, p, &visual_pane_rects);
 
-        ime::render_ime_and_drop_preview(self, &mut renderer, &p, &visual_pane_rects, focused);
+        ime::render_ime_and_drop_preview(self, &mut renderer, p, &visual_pane_rects, focused);
 
         // ── Post-render: apply mutations returned by render functions ──
         if let Some(zones) = chrome_hit_zones {

@@ -451,8 +451,7 @@ impl Highlighter {
         let end_line = (start_line + count).min(lines.len());
         let mut result = Vec::with_capacity(count);
 
-        for i in resume_line..end_line {
-            let line = &lines[i];
+        for (i, line) in lines.iter().enumerate().take(end_line).skip(resume_line) {
             let line_with_newline = format!("{}\n", line);
 
             let ops = match parse_state.parse_line(&line_with_newline, &self.syntax_set) {

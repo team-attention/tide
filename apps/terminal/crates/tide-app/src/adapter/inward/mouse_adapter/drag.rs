@@ -250,14 +250,14 @@ pub(crate) fn handle_cursor_moved_logical(
             crate::adapter::inward::click_adapter::hit_test::compute_hover_target(ctx, pos);
         let old_hover = ctx.interaction().hover_target.clone();
         if new_hover != old_hover {
-            let chrome_affected = old_hover.as_ref().map_or(false, |h| h.affects_chrome())
-                || new_hover.as_ref().map_or(false, |h| h.affects_chrome());
+            let chrome_affected = old_hover.as_ref().is_some_and(|h| h.affects_chrome())
+                || new_hover.as_ref().is_some_and(|h| h.affects_chrome());
             let visual_changed = old_hover
                 .as_ref()
-                .map_or(false, |h| h.has_visual_feedback())
+                .is_some_and(|h| h.has_visual_feedback())
                 || new_hover
                     .as_ref()
-                    .map_or(false, |h| h.has_visual_feedback());
+                    .is_some_and(|h| h.has_visual_feedback());
             ctx.interaction_mut().hover_target = new_hover;
             ctx.update_cursor_icon(window);
             if chrome_affected {

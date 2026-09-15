@@ -466,12 +466,12 @@ fn workspace_stage_agent_event(
     })
 }
 
-fn workspace_stage_agent_event_candidates<'a>(
-    app: &'a App,
+fn workspace_stage_agent_event_candidates(
+    app: &App,
     workspace_index: usize,
 ) -> Vec<(
     crate::tide_core::PaneId,
-    &'a crate::state::gateway_status::AgentInfo,
+    &crate::state::gateway_status::AgentInfo,
 )> {
     workspace_stage_terminal_pane_ids(app, workspace_index)
         .into_iter()
@@ -834,7 +834,7 @@ fn workspace_terminal_cwd(app: &App, workspace_index: usize) -> Option<std::path
             workspace
                 .panes
                 .values()
-                .find_map(|pane| terminal_cwd_from_pane(pane))
+                .find_map(terminal_cwd_from_pane)
         })
 }
 
@@ -1210,7 +1210,7 @@ pub(super) fn render_titlebar_and_sidebar(
         let edge_inset = PANE_CORNER_RADIUS;
 
         // Focus-dependent styling (matches file_tree.rs pattern)
-        let sidebar_focused = app.focus.focus_area == crate::state::FocusArea::FileTree && false; // sidebar has no FocusArea yet
+        let sidebar_focused = false; // sidebar has no FocusArea yet
         let border_color = crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.0);
         let border_w = 0.0_f32;
 
@@ -1286,14 +1286,12 @@ pub(super) fn render_titlebar_and_sidebar(
                     ),
                     accent,
                 );
-            } else {
-                if matches!(
-                    app.interaction.hover_target,
-                    Some(HoverTarget::WorkspaceSidebarItem(idx)) if idx == i
-                ) {
-                    // Hover highlight (matches file_tree.rs row radius)
-                    renderer.draw_chrome_rounded_rect(item_rect, p.badge_bg, FILE_TREE_ROW_RADIUS);
-                }
+            } else if matches!(
+                app.interaction.hover_target,
+                Some(HoverTarget::WorkspaceSidebarItem(idx)) if idx == i
+            ) {
+                // Hover highlight (matches file_tree.rs row radius)
+                renderer.draw_chrome_rounded_rect(item_rect, p.badge_bg, FILE_TREE_ROW_RADIUS);
             }
 
             // Inline rename: when workspace_rename targets this rail item,

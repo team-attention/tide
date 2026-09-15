@@ -149,7 +149,7 @@ impl DiffPane {
         // Check if anything actually changed
         let same_files = files.len() == self.files.len()
             && files.iter().enumerate().all(|(i, f)| {
-                self.files.get(i).map_or(false, |old| {
+                self.files.get(i).is_some_and(|old| {
                     old == f && self.diff_cache.get(&i) == diff_cache.get(&i)
                 })
             });
@@ -501,6 +501,7 @@ impl DiffPane {
     }
 
     /// Render the diff pane content into the grid layer.
+    #[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
     pub fn render_grid(
         &self,
         rect: Rect,

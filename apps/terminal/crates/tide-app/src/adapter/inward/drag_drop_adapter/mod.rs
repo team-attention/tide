@@ -161,12 +161,7 @@ fn workspace_sidebar_item_at_pos(
         return None;
     }
     let geo = ws_sidebar_geometry(ctx)?;
-    for i in 0..ctx.ws_workspaces_len() {
-        if geo.item_rect(i).contains(pos) {
-            return Some(i);
-        }
-    }
-    None
+    (0..ctx.ws_workspaces_len()).find(|&i| geo.item_rect(i).contains(pos))
 }
 
 /// Get the visual rect of a workspace sidebar item (for rendering drag highlights).
@@ -214,11 +209,10 @@ fn compute_tree_drop_target(
         }
 
         // Skip if dragging onto self, except for Dock TabGroup extraction.
-        if id == source {
-            if !source_in_multi_tab_group(ctx, source) {
+        if id == source
+            && !source_in_multi_tab_group(ctx, source) {
                 continue;
             }
-        }
 
         // Use visual rect for zone computation: rel coords outside [0,1] = in gap → edge zone
         let visual_rect = ctx

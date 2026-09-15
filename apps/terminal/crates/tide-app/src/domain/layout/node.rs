@@ -771,6 +771,7 @@ impl Node {
 
 /// Try to find a clean split along the given axis.
 /// Returns (left_group, right_group, ratio) if a clean partition exists.
+#[expect(clippy::type_complexity, reason = "Keep the established callback or result contract without an unrelated API refactor.")]
 fn try_split(
     pane_rects: &[(PaneId, Rect)],
     direction: SplitDirection,
@@ -810,11 +811,10 @@ fn try_split(
         SplitDirection::Horizontal => {
             for (_, r) in pane_rects {
                 let edge = r.y + r.height;
-                if (edge - max_y).abs() > eps {
-                    if !candidates.iter().any(|&c| (c - edge).abs() < eps) {
+                if (edge - max_y).abs() > eps
+                    && !candidates.iter().any(|&c| (c - edge).abs() < eps) {
                         candidates.push(edge);
                     }
-                }
             }
         }
     }

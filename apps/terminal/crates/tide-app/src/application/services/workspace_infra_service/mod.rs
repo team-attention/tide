@@ -370,11 +370,10 @@ impl App {
         if let Some(id) = self.focus.focused {
             self.router.set_focused(id);
             // Ensure stage_focused is set if focused pane is a terminal
-            if self.focus.stage_focused.is_none() {
-                if matches!(self.panes.get(&id), Some(PaneKind::Terminal(_))) {
+            if self.focus.stage_focused.is_none()
+                && matches!(self.panes.get(&id), Some(PaneKind::Terminal(_))) {
                     self.focus.stage_focused = Some(id);
                 }
-            }
         }
         self.pane_rects.clear();
         self.visual_pane_rects.clear();

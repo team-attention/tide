@@ -322,12 +322,12 @@ impl WgpuRenderer {
                 if let Some(glyphs) =
                     self.shape_grid_ligature_run(&text, row, col, style, cell_size, offset)
                 {
-                    for bg_col in col..end {
+                    for (bg_col, cell) in cells.iter().enumerate().take(end).skip(col) {
                         self.draw_grid_cell(
                             ' ',
                             row,
                             bg_col,
-                            cells[bg_col].style,
+                            cell.style,
                             cell_size,
                             offset,
                         );

@@ -25,6 +25,9 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.92.0"
+          components: clippy
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
@@ -33,6 +36,18 @@ jobs:
         uses: baptiste0928/cargo-install@v3
         with:
           crate: cargo-bundle
+
+      - name: Setup Node for wrapper verification
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Verify Terminal before packaging
+        run: |
+          cargo clippy --workspace -- -D warnings
+          cargo test --workspace
+          node scripts/test-vibe-wrapper.mjs
+          bash scripts/lint-arch.sh
 
       - name: Build .app bundle
         run: cargo bundle --profile dist -p tide-app

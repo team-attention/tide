@@ -118,8 +118,8 @@ pub(crate) fn render_hover(
                             let y =
                                 content_y + FILE_TREE_HEADER_HEIGHT + *index as f32 * line_height
                                     - file_tree_scroll;
-                            if y + line_height > header_bottom && y < content_y + content_h {
-                                if file_tree_hover_shows_overlay(
+                            if y + line_height > header_bottom && y < content_y + content_h
+                                && file_tree_hover_shows_overlay(
                                     app.focus.focus_area == crate::state::FocusArea::FileTree,
                                     *index,
                                     app.ft.cursor,
@@ -138,7 +138,6 @@ pub(crate) fn render_hover(
                                         renderer.draw_rect(row_rect, p.hover_file_tree);
                                     }
                                 }
-                            }
                         }
                     }
                 }

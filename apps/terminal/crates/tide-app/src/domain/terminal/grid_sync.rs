@@ -624,6 +624,7 @@ impl GridSyncer {
 // Sync thread entry point
 // ──────────────────────────────────────────────
 
+#[expect(clippy::type_complexity, reason = "Keep the established callback or result contract without an unrelated API refactor.")]
 pub(super) fn grid_sync_thread_main(
     thread_handle: Arc<Mutex<Option<std::thread::Thread>>>,
     mut syncer: GridSyncer,
@@ -658,8 +659,8 @@ pub(super) fn grid_sync_thread_main(
                 snap.wrapped_rows.clone_from(&syncer.wrapped_rows);
                 snap.generation = syncer.grid_generation;
                 snap.cursor = syncer.cached_cursor;
+                snapshot_ready.store(true, Ordering::Relaxed);
             }
-            snapshot_ready.store(true, Ordering::Relaxed);
 
             // Wake main thread event loop
             if let Ok(guard) = waker.lock() {

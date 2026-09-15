@@ -264,6 +264,7 @@ impl App {
         }
     }
 
+    #[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
     fn insert_context_artifact(
         &mut self,
         source_pane_id: crate::tide_core::PaneId,

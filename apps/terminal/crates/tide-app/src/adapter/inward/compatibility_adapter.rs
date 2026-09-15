@@ -187,20 +187,20 @@ fn run_terminal_compatibility() -> Result<CompatibilityReport, Box<dyn std::erro
 }
 
 fn run_workbench_compatibility() -> Result<CompatibilityReport, Box<dyn std::error::Error>> {
-    let mut cases = Vec::new();
-
-    cases.push(mcp_tool_contract_case());
-    cases.push(observe_workspace_case()?);
-    cases.push(browser_runtime_router_case()?);
-    cases.push(workspace_task_monitor_case()?);
-    cases.push(project_local_config_case()?);
-    cases.push(observe_terminal_surface_case()?);
-    cases.push(find_terminal_scrollback_case()?);
-    cases.push(find_editor_buffer_case()?);
-    cases.push(replace_editor_buffer_case()?);
-    cases.push(caller_scoped_list_panes_case()?);
-    cases.push(open_browser_context_surface_case()?);
-    cases.push(context_artifact_round_trip_case()?);
+    let cases = vec![
+        mcp_tool_contract_case(),
+        observe_workspace_case()?,
+        browser_runtime_router_case()?,
+        workspace_task_monitor_case()?,
+        project_local_config_case()?,
+        observe_terminal_surface_case()?,
+        find_terminal_scrollback_case()?,
+        find_editor_buffer_case()?,
+        replace_editor_buffer_case()?,
+        caller_scoped_list_panes_case()?,
+        open_browser_context_surface_case()?,
+        context_artifact_round_trip_case()?,
+    ];
 
     let passed = cases.iter().all(|case| case.passed);
     Ok(CompatibilityReport {
@@ -991,7 +991,7 @@ fn cli_command(
     params: serde_json::Value,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     app.handle_cli_command(method, params)
-        .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, format!("{err:?}")).into())
+        .map_err(|err| std::io::Error::other(format!("{err:?}")).into())
 }
 
 #[cfg(test)]

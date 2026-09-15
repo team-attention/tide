@@ -1737,7 +1737,7 @@ fn clear_browser_operation_visuals_for_terminal(
     }
 }
 
-fn navigation_browser<'a>(pane_id: u64, pane: &'a PaneKind) -> Result<&'a BrowserPane, CliError> {
+fn navigation_browser(pane_id: u64, pane: &PaneKind) -> Result<&BrowserPane, CliError> {
     if let PaneKind::Browser(browser) = pane {
         if !browser.render_mode {
             return Ok(browser);
@@ -1756,10 +1756,10 @@ fn navigation_browser<'a>(pane_id: u64, pane: &'a PaneKind) -> Result<&'a Browse
     })
 }
 
-fn navigation_browser_mut<'a>(
+fn navigation_browser_mut(
     pane_id: u64,
-    pane: &'a mut PaneKind,
-) -> Result<&'a mut BrowserPane, CliError> {
+    pane: &mut PaneKind,
+) -> Result<&mut BrowserPane, CliError> {
     if let PaneKind::Browser(browser) = pane {
         if !browser.render_mode {
             return Ok(browser);
@@ -2058,10 +2058,10 @@ fn terminal_context_surface_mode_label(mode: crate::state::ViewMode) -> &'static
     }
 }
 
-fn scoped_pane_entries<'a>(
-    ctx: &'a (impl DockPort + GatewayPort + PaneAccessPort),
+fn scoped_pane_entries(
+    ctx: &(impl DockPort + GatewayPort + PaneAccessPort),
     caller_terminal_id: Option<PaneId>,
-) -> Vec<(PaneId, &'a PaneKind)> {
+) -> Vec<(PaneId, &PaneKind)> {
     ctx.pane_entries()
         .into_iter()
         .filter(|(id, _pane)| {
@@ -2193,11 +2193,11 @@ fn workspace_context_artifact_counts(
         )
 }
 
-fn workspace_task_pane_entries<'a>(
-    app: &'a crate::App,
+fn workspace_task_pane_entries(
+    app: &crate::App,
     workspace_idx: usize,
     caller_terminal_id: Option<PaneId>,
-) -> Vec<(PaneId, &'a PaneKind)> {
+) -> Vec<(PaneId, &PaneKind)> {
     let raw_entries = if workspace_idx == app.ws.active {
         app.panes
             .iter()
@@ -5955,9 +5955,9 @@ const INTEGRATION_TOOLS: &[IntegrationTool] = &[
 ];
 
 fn expand_home(path: &str) -> std::path::PathBuf {
-    if path.starts_with("~/") {
+    if let Some(relative) = path.strip_prefix("~/") {
         if let Ok(home) = std::env::var("HOME") {
-            return std::path::PathBuf::from(home).join(&path[2..]);
+            return std::path::PathBuf::from(home).join(relative);
         }
     }
     std::path::PathBuf::from(path)
@@ -6163,7 +6163,7 @@ fn cli_notify(
     let matches_current_tide_instance = params
         .get("tide_instance_pid")
         .and_then(|v| v.as_u64())
-        .map_or(true, |pid| pid == std::process::id() as u64);
+        .is_none_or(|pid| pid == std::process::id() as u64);
 
     let codex_stop_resolution = if event == "codex-stop" {
         Some(resolve_codex_stop_payload(params.get("payload")))

@@ -547,6 +547,7 @@ pub(crate) fn header_close_raster_icon_asset() -> &'static crate::tide_renderer:
     &FLATICON_CLOSE
 }
 
+#[expect(clippy::manual_clamp, reason = "Preserve min/max behavior for non-finite geometry values.")]
 pub(crate) fn active_tab_width_cap(available_w: f32) -> f32 {
     available_w
         .min(ACTIVE_TAB_SOFT_MAX_WIDTH)
@@ -758,6 +759,7 @@ fn render_header_action_icon(
     }
 }
 
+#[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
 fn render_header_action_strip(
     renderer: &mut WgpuRenderer,
     start_x: f32,
@@ -781,6 +783,7 @@ fn render_header_action_strip(
     }
 }
 
+#[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
 fn render_header_surface_identity(
     renderer: &mut WgpuRenderer,
     x: f32,
@@ -870,6 +873,7 @@ fn render_header_close_icon(
     }
 }
 
+#[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
 fn render_header_leading_view_mode_action(
     renderer: &mut WgpuRenderer,
     rect: Rect,
@@ -1072,6 +1076,7 @@ pub(crate) fn active_tab_badges(
 /// Returns hit zones for click handling.
 /// When `has_dock_tab_bar` is true, skips the title badge and pane-specific badges
 /// because the dock tab bar already shows tab labels in the same header area.
+#[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
 pub fn render_pane_header(
     id: PaneId,
     rect: Rect,
@@ -1102,6 +1107,7 @@ pub fn render_pane_header(
     )
 }
 
+#[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
 pub fn render_pane_header_inner(
     id: PaneId,
     rect: Rect,
@@ -1446,8 +1452,8 @@ pub fn render_pane_header_inner(
         cx += bw + badge_gap;
     }
 
-    if !header_actions.is_empty() {
-        if header_chrome.show_header_action_strip {
+    if !header_actions.is_empty()
+        && header_chrome.show_header_action_strip {
             render_header_action_strip(
                 renderer,
                 action_strip_start_x,
@@ -1459,7 +1465,6 @@ pub fn render_pane_header_inner(
                 &mut zones,
             );
         }
-    }
 
     // Draw close icon centered in hit area.
     let close_hit_rect = Rect::new(close_hit_x, rect.y, close_hit_size, TAB_BAR_HEIGHT);
@@ -1477,6 +1482,7 @@ pub fn render_pane_header_inner(
 /// Shows tab labels for all tabs in the group; the active tab is highlighted.
 /// Includes close/maximize buttons on the right side.
 /// Returns hit zones for tab clicks.
+#[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
 pub fn render_dock_tab_bar(
     pane_id: PaneId,
     rect: Rect,
@@ -1519,6 +1525,7 @@ pub fn render_dock_tab_bar(
 /// Shared tab bar rendering for both Dock and Stage stacked mode.
 /// `is_dock` determines the hit action type (DockTab vs StageTab).
 /// `_is_stacked` true = zoomed/stacked mode; false = tab group within split.
+#[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
 fn render_tab_bar_impl(
     pane_id: PaneId,
     rect: Rect,
@@ -1839,7 +1846,7 @@ fn render_tab_bar_impl(
             .clip_to(&tab_clip);
         if tab_hit_rect.width > 0.0 {
             zones.push(HeaderHitZone {
-                pane_id: pane_id,
+                pane_id,
                 rect: tab_hit_rect,
                 action,
             });
@@ -1911,6 +1918,7 @@ fn render_tab_bar_impl(
 }
 
 /// Render a Stage stacked-mode tab bar showing all Stage terminals.
+#[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
 pub fn render_stage_tab_bar(
     zoomed_pane: PaneId,
     rect: Rect,
@@ -1952,6 +1960,7 @@ pub fn render_stage_tab_bar(
 }
 
 /// Render a Dock stacked-mode tab bar showing all Terminal Context Surface panes.
+#[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
 pub fn render_dock_stacked_tab_bar(
     active_pane: PaneId,
     rect: Rect,
@@ -2015,6 +2024,7 @@ pub(crate) fn dock_tab_label(panes: &HashMap<PaneId, PaneKind>, id: PaneId) -> S
 }
 
 /// Render a badge pill with custom background color.
+#[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
 pub(crate) fn render_badge_colored(
     renderer: &mut WgpuRenderer,
     x: f32,

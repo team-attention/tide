@@ -53,6 +53,7 @@ impl MarkdownTheme {
         }
     }
 
+    #[expect(clippy::approx_constant, reason = "This number is a color channel, not a mathematical constant.")]
     pub fn light() -> Self {
         Self {
             body: Color::rgb(0.0, 0.0, 0.0),

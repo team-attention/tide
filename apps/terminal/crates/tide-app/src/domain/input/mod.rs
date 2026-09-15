@@ -788,9 +788,7 @@ impl Router {
             }
             // Cmd+V (macOS) / Ctrl+Shift+V (Linux) -> paste
             Key::Char('v') | Key::Char('V') => {
-                if modifiers.meta {
-                    Some(GlobalAction::Paste)
-                } else if modifiers.ctrl && modifiers.shift {
+                if modifiers.meta || (modifiers.ctrl && modifiers.shift) {
                     Some(GlobalAction::Paste)
                 } else {
                     None // Ctrl+V → terminal 0x16
@@ -798,9 +796,7 @@ impl Router {
             }
             // Cmd+C (macOS) / Ctrl+Shift+C (Linux) -> copy
             Key::Char('c') | Key::Char('C') => {
-                if modifiers.meta {
-                    Some(GlobalAction::Copy)
-                } else if modifiers.ctrl && modifiers.shift {
+                if modifiers.meta || (modifiers.ctrl && modifiers.shift) {
                     Some(GlobalAction::Copy)
                 } else {
                     None // Ctrl+C → terminal SIGINT

@@ -95,6 +95,7 @@ impl GlyphAtlas {
     }
 
     /// Upload an MSDF glyph (RGBA data) into the atlas, returning the region.
+    #[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
     pub fn upload_glyph(
         &mut self,
         queue: &wgpu::Queue,

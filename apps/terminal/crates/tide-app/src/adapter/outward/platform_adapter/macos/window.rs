@@ -81,8 +81,8 @@ declare_class!(
                     let responder: Option<Retained<AnyObject>> =
                         msg_send_id![self, firstResponder];
                     let ime_cls = objc2::runtime::AnyClass::get("ImeProxyView");
-                    let is_ime_proxy = responder.as_ref().map_or(false, |r| {
-                        ime_cls.map_or(false, |c| {
+                    let is_ime_proxy = responder.as_ref().is_some_and(|r| {
+                        ime_cls.is_some_and(|c| {
                             let yes: Bool = msg_send![&**r, isKindOfClass: c];
                             yes.as_bool()
                         })
@@ -111,7 +111,7 @@ declare_class!(
                         let ime_cls = objc2::runtime::AnyClass::get("ImeProxyView");
                         for i in 0..subviews.len() {
                             let sv = subviews.objectAtIndex(i);
-                            let is_ime = ime_cls.map_or(false, |c| {
+                            let is_ime = ime_cls.is_some_and(|c| {
                                 let yes: Bool = msg_send![&*sv, isKindOfClass: c];
                                 yes.as_bool()
                             });
