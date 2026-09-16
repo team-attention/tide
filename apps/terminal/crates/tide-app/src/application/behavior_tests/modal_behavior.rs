@@ -60,13 +60,13 @@ fn modal_stack_close_all_dismisses_all_modals() {
 // --- UC-1: ModalInterception ---
 
 #[test]
-fn config_page_blocks_all_text_input() {
-    // UC-1 BR-1: Config page blocks all text input
+fn config_page_routes_text_to_search_without_editing_pane() {
+    // shortcut-settings UC-1 BR-5: Config page search owns text input
     let (mut app, _id) = app_with_editor();
     app.modal.config_page = Some(ConfigPageState::new(vec![], String::new(), String::new()));
     assert_eq!(
         crate::adapter::inward::text_routing_adapter::text_input_target(&app),
-        crate::adapter::inward::text_routing_adapter::TextInputTarget::Consumed,
+        crate::adapter::inward::text_routing_adapter::TextInputTarget::ConfigPageSearch,
     );
 }
 
@@ -153,7 +153,7 @@ fn config_page_has_highest_priority_in_modal_stack() {
     app.modal.config_page = Some(ConfigPageState::new(vec![], String::new(), String::new()));
     assert_eq!(
         crate::adapter::inward::text_routing_adapter::text_input_target(&app),
-        crate::adapter::inward::text_routing_adapter::TextInputTarget::Consumed,
+        crate::adapter::inward::text_routing_adapter::TextInputTarget::ConfigPageSearch,
     );
 }
 

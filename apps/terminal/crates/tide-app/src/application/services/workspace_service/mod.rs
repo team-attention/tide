@@ -672,23 +672,14 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
 
         if page.dirty {
             let defaults = crate::tide_input::KeybindingMap::default_bindings();
-            let overrides: Vec<crate::state::settings::KeybindingOverride> = page
-                .bindings
-                .iter()
-                .filter(|(action, hotkey)| {
-                    !defaults.iter().any(|(dh, da)| {
-                        da.action_key() == action.action_key()
-                            && dh.key_name() == hotkey.key_name()
-                            && dh.shift == hotkey.shift
-                            && dh.ctrl == hotkey.ctrl
-                            && dh.meta == hotkey.meta
-                            && dh.alt == hotkey.alt
-                    })
+            let overrides = page.bindings.iter().filter_map(|(action, hotkey)| {
+                let default = defaults.iter().find(|(_, a)| a == action).map(|(h, _)| h);
+                if hotkey.as_ref() == default { return None; }
+                Some(match hotkey {
+                    Some(hotkey) => crate::state::settings::KeybindingOverride::from_binding(hotkey, action),
+                    None => crate::state::settings::KeybindingOverride { action: action.action_key().into(), key: String::new(), shift: false, ctrl: false, meta: false, alt: false },
                 })
-                .map(|(action, hotkey)| {
-                    crate::state::settings::KeybindingOverride::from_binding(hotkey, action)
-                })
-                .collect();
+            }).collect();
 
             self.settings.keybindings = overrides;
 
@@ -930,25 +921,11 @@ impl App {
         let map = self.router.keybinding_map.as_ref();
         let all_actions = GA::all_actions();
 
-        let bindings: Vec<(GA, crate::tide_input::Hotkey)> = all_actions
-            .into_iter()
-            .map(|action| {
-                let hotkey = map
-                    .and_then(|m| m.hotkey_for(&action).cloned())
-                    .or_else(|| {
-                        let defaults = KeybindingMap::new();
-                        defaults.hotkey_for(&action).cloned()
-                    })
-                    .unwrap_or(crate::tide_input::Hotkey::new(
-                        crate::tide_core::Key::Char('?'),
-                        false,
-                        false,
-                        false,
-                        false,
-                    ));
-                (action, hotkey)
-            })
-            .collect();
+        let defaults = KeybindingMap::new();
+        let current = map.unwrap_or(&defaults);
+        let bindings = all_actions.into_iter().map(|action| {
+            let hotkey = current.hotkey_for(&action).cloned(); (action, hotkey)
+        }).collect();
 
         let worktree_pattern = self
             .settings
@@ -965,13 +942,15 @@ impl App {
             .map(|v| v.join(", "))
             .unwrap_or_default();
 
-        self.modal.config_page = Some(crate::ConfigPageState::with_terminal_settings(
-            bindings,
+        let mut page = crate::ConfigPageState::with_terminal_settings(
+            Vec::new(),
             worktree_pattern,
             copy_files,
             self.settings.terminal.osc52_read,
             self.settings.terminal.resolved_scrollback_lines(),
-        ));
+        );
+        page.bindings = bindings;
+        self.modal.config_page = Some(page);
         self.cache.invalidate_chrome();
     }
 }

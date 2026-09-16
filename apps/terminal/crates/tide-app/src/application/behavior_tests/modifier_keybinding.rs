@@ -696,38 +696,14 @@ fn cmd_shift_hjkl_maps_to_dock_navigate() {
 }
 
 #[test]
-fn keybinding_settings_omit_retired_tab_group_and_unbound_dock_split_actions() {
-    // UC-10 BR-1/BR-2/BR-3: Settings hides retired tab-group shortcuts and
-    // no-default internals, while exposing every default-bound action.
+fn keybinding_settings_include_all_serializable_actions() {
+    // Spec: shortcut-settings UC-1 BR-1 supersedes the former common-actions filter.
     let actions = GlobalAction::all_actions();
-    let defaults = KeybindingMap::new();
-
-    for retired in [
-        GlobalAction::TabPrev,
-        GlobalAction::TabNext,
-        GlobalAction::DockTabPrev,
-        GlobalAction::DockTabNext,
-        GlobalAction::DockSplitHorizontal,
-        GlobalAction::DockSplitVertical,
-        GlobalAction::DockNewTab,
-        GlobalAction::SplitVertical,
-        GlobalAction::ToggleTheme,
-        GlobalAction::ToggleDockPin,
-    ] {
-        assert!(
-            !actions.iter().any(|action| action == &retired),
-            "{} should not be shown in keybinding settings",
-            retired.action_key()
-        );
+    for action in &actions {
+        assert_eq!(GlobalAction::from_action_key(action.action_key()), Some(action.clone()));
     }
-
-    for action in actions {
-        assert!(
-            defaults.hotkey_for(&action).is_some(),
-            "{} should not be shown without a default hotkey",
-            action.action_key()
-        );
-    }
+    assert!(actions.contains(&GlobalAction::SplitVertical));
+    assert!(actions.contains(&GlobalAction::DockNewTab));
 
     for (_, default_action) in KeybindingMap::default_bindings() {
         assert!(
@@ -767,11 +743,11 @@ fn keybinding_settings_swap_conflicting_hotkeys_instead_of_placeholder_unbinding
 
     assert_eq!(
         page.bindings[0].1,
-        crate::tide_input::Hotkey::new(Key::Char('e'), false, false, true, false)
+        Some(crate::tide_input::Hotkey::new(Key::Char('e'), false, false, true, false))
     );
     assert_eq!(
         page.bindings[1].1,
-        crate::tide_input::Hotkey::new(Key::Char('b'), false, false, true, false)
+        Some(crate::tide_input::Hotkey::new(Key::Char('b'), false, false, true, false))
     );
     assert!(page.dirty);
 }
@@ -1016,4 +992,73 @@ fn toggle_zoom_in_settings_is_silently_dropped() {
         Some(GlobalAction::ToggleStacked),
         "ToggleStacked should still parse correctly"
     );
+}
+
+// Spec: docs/specs/shortcut-settings.md
+// --- UC-1: Configure shortcuts ---
+#[test]
+fn shortcut_settings_reset_and_conflict_preserve_intent() {
+    // UC-1 BR-3,4: Conflict leaves bindings untouched; reset restores defaults.
+    let mut page = ConfigPageState::new(vec![], String::new(), String::new());
+    page.reset_all_keybindings();
+    let a = page.bindings.iter().position(|(a, _)| *a == GlobalAction::NewTab).unwrap();
+    let b = page.bindings.iter().position(|(a, _)| *a == GlobalAction::ClosePane).unwrap();
+    let original = page.bindings[a].1.clone();
+    assert!(!page.record_keybinding(a, page.bindings[b].1.clone().unwrap()));
+    assert_eq!(page.bindings[a].1, original);
+    assert!(page.binding_error.is_some());
+    assert!(page.record_keybinding(a, crate::tide_input::Hotkey::new(Key::Char('t'), true, true, true, false)));
+    page.reset_keybinding(a);
+    assert_eq!(page.bindings[a].1, original);
+    let unbound = page.bindings.iter().position(|(a, _)| *a == GlobalAction::SplitVertical).unwrap();
+    assert!(page.bindings[unbound].1.is_none());
+    page.query = "workspace".into();
+    assert!(page.filtered_binding_indices().iter().all(|&i| page.bindings[i].0.label().to_lowercase().contains("workspace")));
+}
+
+#[test]
+fn shortcut_overrides_persist_and_route_option_keys_without_old_binding() {
+    // UC-1 BR-2: Persisted overrides replace defaults and route non-Command keys.
+    let mut settings = crate::state::settings::TideSettings::default();
+    settings.keybindings.push(crate::state::settings::KeybindingOverride::from_binding(
+        &crate::tide_input::Hotkey::new(Key::Char('t'), false, false, false, true), &GlobalAction::NewTab));
+    let json = serde_json::to_string(&settings).unwrap();
+    let saved = serde_json::from_str(&json).unwrap();
+    let mut router = crate::tide_input::Router::new();
+    router.keybinding_map = Some(crate::state::settings::build_keybinding_map(&saved));
+    assert_eq!(router.process(crate::tide_core::InputEvent::KeyPress {key:Key::Char('t'), modifiers:Modifiers {alt:true,..Default::default()}}, &[]), crate::tide_input::Action::GlobalAction(GlobalAction::NewTab));
+    assert!(!matches!(router.process(crate::tide_core::InputEvent::KeyPress {key:Key::Char('t'), modifiers:Modifiers {meta:true,..Default::default()}}, &[]), crate::tide_input::Action::GlobalAction(GlobalAction::NewTab)));
+}
+
+#[test]
+fn shortcut_settings_keyboard_flow_searches_records_cancels_and_resets() {
+    // UC-1 BR-2..5: Exercise the real Modal -> key/text routing path.
+    let mut app = test_app();
+    app.toggle_config_page();
+    assert_eq!(app.modal.config_page.as_ref().unwrap().bindings.len(), GlobalAction::all_actions().len());
+    app.send_text_to_target("New Tab");
+    let row = app.modal.config_page.as_ref().unwrap().selected;
+    let original = app.modal.config_page.as_ref().unwrap().bindings[row].1.clone();
+    let key = |app: &mut App, key, modifiers| crate::adapter::inward::keyboard_adapter::handle_key_down(app, key, modifiers, None);
+    key(&mut app, Key::Enter, Modifiers::default());
+    key(&mut app, Key::Escape, Modifiers::default());
+    assert!(app.modal.config_page.as_ref().unwrap().recording.is_none());
+    assert_eq!(app.modal.config_page.as_ref().unwrap().bindings[row].1, original);
+    key(&mut app, Key::Enter, Modifiers::default());
+    key(&mut app, Key::Char('y'), Modifiers { meta: true, shift: true, alt: true, ..Default::default() });
+    assert_ne!(app.modal.config_page.as_ref().unwrap().bindings[row].1, original);
+    key(&mut app, Key::Backspace, Modifiers {meta:true,shift:true,..Default::default()});
+    assert_eq!(app.modal.config_page.as_ref().unwrap().bindings[row].1, original);
+    let conflict = crate::tide_input::Hotkey::new(Key::Char('='), false, false, true, false);
+    assert!(!app.modal.config_page.as_mut().unwrap().record_keybinding(row, conflict));
+}
+
+#[test]
+fn shortcut_function_keys_survive_settings_round_trip() {
+    // UC-1 BR-2: Every key accepted by the recorder must survive serialization.
+    for key in [Key::F(1), Key::F(12), Key::F(24), Key::Insert] {
+        let hotkey = crate::tide_input::Hotkey::new(key, false, false, true, false);
+        let saved = crate::state::settings::KeybindingOverride::from_binding(&hotkey, &GlobalAction::NewTab);
+        assert_eq!(saved.to_binding(), Some((hotkey, GlobalAction::NewTab)));
+    }
 }

@@ -346,10 +346,15 @@ pub(crate) fn handle_config_page_click(
         if let Some(ref mut page) = ctx.modal_mut().config_page {
             match page.section {
                 ConfigSection::Keybindings => {
-                    let vi = ((pos.y - content_top) / line_height).floor() as usize;
-                    let fi = page.scroll_offset + vi;
-                    if fi < page.bindings.len() {
-                        page.selected = fi;
+                    if pos.y < content_top + line_height {
+                        if pos.x >= popup_x + popup_w - 110.0 { page.reset_all_keybindings(); }
+                    } else {
+                        let vi = ((pos.y - content_top - line_height) / line_height).floor() as usize;
+                        if let Some(&fi) = page.filtered_binding_indices().get(page.scroll_offset + vi) {
+                            page.selected = fi;
+                            if pos.x >= popup_x + popup_w - 75.0 { page.reset_keybinding(fi); }
+                            else { page.recording = Some(crate::RecordingState { action_index: fi }); }
+                        }
                     }
                 }
                 ConfigSection::Worktree => {

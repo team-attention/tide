@@ -1,3 +1,4 @@
+import { shortcutKeys } from "../src/shared/shortcuts.ts";
 // Spec: docs_v2/specs/build-and-package.md
 
 import assert from "node:assert/strict";
@@ -291,7 +292,8 @@ test("application_menu_routes_find_to_the_host_renderer_even_from_webview_focus"
   const renderer = fs.readFileSync(path.join(repoRoot, "src/desktop/infrastructure/electron/renderer/renderer-entry.tsx"), "utf8");
 
   assert.match(main, /Find in Pane/);
-  assert.match(main, /CmdOrCtrl\+F/);
+  assert.deepEqual(shortcutKeys("find", {}), ["CmdOrCtrl+F"]);
+  assert.match(main, /accelerator: key\("find"\)/);
   assert.match(main, /tide:find-intent/);
   assert.match(preload, /onFindIntent/);
   assert.match(preload, /ipcRenderer\.on\("tide:find-intent"/);

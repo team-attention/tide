@@ -504,9 +504,16 @@ pub(super) fn handle_config_page_key(
         .unwrap_or(false);
 
     if is_recording {
+        if !modifiers.meta && !modifiers.ctrl && !modifiers.alt && !matches!(key, Key::Escape | Key::F(1..=24)) {
+            if let Some(page) = ctx.modal_mut().config_page.as_mut() {
+                page.binding_error = Some("Include Command, Control or Option".into());
+            }
+            ctx.invalidate_chrome(); return;
+        }
         if matches!(key, Key::Escape) {
             if let Some(page) = ctx.modal_mut().config_page.as_mut() {
                 page.recording = None;
+                page.binding_error = None;
             }
         } else {
             let hotkey = crate::tide_input::Hotkey::new(
@@ -523,13 +530,34 @@ pub(super) fn handle_config_page_key(
                 .and_then(|p| p.recording.as_ref().map(|r| r.action_index));
             if let Some(action_index) = action_index {
                 if let Some(page) = ctx.modal_mut().config_page.as_mut() {
-                    page.set_keybinding_with_swap(action_index, hotkey);
+                    page.record_keybinding(action_index, hotkey);
                     page.recording = None;
                 }
             }
         }
         ctx.invalidate_chrome();
         return;
+    }
+
+    if let Some(page) = ctx.modal_mut().config_page.as_mut() {
+        if page.section == ConfigSection::Keybindings {
+            if modifiers.meta && matches!(key, Key::Backspace) {
+                if modifiers.shift { page.reset_all_keybindings(); } else { page.reset_keybinding(page.selected); }
+                ctx.invalidate_chrome(); return;
+            }
+            if !modifiers.meta && !modifiers.ctrl && !modifiers.alt {
+                let changed = match key {
+                    Key::Char(ch) => { page.query.push(ch); true },
+                    Key::Backspace => { page.query.pop(); true },
+                    _ => false,
+                };
+                if changed {
+                    page.selected = page.filtered_binding_indices().first().copied().unwrap_or(0);
+                    page.scroll_offset = 0;
+                    ctx.invalidate_chrome(); return;
+                }
+            }
+        }
     }
 
     let is_copy_files_editing = ctx
@@ -709,12 +737,10 @@ pub(super) fn handle_config_page_key(
                 if let Some(page) = ctx.modal_mut().config_page.as_mut() {
                     match page.section {
                         ConfigSection::Keybindings => {
-                            if page.selected > 0 {
-                                page.selected -= 1;
-                                if page.selected < page.scroll_offset {
-                                    page.scroll_offset = page.selected;
-                                }
-                            }
+                            let rows = page.filtered_binding_indices();
+                            let index = rows.iter().position(|i| *i == page.selected).unwrap_or(0).saturating_sub(1);
+                            if let Some(&row) = rows.get(index) { page.selected = row; }
+                            page.scroll_offset = page.scroll_offset.min(index);
                         }
                         ConfigSection::Worktree => {
                             if page.selected_field > 0 {
@@ -740,14 +766,11 @@ pub(super) fn handle_config_page_key(
                 if let Some(page) = ctx.modal_mut().config_page.as_mut() {
                     match page.section {
                         ConfigSection::Keybindings => {
-                            if page.selected + 1 < page.bindings.len() {
-                                page.selected += 1;
-                                let max_visible = crate::theme::CONFIG_PAGE_MAX_VISIBLE;
-                                if page.selected >= page.scroll_offset + max_visible {
-                                    page.scroll_offset =
-                                        page.selected.saturating_sub(max_visible - 1);
-                                }
-                            }
+                            let rows = page.filtered_binding_indices();
+                            let index = (rows.iter().position(|i| *i == page.selected).unwrap_or(0) + 1).min(rows.len().saturating_sub(1));
+                            if let Some(&row) = rows.get(index) { page.selected = row; }
+                            let max_visible = crate::theme::CONFIG_PAGE_MAX_VISIBLE.saturating_sub(1).max(1);
+                            if index >= page.scroll_offset + max_visible { page.scroll_offset = index + 1 - max_visible; }
                         }
                         ConfigSection::Worktree => {
                             if page.selected_field < 1 {
@@ -787,6 +810,7 @@ pub(super) fn handle_config_page_key(
                 )) => {
                     if let Some(page) = ctx.modal_mut().config_page.as_mut() {
                         match page.section {
+                            ConfigSection::Keybindings if page.filtered_binding_indices().is_empty() => {}
                             ConfigSection::Keybindings => {
                                 page.recording = Some(crate::RecordingState {
                                     action_index: page.selected,
@@ -819,7 +843,7 @@ pub(super) fn handle_config_page_key(
                         .iter()
                         .find(|(_, da)| da.action_key() == action_key)
                     {
-                        page.bindings[page.selected].1 = dh.clone();
+                        page.bindings[page.selected].1 = Some(dh.clone());
                         page.dirty = true;
                     }
                 }

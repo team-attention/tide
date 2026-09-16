@@ -1,3 +1,4 @@
+import { matchesShortcut } from "../../support/shortcuts.ts";
 import type { ProductShellViewModel } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { ProductShellHandlers } from "../support/types.ts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -183,16 +184,12 @@ export function WorkbenchCodeEditor(props: {
   // reads the live save handler through propsRef.
   const editorExtensions = useMemo(
     () => [
-      keymap.of([
-        {
-          key: "Mod-s",
-          preventDefault: true,
-          run: () => {
-            propsRef.current.handlers.onEditorSave(propsRef.current.paneId);
-            return true;
-          },
-        },
-      ]),
+      EditorView.domEventHandlers({ keydown: (event) => {
+        if (!matchesShortcut("save", event)) return false;
+        event.preventDefault();
+        propsRef.current.handlers.onEditorSave(propsRef.current.paneId);
+        return true;
+      } }),
       EditorView.lineWrapping,
       gitDiffExtensions,
       ...codeIntelExtensions,

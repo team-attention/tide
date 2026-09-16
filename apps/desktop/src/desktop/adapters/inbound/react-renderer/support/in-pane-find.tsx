@@ -1,3 +1,4 @@
+import { matchesShortcut } from "./shortcuts.ts";
 import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
 import {
   useCallback,
@@ -100,14 +101,14 @@ export function usePaneFindIntent(
       }
       const key = event.key.toLowerCase();
       const mod = event.metaKey || event.ctrlKey;
-      if (mod && !event.altKey && !event.shiftKey && key === "f") {
+      if (matchesShortcut("find", event)) {
         event.preventDefault();
         event.stopPropagation();
         current.onOpen();
-      } else if (mod && !event.altKey && key === "g") {
+      } else if (matchesShortcut("findNext", event) || matchesShortcut("findPrevious", event)) {
         event.preventDefault();
         event.stopPropagation();
-        if (event.shiftKey) {
+        if (matchesShortcut("findPrevious", event)) {
           current.onPrevious();
         } else {
           current.onNext();
@@ -164,7 +165,7 @@ export function InPaneFindBar(props: {
       props.onClose();
     } else if (event.key === "Enter") {
       event.preventDefault();
-      if (event.shiftKey) {
+      if (matchesShortcut("findPrevious", event)) {
         props.onPrevious();
       } else {
         props.onNext();

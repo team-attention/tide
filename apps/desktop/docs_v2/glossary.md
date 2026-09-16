@@ -137,3 +137,7 @@ These terms still need final naming:
 
 - The exact name for the first-screen empty center state.
 - The exact name for archived Threads.
+
+## Shortcut Settings
+
+**ShortcutDefinition** is an app-owned command with a stable id, label, group, and default key combinations. A saved override replaces its defaults. Provider CLI and website keymaps remain owned by those providers.

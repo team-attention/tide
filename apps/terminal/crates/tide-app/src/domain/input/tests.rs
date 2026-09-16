@@ -848,3 +848,12 @@ mod tests {
         assert!(!router.is_dragging_border());
     }
 }
+
+// Spec: docs/specs/shortcut-settings.md
+#[test]
+fn shortcut_catalog_includes_unbound_and_dock_actions() {
+    let actions = crate::tide_input::GlobalAction::all_actions();
+    for key in ["SplitVertical", "FocusSlot1", "FocusSlot4", "DockNewTab", "DockTabNext", "TabPrev", "ToggleTheme", "NewFile", "ToggleDockPin"] {
+        assert!(actions.iter().any(|a| a.action_key() == key), "{key}");
+    }
+}

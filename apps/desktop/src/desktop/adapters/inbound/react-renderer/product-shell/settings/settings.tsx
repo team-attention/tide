@@ -1,3 +1,4 @@
+import { ShortcutSettings } from "./shortcut-settings.tsx";
 import { DEFAULT_PRODUCT_SHELL_LIST_SETTINGS, DEFAULT_PRODUCT_SHELL_WORKTREE_SETTINGS, isProductShellAgentIdentity } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { PreferredStartComposer, ProductShellListSettings, ProductShellPinnedItemRef, ProductShellUsageModelView, ProductShellViewModel, ProductShellWorktreeSettings } from "../../../../../application/domains/product-shell/product-shell.ts";
 import type { TideThemePreference } from "../../support/theme.ts";
@@ -203,6 +204,7 @@ export function createSettingsModal(
             ))}
           </ThemePreferenceGroup>
         </SettingsSection>
+        <ShortcutSettings />
         <SettingsSection>
           <SettingsSectionTitle>Worktrees</SettingsSectionTitle>
           <SettingsField>

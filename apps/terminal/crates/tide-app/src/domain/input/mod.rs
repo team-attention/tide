@@ -286,6 +286,22 @@ impl GlobalAction {
             GlobalAction::ToggleFileTree,
             GlobalAction::ToggleWorkspaceSidebar,
             GlobalAction::ToggleDock,
+            GlobalAction::SplitVertical,
+            GlobalAction::FocusArea(AreaSlot::Slot1),
+            GlobalAction::FocusArea(AreaSlot::Slot2),
+            GlobalAction::FocusArea(AreaSlot::Slot3),
+            GlobalAction::FocusArea(AreaSlot::Slot4),
+            GlobalAction::DockSplitVertical,
+            GlobalAction::DockSplitHorizontal,
+            GlobalAction::DockNewTab,
+            GlobalAction::DockTabPrev,
+            GlobalAction::DockTabNext,
+            GlobalAction::TabPrev,
+            GlobalAction::TabNext,
+            GlobalAction::ToggleTheme,
+            GlobalAction::NewFile,
+            GlobalAction::ToggleDockPin,
+
         ]
     }
 }
@@ -374,7 +390,8 @@ impl Hotkey {
             Key::End => "End".to_string(),
             Key::PageUp => "PageUp".to_string(),
             Key::PageDown => "PageDown".to_string(),
-            _ => format!("{:?}", self.key),
+            Key::F(n) => format!("F{n}"),
+            Key::Insert => "Insert".into(),
         }
     }
 
@@ -394,6 +411,8 @@ impl Hotkey {
             "End" => Some(Key::End),
             "PageUp" => Some(Key::PageUp),
             "PageDown" => Some(Key::PageDown),
+            "Insert" => Some(Key::Insert),
+            _ if s.starts_with('F') && s.len() > 1 => s[1..].parse::<u8>().ok().filter(|n| (1..=24).contains(n)).map(Key::F),
             _ => {
                 let mut chars = s.chars();
                 let c = chars.next()?;
@@ -433,7 +452,8 @@ pub fn display_key(key: &Key) -> String {
         Key::End => "End".to_string(),
         Key::PageUp => "PgUp".to_string(),
         Key::PageDown => "PgDn".to_string(),
-        _ => "?".to_string(),
+        Key::F(n) => format!("F{n}"),
+        Key::Insert => "Insert".into(),
     }
 }
 
@@ -739,7 +759,7 @@ impl Router {
         // modifier; plain Ctrl must pass through to the terminal (Ctrl+C,
         // Ctrl+W, etc.).  On Linux (no Meta key), Ctrl+Shift serves as
         // the hotkey modifier (e.g. Ctrl+Shift+C for copy).
-        if modifiers.meta || (modifiers.ctrl && modifiers.shift) {
+        if self.keybinding_map.is_some() || modifiers.meta || (modifiers.ctrl && modifiers.shift) {
             if let Some(action) = self.match_hotkey(key, modifiers) {
                 return Action::GlobalAction(action);
             }

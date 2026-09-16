@@ -1,3 +1,4 @@
+import { matchesShortcut } from "../../support/shortcuts.ts";
 // Cross-cutting Product Shell effects extracted from product-shell.tsx to keep that
 // file under the size cap (file-size-ratchet): the responsive rightmost-column
 // measurement and the global search keyboard shortcuts.
@@ -49,7 +50,7 @@ export function useGlobalSearchShortcuts(params: {
       return undefined;
     }
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "p") {
+      if (matchesShortcut("quickOpen", event)) {
         event.preventDefault();
         dispatchBackendCommand({
           kind: "workbench.command",
@@ -60,7 +61,7 @@ export function useGlobalSearchShortcuts(params: {
           },
         });
         setQuickOpenVisible(true);
-      } else if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "f") {
+      } else if (matchesShortcut("contentSearch", event)) {
         event.preventDefault();
         setContentSearchVisible(true);
       }
@@ -268,7 +269,7 @@ export function useEscapeShortcuts(params: {
       return undefined;
     }
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !event.isComposing) {
+      if (matchesShortcut("interrupt", event)) {
         event.preventDefault();
         latest.current.onInterrupt();
       }

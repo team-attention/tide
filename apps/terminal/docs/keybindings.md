@@ -6,8 +6,11 @@ Tide Terminal stores keybinding overrides in:
 ~/Library/Application Support/tide-terminal/settings.json
 ```
 
-The settings UI can edit the common actions, and the JSON file can carry action
-keys accepted by `GlobalAction::from_action_key`.
+Settings → Keybindings lists every action accepted by `GlobalAction::from_action_key`,
+including actions with no default key. Type to search, click a row (or press Enter)
+and press a modified key combination. Escape cancels recording. Close Settings
+to save and apply changes. Each row offers Reset; Reset all restores all defaults.
+Cmd+Backspace resets the selected row; Cmd+Shift+Backspace resets all rows.
 
 ## Override Format
 
@@ -36,8 +39,8 @@ Supported `key` values are:
 
 Conflict rule: an override replaces the binding for the same action and removes
 any earlier binding using the same hotkey. In manually-edited JSON, later
-overrides win. In the settings UI, recording a hotkey already used by another
-visible action swaps the two bindings so no placeholder shortcut is saved.
+overrides win. In Settings, a conflicting key is rejected with the owning action name. Neither
+binding changes. Default aliases also participate in conflict detection.
 
 Removed action keys are silently ignored: `ToggleLivePreview`,
 `SplitHorizontalHere`, `SplitVerticalHere`, `ToggleZoom`, `BrowserBack`, and
@@ -89,13 +92,13 @@ action currently appears in the in-app keybindings editor.
 
 | Action key | Label | Settings UI | Default |
 | --- | --- | --- | --- |
-| `SplitVertical` | Split Vertical | No | None |
+| `SplitVertical` | Split Vertical | Yes | None |
 | `SplitHorizontal` | Split Horizontal | Yes | `Cmd+Shift+T` |
 | `ClosePane` | Close Pane | Yes | `Cmd+W` |
-| `FocusSlot1` | Focus Slot 1 | No | None |
-| `FocusSlot2` | Focus Slot 2 | No | None |
-| `FocusSlot3` | Focus Slot 3 | No | None |
-| `FocusSlot4` | Focus Slot 4 | No | None |
+| `FocusSlot1` | Focus Slot 1 | Yes | None |
+| `FocusSlot2` | Focus Slot 2 | Yes | None |
+| `FocusSlot3` | Focus Slot 3 | Yes | None |
+| `FocusSlot4` | Focus Slot 4 | Yes | None |
 | `NavigateUp` | Navigate Up | Yes | `Cmd+K` |
 | `NavigateDown` | Navigate Down | Yes | `Cmd+J` |
 | `NavigateLeft` | Navigate Left | Yes | `Cmd+H` |
@@ -104,25 +107,25 @@ action currently appears in the in-app keybindings editor.
 | `DockNavigateDown` | Dock Navigate Down | Yes | `Cmd+Shift+J` |
 | `DockNavigateLeft` | Dock Navigate Left | Yes | `Cmd+Shift+H` |
 | `DockNavigateRight` | Dock Navigate Right | Yes | `Cmd+Shift+L` |
-| `DockSplitVertical` | Dock Split Vertical | No | None |
-| `DockSplitHorizontal` | Dock Split Horizontal | No | None |
-| `DockNewTab` | Dock New Tab | No | None |
-| `DockTabPrev` | Dock Tab Prev | No | None |
-| `DockTabNext` | Dock Tab Next | No | None |
-| `TabPrev` | Tab Prev | No | None |
-| `TabNext` | Tab Next | No | None |
+| `DockSplitVertical` | Dock Split Vertical | Yes | None |
+| `DockSplitHorizontal` | Dock Split Horizontal | Yes | None |
+| `DockNewTab` | Dock New Tab | Yes | None |
+| `DockTabPrev` | Dock Tab Prev | Yes | None |
+| `DockTabNext` | Dock Tab Next | Yes | None |
+| `TabPrev` | Tab Prev | Yes | None |
+| `TabNext` | Tab Next | Yes | None |
 | `NewTab` | New Tab | Yes | `Cmd+T` |
 | `FileFinder` | File Finder | Yes | `Cmd+Shift+O` |
 | `Paste` | Paste | Yes | `Cmd+V` |
 | `Copy` | Copy | Yes | `Cmd+C` |
 | `ToggleFullscreen` | Toggle Fullscreen | Yes | `Ctrl+Cmd+F` |
 | `Find` | Find | Yes | `Cmd+F` |
-| `ToggleTheme` | Toggle Theme | No | None |
+| `ToggleTheme` | Toggle Theme | Yes | None |
 | `FontSizeUp` | Font Size Up | Yes | `Cmd++`, `Cmd+=` |
 | `FontSizeDown` | Font Size Down | Yes | `Cmd+-` |
 | `FontSizeReset` | Font Size Reset | Yes | `Cmd+0` |
 | `NewWindow` | New Window | Yes | `Cmd+N` |
-| `NewFile` | New File | No | None |
+| `NewFile` | New File | Yes | None |
 | `OpenConfig` | Open Config | Yes | `Cmd+,` |
 | `OpenBrowser` | Open Browser | Yes | `Cmd+Shift+B` |
 | `BrowserReload` | Browser Reload | Yes | `Cmd+R` |
@@ -137,7 +140,7 @@ action currently appears in the in-app keybindings editor.
 | `ToggleWorkspaceSidebar` | Toggle Workspace Sidebar | Yes | `Cmd+E` |
 | `ToggleStacked` | Toggle Stacked | Yes | `Cmd+Enter` |
 | `DockToggleStacked` | Dock Toggle Stacked | Yes | `Ctrl+Cmd+Enter` |
-| `ToggleDockPin` | Toggle Dock Pin | No | None |
+| `ToggleDockPin` | Toggle Dock Pin | Yes | None |
 
 ## Product Gaps
 

@@ -210,6 +210,8 @@ export interface TidePreloadSurface {
   // legacy storage key. saveUiPref persists a change to the Main-owned file. See ui-prefs.ts.
   uiPrefs: Record<string, string>;
   saveUiPref(key: string, value: string): void;
+  onShortcutsChanged(listener: (raw: string) => void): () => void;
+  setShortcutRecording(active: boolean): void;
   // Last persisted thread list from Main's lightweight index. Used only for first
   // paint; the backend's authoritative thread.listed still refreshes it immediately.
   initialThreadList: { threads: ThreadSummaryDto[] } | null;
@@ -366,6 +368,12 @@ export const tidePreloadSurface: TidePreloadSurface = {
   downloadAppUpdate() {
     void ipcRenderer.invoke("tide:app-update-download");
   },
+  onShortcutsChanged(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, raw: string) => listener(raw);
+    ipcRenderer.on("tide:shortcuts-changed", handler);
+    return () => { ipcRenderer.removeListener("tide:shortcuts-changed", handler); };
+  },
+  setShortcutRecording(active) { ipcRenderer.send("tide:shortcut-recording", active); },
   uiPrefs: readUiPrefsSync(),
   initialThreadList: readInitialThreadListSync(),
   saveUiPref(key: string, value: string) {

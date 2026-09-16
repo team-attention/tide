@@ -166,6 +166,8 @@ declare global {
       uiPrefs: Record<string, string>;
       initialThreadList: { threads: ThreadSummaryDto[] } | null;
       saveUiPref(key: string, value: string): void;
+      onShortcutsChanged(listener: (raw: string) => void): () => void;
+      setShortcutRecording(active: boolean): void;
       openDirectory(): Promise<string | null>;
       listProjects(): Promise<{ projectId: string; name: string; cwd: string }[]>;
       registerProject(cwd: string): Promise<{ projectId: string; name: string; cwd: string }[]>;

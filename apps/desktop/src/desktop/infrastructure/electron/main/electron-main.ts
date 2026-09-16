@@ -2,7 +2,7 @@ import { checkoutBranchForStart, execGitArgs, readProjectRegistry, repoRootForWo
 import type { GitChangeFile, GitChanges, GitContext } from "./project-registry.ts";
 import { ensureBackendProcess, nextEventId, postBackendCommand, shutdownBackendProcess } from "./backend-bridge.ts";
 import { maybeOfferMoveToApplications } from "./move-to-applications.ts";
-import { installApplicationMenu } from "./app-menu.ts";
+import { setHostShortcutRecording, installApplicationMenu } from "./app-menu.ts";
 import { applyHostZoom } from "./zoom.ts";
 import { createMainWindow } from "./main-window.ts";
 import { registerNotificationBridge } from "./notifications.ts";
@@ -635,6 +635,10 @@ ipcMain.on("tide:get-initial-thread-list", (event) => {
 ipcMain.handle("tide:save-ui-pref", (_event, key: unknown, value: unknown) => {
   if (typeof key === "string" && typeof value === "string") {
     saveUiPref(key, value);
+    if (key === "tide.shortcuts") {
+      installApplicationMenu();
+      for (const win of BrowserWindow.getAllWindows()) win.webContents.send("tide:shortcuts-changed", value);
+    }
   }
 });
 
@@ -746,4 +750,8 @@ app.on("before-quit", (event) => {
     gracefulQuitCompleted = true;
     app.quit();
   });
+});
+
+ipcMain.on("tide:shortcut-recording", (event, active: unknown) => {
+  if (typeof active === "boolean") setHostShortcutRecording(event.sender, active);
 });

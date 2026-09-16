@@ -116,6 +116,11 @@ pub(crate) fn handle_key_down(
             return;
         }
 
+    if ctx.modal().config_page.as_ref().is_some_and(|page| page.recording.is_some()) {
+        modal::handle_config_page_key(ctx, key, &modifiers);
+        return;
+    }
+
     // If the key produced text and no command modifiers are held,
     // route via the text input system.
     // Exception 1: navigation keys (arrows, Escape, Enter, Tab, Backspace, Delete)
@@ -156,6 +161,12 @@ pub(crate) fn handle_key_down(
         }
     }
 
+    // Config page interception
+    if ctx.modal().config_page.is_some() {
+        modal::handle_config_page_key(ctx, key, &modifiers);
+        return;
+    }
+
     // Cmd+Q → quit
     if matches!(key, Key::Char('q'))
         && modifiers.meta
@@ -164,12 +175,6 @@ pub(crate) fn handle_key_down(
         && !modifiers.alt
     {
         ctx.exit_app();
-    }
-
-    // Config page interception
-    if ctx.modal().config_page.is_some() {
-        modal::handle_config_page_key(ctx, key, &modifiers);
-        return;
     }
 
     // Context menu interception
@@ -345,7 +350,7 @@ pub(crate) fn handle_key_down(
                 preview::handle_file_tree_nav_key(ctx, key, &modifiers);
                 return;
             }
-            if modifiers.meta || (modifiers.ctrl && modifiers.shift) {
+            if modifiers.meta || modifiers.ctrl || modifiers.alt {
                 let input = InputEvent::KeyPress { key, modifiers };
                 let action = ctx.route_input(input);
                 if !matches!(action, crate::tide_input::Action::RouteToPane(_)) {
@@ -431,7 +436,7 @@ pub(crate) fn handle_key_down(
                         }
                     }
                     // Global hotkeys take priority over URL bar input
-                    if modifiers.meta || (modifiers.ctrl && modifiers.shift) {
+                    if modifiers.meta || modifiers.ctrl || modifiers.alt {
                         let input = InputEvent::KeyPress { key, modifiers };
                         let action = ctx.route_input(input);
                         if !matches!(action, crate::tide_input::Action::RouteToPane(_)) {

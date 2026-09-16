@@ -324,12 +324,17 @@ pub fn build_keybinding_map(settings: &TideSettings) -> crate::tide_input::Keybi
     if settings.keybindings.is_empty() {
         return crate::tide_input::KeybindingMap::new();
     }
-    let overrides: Vec<(crate::tide_input::Hotkey, crate::tide_input::GlobalAction)> = settings
-        .keybindings
-        .iter()
-        .filter_map(|o| o.to_binding())
-        .collect();
-    crate::tide_input::KeybindingMap::with_overrides(overrides)
+    let mut map = crate::tide_input::KeybindingMap::new();
+    for item in &settings.keybindings {
+        if let Some(action) = crate::tide_input::GlobalAction::from_action_key(&item.action) {
+            if item.key.is_empty() { map.bindings.retain(|(_, a)| a != &action); }
+            else if let Some((hotkey, action)) = item.to_binding() {
+                map.bindings.retain(|(h, a)| h != &hotkey && a != &action);
+                map.bindings.push((hotkey, action));
+            }
+        }
+    }
+    map
 }
 
 #[cfg(test)]

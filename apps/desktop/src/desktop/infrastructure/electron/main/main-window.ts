@@ -1,3 +1,4 @@
+import { installHostShortcutGuard } from "./app-menu.ts";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { mainDir } from "./backend-bridge.ts";
@@ -57,6 +58,7 @@ export function createMainWindow(): BrowserWindow {
   });
 
   installHostNavigationGuard(mainWindow.webContents);
+  installHostShortcutGuard(mainWindow.webContents);
 
   // Zoom (Cmd +/-/0) is a per-session control, NOT a persisted preference — always open
   // at 100%. Chromium persists per-origin zoom in the session store, so a relaunch would

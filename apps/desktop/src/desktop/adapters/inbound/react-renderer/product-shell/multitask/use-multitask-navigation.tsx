@@ -1,3 +1,4 @@
+import { matchesShortcut, useShortcuts } from "../../support/shortcuts.ts";
 import { useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import type { ProductShellThreadView } from "../../../../../application/domains/product-shell/product-shell.ts";
@@ -31,6 +32,7 @@ export function useMultitaskNavigation(params: {
   onSelectThread: (threadId: string) => void;
 }): { active: boolean; hud: ReactElement | null } {
   const { numberedThreads, liveThreads, activeThreadId, onSelectThread } = params;
+  const shortcuts = useShortcuts();
   const [altActive, setAltActive] = useState(false);
   const holdTimer = useRef<number | null>(null);
   const [switcher, setSwitcher] = useState<SwitcherState>({ open: false, index: 0 });
@@ -63,12 +65,9 @@ export function useMultitaskNavigation(params: {
         }
         return;
       }
-      if (!event.altKey) {
-        return;
-      }
       const current = latest.current;
       // Option+Tab / Option+Shift+Tab → cycle the live set through the HUD.
-      if (event.code === "Tab") {
+      if (matchesShortcut("nextThread", event) || matchesShortcut("previousThread", event)) {
         event.preventDefault();
         // Cancel the pending badge hold-delay so the rail ⌥N badges don't flash on while
         // the switcher HUD is active.
@@ -76,7 +75,13 @@ export function useMultitaskNavigation(params: {
         if (current.liveThreads.length === 0) {
           return;
         }
-        const direction: 1 | -1 = event.shiftKey ? -1 : 1;
+        const direction: 1 | -1 = matchesShortcut("previousThread", event) ? -1 : 1;
+        if (!event.altKey) {
+          const index = initialLiveHighlight(current.liveThreads, current.activeThreadId, direction);
+          const target = current.liveThreads[index];
+          if (target) current.onSelectThread(target.threadId);
+          return;
+        }
         setSwitcher((prev) =>
           prev.open
             ? { open: true, index: advanceLiveHighlight(current.liveThreads.length, prev.index, direction) }
@@ -87,12 +92,12 @@ export function useMultitaskNavigation(params: {
       // Option+1..9 → jump to the N-th thread in Left Rail order (top-9, not just
       // pinned). Match the PHYSICAL key (event.code) — on macOS Option+1 reports
       // event.key="¡", not "1".
-      const digit = /^Digit([1-9])$/.exec(event.code);
-      if (digit !== null) {
+      const digit = Array.from({length:9},(_,i)=>i+1).find(n=>matchesShortcut(`thread${n}`, event));
+      if (digit !== undefined) {
         // Swallow EVERY Option+digit (even out-of-range) so it can't fall through to a
         // browser/OS shortcut. Review feedback.
         event.preventDefault();
-        const target = resolvePinJump(current.numberedThreads, Number(digit[1]));
+        const target = resolvePinJump(current.numberedThreads, digit);
         if (target !== null) {
           // A digit jump is an action WITHIN multitask mode, not an exit from it: while
           // Option stays physically held the ⌥N badges must remain so the user can chain
@@ -158,5 +163,5 @@ export function useMultitaskNavigation(params: {
   }, []);
 
   const hud = switcher.open ? createLiveSwitcherHud(liveThreads, switcher.index) : null;
-  return { active: altActive, hud };
+  return { active: altActive && !Object.keys(shortcuts).some(id => /^thread[1-9]$/.test(id)), hud };
 }

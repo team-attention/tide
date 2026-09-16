@@ -938,7 +938,9 @@ pub(crate) struct ConfigPageState {
     pub copy_files_editing: bool,
     /// Which field is selected in Worktree tab (0 = base_dir_pattern, 1 = copy_files)
     pub selected_field: usize,
-    pub bindings: Vec<(crate::tide_input::GlobalAction, crate::tide_input::Hotkey)>,
+    pub bindings: Vec<(crate::tide_input::GlobalAction, Option<crate::tide_input::Hotkey>)>,
+    pub query: String,
+    pub binding_error: Option<String>,
     pub terminal_osc52_read: bool,
     pub terminal_scrollback_input: InputLine,
     pub terminal_scrollback_editing: bool,
@@ -977,7 +979,9 @@ impl ConfigPageState {
             copy_files_input: InputLine::with_text(copy_files),
             copy_files_editing: false,
             selected_field: 0,
-            bindings,
+            bindings: bindings.into_iter().map(|(a, h)| (a, Some(h))).collect(),
+            query: String::new(),
+            binding_error: None,
             terminal_osc52_read,
             terminal_scrollback_input: InputLine::with_text(terminal_scrollback_lines.to_string()),
             terminal_scrollback_editing: false,
@@ -999,11 +1003,63 @@ impl ConfigPageState {
             .bindings
             .iter()
             .enumerate()
-            .find(|(i, (_, existing))| *i != action_index && *existing == hotkey)
+            .find(|(i, (_, existing))| *i != action_index && existing.as_ref() == Some(&hotkey))
         {
             self.bindings[conflict_index].1 = previous;
         }
-        self.bindings[action_index].1 = hotkey;
+        self.bindings[action_index].1 = Some(hotkey);
+        self.dirty = true;
+    }
+
+    pub fn filtered_binding_indices(&self) -> Vec<usize> {
+        let query = self.query.to_lowercase();
+        self.bindings.iter().enumerate().filter(|(_, (a, h))| {
+            format!("{} {}", a.label(), h.as_ref().map(|h| h.display()).unwrap_or_default()).to_lowercase().contains(&query)
+        }).map(|(i, _)| i).collect()
+    }
+
+    pub fn binding_keys(&self, index: usize) -> Vec<crate::tide_input::Hotkey> {
+        let Some((action, hotkey)) = self.bindings.get(index) else { return vec![]; };
+        let defaults = crate::tide_input::KeybindingMap::default_bindings();
+        let keys: Vec<_> = defaults.into_iter().filter(|(_, a)| a == action).map(|(h, _)| h).collect();
+        if hotkey.as_ref() == keys.first() { keys } else { hotkey.iter().cloned().collect() }
+    }
+
+    pub fn binding_label(&self, index: usize) -> String {
+        let keys = self.binding_keys(index);
+        if keys.is_empty() { "Unassigned".into() } else { keys.iter().map(|h| h.display()).collect::<Vec<_>>().join(" / ") }
+    }
+
+    fn keybinding_conflict(&self, index: usize, hotkey: &crate::tide_input::Hotkey) -> Option<String> {
+        self.bindings.iter().enumerate().find(|(i, _)| *i != index && self.binding_keys(*i).iter().any(|existing| existing.matches(&hotkey.key, &crate::tide_core::Modifiers { shift: hotkey.shift, ctrl: hotkey.ctrl, meta: hotkey.meta, alt: hotkey.alt })))
+            .map(|(_, (action, _))| format!("Already used by {}", action.label()))
+    }
+
+    pub fn record_keybinding(&mut self, index: usize, hotkey: crate::tide_input::Hotkey) -> bool {
+        if index >= self.bindings.len() { return false; }
+        self.binding_error = self.keybinding_conflict(index, &hotkey);
+        if self.binding_error.is_some() { return false; }
+        self.bindings[index].1 = Some(hotkey);
+        self.dirty = true;
+        true
+    }
+
+    pub fn reset_keybinding(&mut self, index: usize) {
+        if index >= self.bindings.len() { return; }
+        let defaults: Vec<_> = crate::tide_input::KeybindingMap::default_bindings().into_iter().filter(|(_, a)| a == &self.bindings[index].0).collect();
+        self.binding_error = defaults.iter().find_map(|(h, _)| self.keybinding_conflict(index, h));
+        if self.binding_error.is_some() { return; }
+        self.bindings[index].1 = defaults.first().map(|(h, _)| h.clone());
+        self.dirty = true;
+    }
+
+    pub fn reset_all_keybindings(&mut self) {
+        let defaults = crate::tide_input::KeybindingMap::new();
+        self.bindings = crate::tide_input::GlobalAction::all_actions().into_iter().map(|a| {
+            let hotkey = defaults.hotkey_for(&a).cloned(); (a, hotkey)
+        }).collect();
+        self.recording = None;
+        self.binding_error = None;
         self.dirty = true;
     }
 

@@ -14,6 +14,7 @@ use crate::PaneAccessPort;
 /// Where text input should be directed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TextInputTarget {
+    ConfigPageSearch,
     ConfigPageCopyFiles,
     ConfigPageTerminalScrollback,
     ConfigPageWorktree,
@@ -52,6 +53,8 @@ pub(crate) fn text_input_target(ctx: &impl TextRoutingPorts) -> TextInputTarget 
             TextInputTarget::ConfigPageTerminalScrollback
         } else if page.worktree_editing {
             TextInputTarget::ConfigPageWorktree
+        } else if page.section == crate::state::ConfigSection::Keybindings && page.recording.is_none() {
+            TextInputTarget::ConfigPageSearch
         } else {
             TextInputTarget::Consumed
         };
@@ -143,6 +146,14 @@ impl App {
     pub(crate) fn send_text_to_target(&mut self, text: &str) {
         let target = text_input_target(self);
         match target {
+            TextInputTarget::ConfigPageSearch => {
+                if let Some(page) = self.modal.config_page.as_mut() {
+                    page.query.push_str(text);
+                    page.selected = page.filtered_binding_indices().first().copied().unwrap_or(0);
+                    page.scroll_offset = 0;
+                    crate::AppCorePort::invalidate_chrome(self);
+                }
+            }
             TextInputTarget::ConfigPageCopyFiles => {
                 if let Some(ref mut page) = self.modal.config_page {
                     for ch in text.chars() {
@@ -408,10 +419,10 @@ mod tests {
     }
 
     #[test]
-    fn config_page_consumed_by_default() {
+    fn config_page_routes_to_shortcut_search() {
         let mut app = test_app();
         app.modal.config_page = Some(ConfigPageState::new(vec![], String::new(), String::new()));
-        assert_eq!(text_input_target(&app), TextInputTarget::Consumed);
+        assert_eq!(text_input_target(&app), TextInputTarget::ConfigPageSearch);
     }
 
     #[test]
@@ -441,7 +452,7 @@ mod tests {
         app.modal.file_finder = Some(FileFinderState::new(PathBuf::from("/tmp"), vec![]));
         app.modal.config_page = Some(ConfigPageState::new(vec![], String::new(), String::new()));
         // config_page has higher priority
-        assert_eq!(text_input_target(&app), TextInputTarget::Consumed);
+        assert_eq!(text_input_target(&app), TextInputTarget::ConfigPageSearch);
     }
 
     #[test]

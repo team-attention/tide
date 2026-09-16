@@ -1,3 +1,4 @@
+import { matchesShortcut } from "../../support/shortcuts.ts";
 import type { AgentChatShellViewModel } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import type { LaunchOptionFeedback } from "../../../../../application/domains/agent-chat/state/types.ts";
 import type { ComposerHandlers } from "../support/types.ts";
@@ -64,13 +65,10 @@ export function createComposer(
           // the candidate, not the message. `isComposing`/keyCode 229 guard it.
           onKeyDown={(event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
             if (
-              event.key === "Enter" &&
-              !event.shiftKey &&
+              matchesShortcut("send", event) &&
               // ⌘/Ctrl+Enter belongs to the prompt card (answer Allow/Deny) — never
               // submit the composer draft on it, or answering a prompt would flush
               // the in-progress follow-up as the prompt's answer.
-              !event.metaKey &&
-              !event.ctrlKey &&
               !event.nativeEvent.isComposing &&
               event.keyCode !== 229
             ) {

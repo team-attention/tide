@@ -83,11 +83,11 @@ pub(crate) fn handle_scroll(
                 } else {
                     1
                 };
-                let max_visible = CONFIG_PAGE_MAX_VISIBLE;
+                let max_visible = CONFIG_PAGE_MAX_VISIBLE.saturating_sub(1).max(1);
                 if dy > 0.0 {
                     cp.scroll_offset = cp.scroll_offset.saturating_sub(lines);
                 } else if dy < 0.0 {
-                    let max_off = cp.bindings.len().saturating_sub(max_visible);
+                    let max_off = cp.filtered_binding_indices().len().saturating_sub(max_visible);
                     cp.scroll_offset = (cp.scroll_offset + lines).min(max_off);
                 }
             }

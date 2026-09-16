@@ -175,15 +175,17 @@ pub(super) fn render_config_page(
 
     match page.section {
         ConfigSection::Keybindings => {
+            let query = if page.query.is_empty() { "Type to search shortcuts".to_string() } else { format!("Search: {}", page.query) };
+            renderer.draw_top_text(&query, Vec2::new(popup_x + item_pad, content_top + 7.0), text_style(tab_inactive_color), Rect::new(popup_x + item_pad, content_top, popup_w * 0.6, line_height));
+            renderer.draw_top_text("Reset all", Vec2::new(popup_x + popup_w - 100.0, content_top + 7.0), text_style(accent_color), Rect::new(popup_x + popup_w - 100.0, content_top, 95.0, line_height));
+            let content_top = content_top + line_height;
+            let rows = page.filtered_binding_indices();
             let max_visible = ((content_bottom - content_top) / line_height).floor() as usize;
             let list_clip = Rect::new(popup_x, content_top, popup_w, content_bottom - content_top);
 
             for vi in 0..max_visible {
-                let fi = page.scroll_offset + vi;
-                if fi >= page.bindings.len() {
-                    break;
-                }
-                let (ref action, ref hotkey) = page.bindings[fi];
+                let Some(&fi) = rows.get(page.scroll_offset + vi) else { break; };
+                let (ref action, _) = page.bindings[fi];
                 let y = content_top + vi as f32 * line_height;
                 if y + line_height > content_bottom {
                     break;
@@ -219,7 +221,9 @@ pub(super) fn render_config_page(
                     italic: false,
                     underline: false,
                 };
-                let label_clip = Rect::new(popup_x + item_pad, y, popup_w * 0.55, line_height);
+                let binding_w = (popup_w * 0.4).min(210.0);
+                let hotkey_x = popup_x + popup_w - item_pad - 60.0 - binding_w;
+                let label_clip = Rect::new(popup_x + item_pad, y, hotkey_x - popup_x - item_pad - 8.0, line_height);
                 renderer.draw_top_text(
                     label,
                     Vec2::new(popup_x + item_pad, item_y),
@@ -232,8 +236,7 @@ pub(super) fn render_config_page(
                     .recording
                     .as_ref()
                     .is_some_and(|r| r.action_index == fi);
-                let hotkey_x = popup_x + popup_w * 0.55;
-                let hotkey_clip = Rect::new(hotkey_x, y, popup_w * 0.35, line_height);
+                let hotkey_clip = Rect::new(hotkey_x, y, binding_w - 8.0, line_height);
 
                 if is_recording {
                     let recording_style = TextStyle {
@@ -251,7 +254,7 @@ pub(super) fn render_config_page(
                         hotkey_clip,
                     );
                 } else {
-                    let display = hotkey.display();
+                    let display = page.binding_label(fi);
                     let hotkey_color = if fi == page.selected {
                         p.tab_text_focused
                     } else {
@@ -268,8 +271,8 @@ pub(super) fn render_config_page(
 
                 // Edit indicator
                 if fi == page.selected && !is_recording {
-                    let edit_label = "\u{f044}"; // pencil icon
-                    let edit_x = popup_x + popup_w - item_pad - cell_size.width;
+                    let edit_label = "Reset";
+                    let edit_x = popup_x + popup_w - item_pad - 5.0 * cell_size.width;
                     let edit_style = text_style(tab_inactive_color);
                     renderer.draw_top_text(
                         edit_label,
@@ -635,7 +638,7 @@ pub(super) fn render_config_page(
             if page.recording.is_some() {
                 "Press key combo  Esc cancel"
             } else {
-                "Esc close  Tab section  \u{21B5} rebind  Bksp reset"
+                "Esc close  Enter rebind  Cmd+Bksp reset"
             }
         }
         ConfigSection::Worktree => {
@@ -656,6 +659,7 @@ pub(super) fn render_config_page(
             "Esc close  Tab section  \u{2191}\u{2193} select  \u{21B5} change"
         }
     };
+    let hint_text = page.binding_error.as_deref().filter(|_| page.section == ConfigSection::Keybindings).unwrap_or(hint_text);
     let hint_text_w = hint_text.len() as f32 * cell_size.width;
     let hint_text_x = popup_x + (popup_w - hint_text_w) / 2.0;
     let hint_text_y = hint_bar_y + (hint_bar_h - cell_height) / 2.0;

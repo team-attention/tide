@@ -1,3 +1,4 @@
+import { matchesShortcut } from "../../support/shortcuts.ts";
 import type { AgentChatPromptChoice, AgentChatPromptDetail, AgentChatPromptStep, AgentChatPromptStepAnswer, AgentChatShellViewModel } from "../../../../../application/domains/agent-chat/agent-chat.ts";
 import { useEffect, useState } from "react";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
@@ -171,7 +172,7 @@ function SinglePromptCard(props: {
     const onKeyDown = (event: KeyboardEvent) => {
       // ⌘/Ctrl+Enter submits the prompt from ANYWHERE (composer included), so you can
       // answer Allow/Deny without the composer draft being flushed as the answer.
-      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      if (matchesShortcut("answer", event)) {
         event.preventDefault();
         submit();
         return;
@@ -180,12 +181,12 @@ function SinglePromptCard(props: {
       // still goes through ⌘Enter, so the user can keep typing after picking).
       // Match the physical digit (event.code) and exclude Option, which is the
       // multitask jump's modifier. See docs_v2/specs/prompt-card-number-key-selection.md.
-      if ((event.metaKey || event.ctrlKey) && !event.altKey) {
-        const digit = /^Digit([1-9])$/.exec(event.code);
-        if (digit !== null) {
+      {
+        const digit = Array.from({length:9},(_,i)=>i+1).find(n=>matchesShortcut(`answer${n}`, event));
+        if (digit !== undefined) {
           const choiceIds = choices.map((choice) => choice.choiceId);
           const ids = multiSelect ? choiceIds : [...choiceIds, ...(allowOther && hasChoices ? ["__other"] : [])];
-          const target = ids[Number(digit[1]) - 1];
+          const target = ids[digit - 1];
           if (target !== undefined) {
             event.preventDefault();
             if (target === "__other") {
@@ -390,7 +391,7 @@ function WizardPromptCard(props: {
   // ↑/↓ move options within the current step (single-select). Back is via button/dot.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      if (matchesShortcut("answer", event)) {
         event.preventDefault();
         goNext();
         return;
@@ -398,12 +399,12 @@ function WizardPromptCard(props: {
       // ⌘/Ctrl+1..9 selects the N-th option of the CURRENT step (highlight only —
       // it never advances; ⌘Enter still does Next/Submit). See
       // docs_v2/specs/prompt-card-number-key-selection.md.
-      if ((event.metaKey || event.ctrlKey) && !event.altKey) {
-        const digit = /^Digit([1-9])$/.exec(event.code);
-        if (digit !== null) {
+      {
+        const digit = Array.from({length:9},(_,i)=>i+1).find(n=>matchesShortcut(`answer${n}`, event));
+        if (digit !== undefined) {
           const choiceIds = choices.map((choice) => choice.choiceId);
           const ids = multiSelect ? choiceIds : [...choiceIds, ...(hasChoices ? ["__other"] : [])];
-          const picked = ids[Number(digit[1]) - 1];
+          const picked = ids[digit - 1];
           if (picked !== undefined) {
             event.preventDefault();
             if (picked === "__other") {
