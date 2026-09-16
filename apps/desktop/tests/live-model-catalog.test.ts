@@ -143,3 +143,35 @@ test("Codex Claude and Vibe render and select unfamiliar native model and effort
     }
   }
 });
+
+test("Vibe default Composer mode preserves provider settings for start, resume and updates", async () => {
+  const { createAgentChatShellState, selectComposerAgent } = await import("../src/desktop/application/domains/agent-chat/agent-chat.ts");
+  const state = selectComposerAgent(createAgentChatShellState(), "vibe").state;
+  const integration = createVibeAgentIntegration({ resolveExecutable: () => "/bin/vibe-acp" });
+  const request = { threadId: "t", launchOptions: state.composer.startOptions.launchOptions } as never;
+  for (const plan of [await integration.buildStartPlan(request), await integration.buildResumePlan(request)]) {
+    assert.ok(!(plan.protocolParams?.configOptions as Array<{configId: string}>).some(option => option.configId === "mode"));
+  }
+  const update = integration.buildSessionConfigUpdate!({ launchOptions: { permission: "default" }, changedKeys: ["permission"] } as never);
+  assert.deepEqual(update, { kind: "live", protocolParams: { configOptions: [] } });
+  for (const permission of ["ask", "plan", "accept-edits", "auto-approve"]) {
+    const plan = await integration.buildStartPlan({ threadId: "t", launchOptions: { permission } } as never);
+    assert.deepEqual(plan.protocolParams?.configOptions, [{ configId: "mode", value: permission }]);
+  }
+});
+
+test("ACP rejected mode retains provider diagnostic and never sends the first prompt", async () => {
+  const { mkdtempSync, writeFileSync, readFileSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { createAcpClient } = await import("../src/backend/adapters/outbound/agent-runtime/structured/acp-client.ts");
+  const root = mkdtempSync(join(tmpdir(), "tide-acp-mode-"));
+  const script = join(root, "fake.cjs");
+  const log = join(root, "requests");
+  writeFileSync(script, `require('node:readline').createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);require('node:fs').appendFileSync(${JSON.stringify(log)},m.method+'\\n'); const send=result=>console.log(JSON.stringify({jsonrpc:'2.0',id:m.id,result}));if(m.method==='initialize')send({});if(m.method==='session/new')send({sessionId:'s'});if(m.method==='session/set_config_option')console.log(JSON.stringify({jsonrpc:'2.0',id:m.id,error:{code:-32600,message:'Unsupported config option mode'}}));});`);
+  const client = createAcpClient({ plan: { command: process.execPath, args: [script], env: {}, cwd: root, transport: "acp", protocolParams: { configOptions: [{ configId: "mode", value: "invalid" }] } }, threadId: "t", runtimeId: "r", agentId: "vibe", sessionRefKind: "provider_native", initialPrompt: "hello", onEvent: () => {} });
+  try {
+    await assert.rejects(client.ready(), /mode="invalid" configuration: Unsupported config option mode/);
+    assert.ok(!readFileSync(log, "utf8").includes("session/prompt"));
+  } finally { await client.stop(); rmSync(root, { recursive: true, force: true }); }
+});

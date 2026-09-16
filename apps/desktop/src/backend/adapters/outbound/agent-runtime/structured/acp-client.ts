@@ -318,7 +318,9 @@ class AcpClient implements StructuredRuntimeClient {
         { sessionId, configId: option.configId, value: option.value },
         (response) => {
           if (response.error !== undefined) {
-            onComplete(new Error(`ACP rejected initial ${option.configId} configuration.`));
+            const error = isRecord(response.error) ? response.error : {};
+            const detail = stringField(error, "message");
+            onComplete(new Error(`ACP rejected ${option.configId}=${JSON.stringify(option.value)} configuration${detail ? `: ${detail}` : "."}`));
             return;
           }
           this.emitModelCatalog(isRecord(response.result) ? response.result : {});

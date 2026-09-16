@@ -15,7 +15,7 @@ Query installed provider CLIs for selectable models and add Mistral Vibe as a Pr
 - Claude discovery uses a bounded, prompt-free stream-json initialization and terminates its process after the response.
 - Vibe discovery uses bounded ACP initialization and session/new without a prompt. Preserve native model aliases.
 - Vibe runs through the shared ACP runtime, including Tide MCP. Native session refs support resume.
-- Vibe model rows include the ACP thinking choices. Permission choices use the native default/plan/accept-edits/auto-approve/chat values verified locally.
+- Vibe model rows include the ACP thinking choices. Permission choices use native ask/plan/accept-edits/auto-approve values; Tide Default preserves the provider setting without a mode write.
 - Native standalone review commands and external session import remain unsupported for Vibe; regular review prompts work through Agent Chat.
 - Keep discovery asynchronous and collapse concurrent identical requests. Failure remains retryable.
 
@@ -64,3 +64,21 @@ All four provider catalog events must pass the actual strict JSON event validato
 
 ### OpenCode native effort follow-up
 OpenCode discovery uses `models --verbose` in the requested project cwd. Its model metadata `variants` keys are the effort values; preserve them per model, including empty lists, without synthesizing low/max. Display only the selected model's reported options and preserve unfamiliar values through ACP `effort`. ACP model-only updates must preserve existing per-model metadata; an explicit ACP effort list applies only to its current model. Codex catalog reads also use the requested cwd. Concurrent discovery is coalesced per cwd, never across projects. Tests cover verbose parsing, missing metadata, per-model menus, native selection and project isolation. Compare the live CLI output with Tide's catalog values.
+
+### Vibe initial permission regression (2026-09-16)
+Installed Vibe ACP advertises `ask`, `plan`, `accept-edits`, and `auto-approve`;
+its current mode is `accept-edits`. `default` is a Tide sentinel, not a native
+mode. Start/resume and live config must omit the mode write for that sentinel,
+preserving provider configuration. Offer Ask explicitly and remove unsupported
+Chat. Explicit native modes remain unchanged. Configuration failures must include
+the rejected value and provider error rather than hide the diagnostic.
+Tests cover default start/resume/live config omission, explicit mode preservation,
+and startup failure preventing prompts with the native error retained. Verify
+actual installed ACP initialization with the default Composer launch options.
+
+Verification: 1,492 desktop tests passed, 2 skipped; typecheck and production build
+passed. Installed Vibe accepted all four explicit modes and Tide Default through
+the actual ACP runtime. A Default-mode prompt returned `VIBE_OK` and `end_turn`.
+The integration owns sentinel translation; the shared descriptor owns labels;
+ACP error handling retains native diagnostics. No runtime protocol or build
+workflow changes were needed.

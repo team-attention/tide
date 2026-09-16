@@ -4,6 +4,7 @@ export function vibeConfigOptions(options: Record<string, unknown> | undefined, 
   return keys.flatMap((key) => {
     const value = options?.[key];
     if (typeof value !== "string" || !value || value === "vibe default") return [];
+    if (key === "permission" && value === "default") return [];
     const configId = key === "reasoning" ? "thinking" : key === "permission" ? "mode" : key;
     return ["model", "thinking", "mode"].includes(configId) ? [{ configId, value }] : [];
   });
