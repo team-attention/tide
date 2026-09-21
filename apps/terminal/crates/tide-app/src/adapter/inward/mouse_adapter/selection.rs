@@ -29,9 +29,12 @@ pub(super) fn start_text_selection(
 
     let pos = ctx.last_cursor_pos();
     let rects: Vec<_> = ctx.visual_pane_rects().to_vec();
+    let save_confirm_pane_id = ctx.save_confirm_pane_id();
     let hit = rects.iter().find(|(id, r)| {
         let content = match ctx.pane(*id) {
-            Some(PaneKind::Editor(pane)) => pane.content_rect(*r, TAB_BAR_HEIGHT, cell_size),
+            Some(PaneKind::Editor(pane)) => {
+                pane.content_rect_with_pane_bar(*r, save_confirm_pane_id, cell_size)
+            }
             Some(PaneKind::Terminal(_))
             | Some(PaneKind::Diff(_))
             | Some(PaneKind::Browser(_))
@@ -55,7 +58,13 @@ pub(super) fn start_text_selection(
         if let Some((_, rect)) = rects.iter().find(|(id, _)| *id == pid) {
             match ctx.pane(pid) {
                 Some(PaneKind::Editor(pane)) => {
-                    pane.selection_hit_cell(*rect, TAB_BAR_HEIGHT, cs, pos, false)
+                    pane.selection_hit_cell(
+                        *rect,
+                        pane.content_top_offset(save_confirm_pane_id),
+                        cs,
+                        pos,
+                        false,
+                    )
                 }
                 _ => None,
             }
@@ -68,8 +77,9 @@ pub(super) fn start_text_selection(
     let diff_cell = {
         let cs = cell_size_cached;
         if let Some((_, rect)) = rects.iter().find(|(id, _)| *id == pid) {
-            let cx = rect.x + PANE_PADDING;
-            let cy = rect.y + TAB_BAR_HEIGHT;
+            let content = crate::pane::pane_content_rect(*rect, TAB_BAR_HEIGHT);
+            let cx = content.x;
+            let cy = content.y;
             let rc = ((pos.x - cx) / cs.width).floor() as isize;
             let rr = ((pos.y - cy) / cs.height).floor() as isize;
             if rr >= 0 && rc >= 0 {
@@ -184,10 +194,10 @@ fn apply_selection_drag_for_pane(
     clamp_to_source: bool,
 ) -> bool {
     let cell_size = ctx.cell_size();
+    let save_confirm_pane_id = ctx.save_confirm_pane_id();
     let term_cell = if matches!(ctx.pane(pid), Some(PaneKind::Terminal(_))) {
         let target_pos = if clamp_to_source {
-            let inner =
-                crate::pane::pane_content_rect(rect, terminal_content_top(cell_size.height));
+            let inner = crate::pane::pane_content_rect(rect, TAB_BAR_HEIGHT);
             clamp_pos_to_rect(pos, inner)
         } else {
             pos
@@ -198,7 +208,13 @@ fn apply_selection_drag_for_pane(
     };
     let editor_cell = match ctx.pane(pid) {
         Some(PaneKind::Editor(pane)) => {
-            pane.selection_hit_cell(rect, TAB_BAR_HEIGHT, cell_size, pos, clamp_to_source)
+            pane.selection_hit_cell(
+                rect,
+                pane.content_top_offset(save_confirm_pane_id),
+                cell_size,
+                pos,
+                clamp_to_source,
+            )
         }
         _ => None,
     };
@@ -208,8 +224,9 @@ fn apply_selection_drag_for_pane(
         } else {
             pos
         };
-        let cx = rect.x + PANE_PADDING;
-        let cy = rect.y + TAB_BAR_HEIGHT;
+        let content = crate::pane::pane_content_rect(rect, TAB_BAR_HEIGHT);
+        let cx = content.x;
+        let cy = content.y;
         let rc = ((target_pos.x - cx) / cell_size.width).floor() as isize;
         let rr = ((target_pos.y - cy) / cell_size.height).floor() as isize;
         if rr >= 0 && rc >= 0 {
@@ -261,6 +278,7 @@ pub(super) fn handle_selection_drag(
     pos: Vec2,
 ) {
     let cell_size = ctx.cell_size();
+    let save_confirm_pane_id = ctx.save_confirm_pane_id();
     let pane_rects: Vec<_> = ctx.visual_pane_rects().to_vec();
     if let Some(source_pid) = ctx.interaction().text_selection_drag_source {
         if let Some((_, rect)) = pane_rects.iter().find(|(pid, _)| *pid == source_pid) {
@@ -273,7 +291,9 @@ pub(super) fn handle_selection_drag(
 
     for (pid, rect) in pane_rects {
         let content = match ctx.pane(pid) {
-            Some(PaneKind::Editor(pane)) => pane.content_rect(rect, TAB_BAR_HEIGHT, cell_size),
+            Some(PaneKind::Editor(pane)) => {
+                pane.content_rect_with_pane_bar(rect, save_confirm_pane_id, cell_size)
+            }
             Some(PaneKind::Terminal(_))
             | Some(PaneKind::Diff(_))
             | Some(PaneKind::Browser(_))

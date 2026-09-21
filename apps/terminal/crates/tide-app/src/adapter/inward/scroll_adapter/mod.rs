@@ -246,21 +246,16 @@ pub(crate) fn handle_scroll(
         if let Some((pid, rect)) = editor_pane_id {
             let cs = ctx.cell_size();
             let scroll_top_off = TAB_BAR_HEIGHT;
+            let save_confirm_pane_id = ctx.save_confirm_pane_id();
             match ctx.pane_mut(pid) {
                 Some(PaneKind::Editor(pane)) if pane.preview_mode => {
                     let delta = (editor_dx.abs() * 3.0).ceil() as usize;
                     let max_w = pane.preview_max_line_width();
-                    let inner_w = rect.width - 2.0 * PANE_PADDING;
-                    let scrollbar_reserved = if pane.preview_line_count()
-                        > ((rect.height - TAB_BAR_HEIGHT - PANE_PADDING) / cs.height).floor()
-                            as usize
-                    {
-                        SCROLLBAR_WIDTH
-                    } else {
-                        0.0
-                    };
-                    let code_block_w = (inner_w - scrollbar_reserved - 2.0 * cs.width).max(0.0);
-                    let preview_visible_cols = (code_block_w / cs.width).floor() as usize;
+                    let content_rect =
+                        pane.content_rect_with_pane_bar(rect, save_confirm_pane_id, cs);
+                    let (_, visible_cols) =
+                        pane.viewport_size_for_content_rect(content_rect, cs);
+                    let preview_visible_cols = visible_cols.saturating_sub(2);
                     let max_h_scroll = max_w.saturating_sub(preview_visible_cols);
                     if editor_dx > 0.0 {
                         pane.preview_h_scroll = pane.preview_h_scroll.saturating_sub(delta);
@@ -270,7 +265,8 @@ pub(crate) fn handle_scroll(
                 }
                 Some(PaneKind::Editor(pane)) => {
                     use crate::tide_editor::input::EditorAction;
-                    let content_rect = crate::pane::pane_content_rect(rect, scroll_top_off);
+                    let content_rect =
+                        pane.content_rect_with_pane_bar(rect, save_confirm_pane_id, cs);
                     let (visible_rows, visible_cols) =
                         pane.viewport_size_for_content_rect(content_rect, cs);
                     if editor_dx > 0.0 {

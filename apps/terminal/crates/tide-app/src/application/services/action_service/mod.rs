@@ -453,7 +453,11 @@ impl App {
             .iter()
             .find(|(pid, _)| *pid == pane_id)?;
         let cell_size = self.cell_size();
-        let mut click_rect = pane.content_rect(rect, TAB_BAR_HEIGHT, cell_size);
+        let mut click_rect = pane.content_rect_with_pane_bar(
+            rect,
+            self.modal.save_confirm.as_ref().map(|state| state.pane_id),
+            cell_size,
+        );
         if let Some((editor_rect, preview_rect)) = pane.split_preview_rects(click_rect, cell_size) {
             if position.x >= preview_rect.x {
                 return None;
@@ -857,13 +861,18 @@ impl crate::application::ports::inward::ActionPort for App {
                         }
                     }
                     let cell_size = self.cell_size();
+                    let save_confirm_pane_id =
+                        self.modal.save_confirm.as_ref().map(|state| state.pane_id);
                     if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&id) {
                         {
                             if let Some(&(_, rect)) =
                                 self.visual_pane_rects.iter().find(|(pid, _)| *pid == id)
                             {
-                                let mut click_rect =
-                                    pane.content_rect(rect, TAB_BAR_HEIGHT, cell_size);
+                                let mut click_rect = pane.content_rect_with_pane_bar(
+                                    rect,
+                                    save_confirm_pane_id,
+                                    cell_size,
+                                );
                                 if let Some((editor_rect, preview_rect)) =
                                     pane.split_preview_rects(click_rect, cell_size)
                                 {
@@ -919,6 +928,8 @@ impl crate::application::ports::inward::ActionPort for App {
 
                 // Forward keyboard input to the pane
                 let cs_for_keys = self.cell_size();
+                let save_confirm_pane_id =
+                    self.modal.save_confirm.as_ref().map(|state| state.pane_id);
                 if let Some(InputEvent::KeyPress { key, modifiers }) = event {
                     match self.panes.get_mut(&id) {
                         Some(PaneKind::Terminal(pane)) => {
@@ -1023,7 +1034,11 @@ impl crate::application::ports::inward::ActionPort for App {
                                     .iter()
                                     .find(|(pid, _)| *pid == id)
                                     .map(|(_, r)| {
-                                        pane.content_rect(*r, TAB_BAR_HEIGHT, cs_for_keys)
+                                        pane.content_rect_with_pane_bar(
+                                            *r,
+                                            save_confirm_pane_id,
+                                            cs_for_keys,
+                                        )
                                     });
                                 let (visible_rows, visible_cols) = content_rect
                                     .map(|rect| {
@@ -1104,6 +1119,8 @@ impl crate::application::ports::inward::ActionPort for App {
                 // Forward mouse scroll to pane
                 if let Some(InputEvent::MouseScroll { delta, position }) = event {
                     let cs = self.cell_size();
+                    let save_confirm_pane_id =
+                        self.modal.save_confirm.as_ref().map(|state| state.pane_id);
                     let diff_content_rect = self
                         .visual_pane_rects
                         .iter()
@@ -1116,10 +1133,7 @@ impl crate::application::ports::inward::ActionPort for App {
                         .iter()
                         .find(|(pid, _)| *pid == id)
                         .map(|(_, r)| {
-                            let inner = crate::pane::pane_content_rect(
-                                *r,
-                                crate::theme::terminal_content_top(cs.height),
-                            );
+                            let inner = crate::pane::pane_content_rect(*r, TAB_BAR_HEIGHT);
                             let origin = crate::pane::terminal_grid_origin(inner);
                             let c = ((position.x - origin.x) / cs.width).floor().max(0.0) as u16;
                             let rrow =
@@ -1133,7 +1147,13 @@ impl crate::application::ports::inward::ActionPort for App {
                                 .visual_pane_rects
                                 .iter()
                                 .find(|(pid, _)| *pid == id)
-                                .map(|(_, r)| pane.content_rect(*r, TAB_BAR_HEIGHT, cs));
+                                .map(|(_, r)| {
+                                    pane.content_rect_with_pane_bar(
+                                        *r,
+                                        save_confirm_pane_id,
+                                        cs,
+                                    )
+                                });
                             let (visible_rows, _) = content_rect
                                 .map(|rect| pane.viewport_size_for_content_rect(rect, cs))
                                 .unwrap_or((30, 80));
@@ -1161,7 +1181,13 @@ impl crate::application::ports::inward::ActionPort for App {
                                 .visual_pane_rects
                                 .iter()
                                 .find(|(pid, _)| *pid == id)
-                                .map(|(_, r)| pane.content_rect(*r, TAB_BAR_HEIGHT, cs));
+                                .map(|(_, r)| {
+                                    pane.content_rect_with_pane_bar(
+                                        *r,
+                                        save_confirm_pane_id,
+                                        cs,
+                                    )
+                                });
                             let (visible_rows, visible_cols) = content_rect
                                 .map(|rect| pane.viewport_size_for_content_rect(rect, cs))
                                 .unwrap_or((30, 80));

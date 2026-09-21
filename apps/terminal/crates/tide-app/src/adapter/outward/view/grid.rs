@@ -58,7 +58,7 @@ pub(crate) fn render_grid(
                 Some(PaneKind::Terminal(pane)) => {
                     let inner = crate::pane::pane_content_rect(
                         rect,
-                        terminal_content_top(renderer.cell_size().height) + pane_bar,
+                        TAB_BAR_HEIGHT + pane_bar,
                     );
                     pane.render_grid(inner, renderer);
                     // Overlay message for dead terminals
@@ -93,8 +93,11 @@ pub(crate) fn render_grid(
                     gen_updates.push((id, pane.backend.grid_generation()));
                 }
                 Some(PaneKind::Editor(pane)) => {
-                    let inner =
-                        pane.content_rect(rect, TAB_BAR_HEIGHT + pane_bar, renderer.cell_size());
+                    let inner = pane.content_rect_with_pane_bar(
+                        rect,
+                        app.modal.save_confirm.as_ref().map(|state| state.pane_id),
+                        renderer.cell_size(),
+                    );
                     let preedit = if ime_target_id == Some(id) {
                         &app.ime.preedit
                     } else {

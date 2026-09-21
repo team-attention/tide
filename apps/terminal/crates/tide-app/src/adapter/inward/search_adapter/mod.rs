@@ -114,30 +114,34 @@ fn check_search_bar_at(ctx: &mut impl SearchPorts, pos: Vec2, id: PaneId, rect: 
 
 // ── Search bar helpers ──────────────────────
 
-fn editor_visible_rows(ctx: &impl AppCorePort, pane_id: PaneId) -> usize {
+fn editor_viewport_size(
+    ctx: &(impl AppCorePort + PaneAccessPort),
+    pane_id: PaneId,
+) -> Option<(usize, usize)> {
     let cs = ctx.cell_size();
-    if let Some(&(_, rect)) = ctx
+    let &(_, rect) = ctx
         .visual_pane_rects()
         .iter()
         .find(|(id, _)| *id == pane_id)
-    {
-        return ((rect.height - TAB_BAR_HEIGHT - PANE_PADDING) / cs.height).floor() as usize;
-    }
-    30
+        ?;
+    let PaneKind::Editor(pane) = ctx.pane(pane_id)? else {
+        return None;
+    };
+    let content_rect =
+        pane.content_rect_with_pane_bar(rect, ctx.save_confirm_pane_id(), cs);
+    Some(pane.viewport_size_for_content_rect(content_rect, cs))
 }
 
-fn editor_visible_cols(ctx: &impl AppCorePort, pane_id: PaneId) -> usize {
-    let cs = ctx.cell_size();
-    let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cs.width;
-    if let Some(&(_, rect)) = ctx
-        .visual_pane_rects()
-        .iter()
-        .find(|(id, _)| *id == pane_id)
-    {
-        let cw = rect.width - 2.0 * PANE_PADDING - 2.0 * gutter_width;
-        return (cw / cs.width).floor().max(1.0) as usize;
-    }
-    80
+fn editor_visible_rows(ctx: &(impl AppCorePort + PaneAccessPort), pane_id: PaneId) -> usize {
+    editor_viewport_size(ctx, pane_id)
+        .map(|(rows, _)| rows)
+        .unwrap_or(30)
+}
+
+fn editor_visible_cols(ctx: &(impl AppCorePort + PaneAccessPort), pane_id: PaneId) -> usize {
+    editor_viewport_size(ctx, pane_id)
+        .map(|(_, cols)| cols)
+        .unwrap_or(80)
 }
 
 pub(crate) fn search_bar_insert(ctx: &mut impl SearchPorts, pane_id: PaneId, ch: char) {

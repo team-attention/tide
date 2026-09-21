@@ -96,9 +96,7 @@ fn terminal_cell_for_pane(
         .visual_pane_rects()
         .iter()
         .find(|(id, _)| *id == pane_id)?;
-    let cell_size = ctx.cell_size();
-    let inner =
-        crate::pane::pane_content_rect(*visual_rect, terminal_content_top(cell_size.height));
+    let inner = crate::pane::pane_content_rect(*visual_rect, TAB_BAR_HEIGHT);
     let target_pos = if clamp {
         clamp_to_rect(pos, inner)
     } else {
@@ -496,15 +494,9 @@ pub(crate) fn handle_mouse_down(
     if button == MouseButton::Left {
         let pos = ctx.last_cursor_pos();
         let cell_size = ctx.cell_size();
-        let content_top = TAB_BAR_HEIGHT;
         let rects: Vec<_> = ctx.visual_pane_rects().to_vec();
         for &(id, rect) in &rects {
-            let content = crate::tide_core::Rect::new(
-                rect.x + PANE_PADDING,
-                rect.y + content_top,
-                rect.width - 2.0 * PANE_PADDING,
-                rect.height - content_top - PANE_PADDING,
-            );
+            let content = crate::pane::pane_content_rect(rect, TAB_BAR_HEIGHT);
             if content.contains(pos) {
                 if let Some(crate::pane::PaneKind::Diff(dp)) = ctx.pane_mut(id) {
                     let visual_row = ((pos.y - content.y) / cell_size.height).floor() as usize;
@@ -845,11 +837,12 @@ fn check_scrollbar_click(ctx: &mut impl MousePorts, pos: Vec2) -> bool {
     let hit_width = 16.0_f32; // wider hit area than visual scrollbar
 
     // Check editor panes in the split tree
-    let content_top_offset = TAB_BAR_HEIGHT;
+    let save_confirm_pane_id = ctx.save_confirm_pane_id();
     let rects: Vec<_> = ctx.visual_pane_rects().to_vec();
     for (pid, vrect) in rects {
         if let Some(PaneKind::Editor(pane)) = ctx.pane(pid) {
-            let inner = crate::pane::pane_content_rect(vrect, content_top_offset);
+            let inner =
+                pane.content_rect_with_pane_bar(vrect, save_confirm_pane_id, ctx.cell_size());
             let scrollbar_right = inner.x + inner.width;
             let scrollbar_left = scrollbar_right - hit_width;
             if pos.x >= scrollbar_left

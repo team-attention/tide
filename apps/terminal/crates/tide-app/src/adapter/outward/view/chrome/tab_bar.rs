@@ -151,10 +151,11 @@ pub(crate) fn terminal_context_surface_header_identity_label(
         Some(crate::pane::PaneKind::Terminal(terminal)) => terminal,
         _ => return None,
     };
+    if terminal.dock_view_mode == crate::state::ViewMode::Stacked {
+        return None;
+    }
     Some(header::terminal_context_surface_identity_label(
         &crate::ui::pane_title(&app.panes, owner_terminal_id),
-        terminal.dock_layout.all_pane_ids().len(),
-        terminal.dock_view_mode == crate::state::ViewMode::Stacked,
     ))
 }
 

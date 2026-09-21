@@ -37,7 +37,7 @@ pub(crate) fn render_cursor_and_highlights(
             Some(PaneKind::Terminal(pane)) => {
                 let inner = crate::pane::pane_content_rect(
                     rect,
-                    terminal_content_top(renderer.cell_size().height) + pane_bar,
+                    TAB_BAR_HEIGHT + pane_bar,
                 );
                 pane.render_graphics(inner, renderer);
                 // Only render cursor on the focused pane (and hide when search bar is active
@@ -120,8 +120,11 @@ pub(crate) fn render_cursor_and_highlights(
                 }
             }
             Some(PaneKind::Editor(pane)) => {
-                let inner =
-                    pane.content_rect(rect, TAB_BAR_HEIGHT + pane_bar, renderer.cell_size());
+                let inner = pane.content_rect_with_pane_bar(
+                    rect,
+                    app.modal.save_confirm.as_ref().map(|state| state.pane_id),
+                    renderer.cell_size(),
+                );
                 if pane.preview_mode {
                     // Render selection highlight in preview mode
                     if let Some(ref sel) = pane.selection {

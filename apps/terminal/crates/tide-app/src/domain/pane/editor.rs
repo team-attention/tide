@@ -17,7 +17,7 @@ use crate::tide_editor::{EditorPosition, EditorState};
 use crate::tide_editor::markdown::{render_markdown_preview, MarkdownTheme, PreviewLine};
 
 use crate::pane::Selection;
-use crate::theme::SCROLLBAR_WIDTH;
+use crate::theme::{CONFLICT_BAR_HEIGHT, SCROLLBAR_WIDTH, TAB_BAR_HEIGHT};
 
 /// Width of the gutter (line numbers) in cells.
 pub(crate) const GUTTER_WIDTH_CELLS: usize = 6;
@@ -847,6 +847,29 @@ impl EditorPane {
         _cell_size: Size,
     ) -> Rect {
         crate::pane::pane_content_rect(pane_rect, content_top_offset)
+    }
+
+    /// Content geometry shared by Editor Pane render and interaction paths.
+    pub(crate) fn content_rect_with_pane_bar(
+        &self,
+        pane_rect: Rect,
+        save_confirm_pane_id: Option<PaneId>,
+        cell_size: Size,
+    ) -> Rect {
+        self.content_rect(
+            pane_rect,
+            self.content_top_offset(save_confirm_pane_id),
+            cell_size,
+        )
+    }
+
+    pub(crate) fn content_top_offset(&self, save_confirm_pane_id: Option<PaneId>) -> f32 {
+        let pane_bar = if self.needs_notification_bar() || save_confirm_pane_id == Some(self.id) {
+            CONFLICT_BAR_HEIGHT
+        } else {
+            0.0
+        };
+        TAB_BAR_HEIGHT + pane_bar
     }
 
     /// Convert a pointer position to Selection-relative display cells for the

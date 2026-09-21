@@ -98,6 +98,7 @@ pub(crate) trait AppCorePort {
     fn pane_area_rect(&self) -> Option<Rect>;
     fn dock_area_rect(&self) -> Option<Rect>;
     fn shared_tab_max_scroll(&self, pane_id: PaneId) -> Option<f32>;
+    fn save_confirm_pane_id(&self) -> Option<PaneId>;
 
     // ── Sidebar handle drag (mouse_adapter) ──
     fn sidebar_handle_dragging(&self) -> bool;

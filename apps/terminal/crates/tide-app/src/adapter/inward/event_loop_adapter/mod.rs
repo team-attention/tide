@@ -1438,8 +1438,7 @@ impl App {
                     .find(|(id, _)| *id == target_id)
                 {
                     let cursor = pane.backend.cursor();
-                    let top = crate::theme::terminal_content_top(cell_size.height);
-                    let inner = crate::pane::pane_content_rect(*rect, top);
+                    let inner = crate::pane::pane_content_rect(*rect, TAB_BAR_HEIGHT);
                     let origin = crate::pane::terminal_grid_origin(inner);
                     let cx = origin.x + cursor.col as f32 * cell_size.width;
                     let cy = origin.y + cursor.row as f32 * cell_size.height;
@@ -1458,8 +1457,13 @@ impl App {
                     .iter()
                     .find(|(id, _)| *id == target_id)
                 {
-                    if let Some(cursor_area) =
-                        editor_ime_cursor_area(pane, *rect, cell_size, &self.ime.preedit)
+                    if let Some(cursor_area) = editor_ime_cursor_area(
+                        pane,
+                        *rect,
+                        cell_size,
+                        &self.ime.preedit,
+                        self.modal.save_confirm.as_ref().map(|state| state.pane_id),
+                    )
                     {
                         window.set_ime_proxy_cursor_area(
                             target_id,
@@ -1577,8 +1581,10 @@ pub(crate) fn editor_ime_cursor_area(
     pane_rect: crate::tide_core::Rect,
     cell_size: crate::tide_core::Size,
     preedit: &str,
+    save_confirm_pane_id: Option<crate::tide_core::PaneId>,
 ) -> Option<crate::tide_core::Rect> {
-    let content_rect = pane.content_rect(pane_rect, crate::theme::TAB_BAR_HEIGHT, cell_size);
+    let content_rect =
+        pane.content_rect_with_pane_bar(pane_rect, save_confirm_pane_id, cell_size);
     let authoring_rect = pane.authoring_rect(content_rect, cell_size);
     let preedit_width_cells = preedit
         .chars()

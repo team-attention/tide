@@ -983,15 +983,37 @@ impl crate::application::ports::inward::AppCorePort for App {
         let content_right = rect.x + rect.width;
         let has_leading_view_mode_action =
             is_stacked || (!is_stage_surface && self.dock_header_anchor_pane_id() == Some(pane_id));
-        if has_leading_view_mode_action {
+        let leading_view_mode_width = if has_leading_view_mode_action {
             let leading_action =
                 crate::header::surface_view_mode_header_action(header_surface, is_stacked);
-            content_left += TAB_H_PAD
-                + crate::header::header_leading_view_mode_width(Some(&leading_action.action));
-        }
+            let width = crate::header::header_leading_view_mode_width(Some(&leading_action.action));
+            content_left += TAB_H_PAD + width;
+            width
+        } else {
+            0.0
+        };
         let header_actions =
             crate::header::stacked_tab_bar_header_action_specs_for_surface(header_surface);
         let header_action_width = crate::header::header_action_strip_width(cell_w, &header_actions);
+        if !is_stage_surface && !is_stacked {
+            if let Some(owner_terminal_id) = self.terminal_owning(pane_id) {
+                let identity_label = crate::header::terminal_context_surface_identity_label(
+                    &crate::ui::pane_title(&self.panes, owner_terminal_id),
+                );
+                if crate::header::header_surface_identity_fits(
+                    rect.width,
+                    cell_w,
+                    &identity_label,
+                    leading_view_mode_width,
+                    header_action_width,
+                ) {
+                    content_left += crate::header::header_surface_identity_width(
+                        cell_w,
+                        Some(&identity_label),
+                    );
+                }
+            }
+        }
         let header_action_gap = if header_action_width > 0.0 {
             TAB_H_PAD
         } else {
@@ -1049,6 +1071,10 @@ impl crate::application::ports::inward::AppCorePort for App {
             .sum();
 
         Some((total_tabs_w - visible_w).max(0.0))
+    }
+
+    fn save_confirm_pane_id(&self) -> Option<PaneId> {
+        self.modal.save_confirm.as_ref().map(|state| state.pane_id)
     }
 
     // ── Sidebar handle drag (mouse_adapter) ──

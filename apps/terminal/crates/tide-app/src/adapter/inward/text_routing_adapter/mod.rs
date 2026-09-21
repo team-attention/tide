@@ -120,10 +120,12 @@ pub(crate) fn visible_editor_size(
         .find(|(pid, _)| *pid == pane_id)
         .map(|(_, r)| *r);
     if let Some(r) = tree_rect {
-        let content_rect = crate::pane::pane_content_rect(r, content_top);
         if let Some(PaneKind::Editor(pane)) = ctx.pane(pane_id) {
+            let content_rect =
+                pane.content_rect_with_pane_bar(r, ctx.save_confirm_pane_id(), cs);
             pane.viewport_size_for_content_rect(content_rect, cs)
         } else {
+            let content_rect = crate::pane::pane_content_rect(r, content_top);
             let rows = (content_rect.height / cs.height).floor() as usize;
             let cols = (content_rect.width / cs.width).floor() as usize;
             (rows.max(1), cols.max(1))

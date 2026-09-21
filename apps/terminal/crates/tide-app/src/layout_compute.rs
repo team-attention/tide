@@ -621,7 +621,7 @@ impl crate::application::ports::inward::LayoutPort for App {
             if cell_size.width > 0.0 && cell_size.height > 0.0 {
                 let decorations = PaneDecorations {
                     gap: PANE_GAP,
-                    padding: PANE_PADDING,
+                    padding: 0.0,
                     tab_bar_height: TAB_BAR_HEIGHT,
                 };
                 let mut layout_for_rects = self.layout.clone();
@@ -822,15 +822,9 @@ impl crate::application::ports::inward::LayoutPort for App {
         if allow_terminal_backend_resize {
             let cell_size = self.cell_size();
             if cell_size.width > 0.0 {
-                let content_top = terminal_content_top(cell_size.height);
                 for &(id, vr) in &self.visual_pane_rects {
                     if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&id) {
-                        let content_rect = Rect::new(
-                            vr.x + PANE_PADDING,
-                            vr.y + content_top,
-                            (vr.width - 2.0 * PANE_PADDING).max(cell_size.width),
-                            (vr.height - content_top - PANE_PADDING).max(cell_size.height),
-                        );
+                        let content_rect = crate::pane::pane_content_rect(vr, TAB_BAR_HEIGHT);
                         pane.resize_to_rect(content_rect, cell_size);
                     }
                 }

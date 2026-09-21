@@ -385,7 +385,6 @@ fn click_in_authoring_mode_moves_cursor_using_current_layout() {
 
     let cell = app.window.cached_cell_size;
     let x = pane_rect.x
-        + crate::theme::PANE_PADDING
         + crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell.width
         + 2.0 * cell.width
         + 1.0;

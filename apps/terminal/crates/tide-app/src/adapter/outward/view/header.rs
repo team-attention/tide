@@ -80,7 +80,7 @@ pub(crate) struct SinglePaneHeaderChrome {
     pub show_header_action_strip: bool,
 }
 
-const HEADER_ACTION_TILE_SIZE: f32 = 18.0;
+pub(crate) const HEADER_ACTION_TILE_SIZE: f32 = 18.0;
 const HEADER_ACTION_TILE_RADIUS: f32 = 4.0;
 const SURFACE_IDENTITY_OWNER_MAX_CHARS: usize = 24;
 
@@ -415,20 +415,8 @@ fn compact_surface_owner_label(owner_label: &str) -> String {
     }
 }
 
-pub(crate) fn terminal_context_surface_identity_label(
-    owner_label: &str,
-    pane_count: usize,
-    is_stacked: bool,
-) -> String {
-    let mode = if is_stacked { "stacked" } else { "split" };
-    let pane_word = if pane_count == 1 { "pane" } else { "panes" };
-    format!(
-        "Context: {} / {} / {} {}",
-        compact_surface_owner_label(owner_label),
-        mode,
-        pane_count,
-        pane_word
-    )
+pub(crate) fn terminal_context_surface_identity_label(owner_label: &str) -> String {
+    format!("Context: {}", compact_surface_owner_label(owner_label))
 }
 
 fn header_surface_identity_badge_width(cell_w: f32, label: &str) -> f32 {
@@ -2394,14 +2382,10 @@ mod tests {
     }
 
     #[test]
-    fn terminal_context_surface_identity_label_names_owner_mode_and_count() {
+    fn terminal_context_surface_identity_label_names_only_the_owner() {
         assert_eq!(
-            terminal_context_surface_identity_label("Terminal 1", 1, true),
-            "Context: Terminal 1 / stacked / 1 pane"
-        );
-        assert_eq!(
-            terminal_context_surface_identity_label("workspace-shell", 3, false),
-            "Context: workspace-shell / split / 3 panes"
+            terminal_context_surface_identity_label("workspace-shell"),
+            "Context: workspace-shell"
         );
     }
 
@@ -2466,18 +2450,14 @@ mod tests {
     #[test]
     fn terminal_context_surface_identity_compacts_long_owner_labels() {
         assert_eq!(
-            terminal_context_surface_identity_label(
-                "a-very-long-terminal-working-directory",
-                2,
-                true
-            ),
-            "Context: a-very-long-terminal... / stacked / 2 panes"
+            terminal_context_surface_identity_label("a-very-long-terminal-working-directory"),
+            "Context: a-very-long-terminal..."
         );
     }
 
     #[test]
     fn surface_identity_width_is_reserved_only_when_header_has_room() {
-        let label = terminal_context_surface_identity_label("Terminal 1", 1, true);
+        let label = terminal_context_surface_identity_label("Terminal 1");
         let cell_w = 8.0;
         let leading_w =
             header_leading_view_mode_width(Some(&HeaderHitAction::ToggleDockViewMode(true)));

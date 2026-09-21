@@ -61,7 +61,6 @@ fn identifier_click_position(
     let cell = app.window.cached_cell_size;
     Vec2::new(
         pane_rect.x
-            + crate::theme::PANE_PADDING
             + crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell.width
             + col_index as f32 * cell.width
             + 1.0,

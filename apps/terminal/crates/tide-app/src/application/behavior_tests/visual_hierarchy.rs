@@ -18,8 +18,9 @@ use crate::adapter::outward::view::{
 use crate::event_loop::handle_platform_event;
 use crate::header::{
     header_action_icon, header_action_icon_text_glyph, header_close_icon_text_glyph,
-    header_leading_view_mode_width, single_pane_header_action_specs_for_surface,
-    single_pane_header_chrome, single_pane_header_layout, single_pane_header_paint_steps,
+    header_leading_view_mode_width, header_surface_identity_width,
+    single_pane_header_action_specs_for_surface, single_pane_header_chrome,
+    single_pane_header_layout, single_pane_header_paint_steps,
     stacked_tab_bar_header_action_specs_for_surface, HeaderActionIcon, HeaderHitAction,
     HeaderHitZone, HeaderSurfaceKind, SinglePaneHeaderPaintStep,
 };
@@ -31,9 +32,9 @@ use crate::state::{
     SURFACE_VISIBILITY_ANIMATION_DURATION,
 };
 use crate::theme::{
-    FILE_TREE_MIN_WIDTH, FILE_TREE_WIDTH, PANE_PADDING, TERMINAL_CONTEXT_SURFACE_MIN_WIDTH,
-    TITLEBAR_BUTTON_GAP, TITLEBAR_HEIGHT, TITLEBAR_ICON_BUTTON_PAD_H, TITLEBAR_ICON_BUTTON_PAD_V,
-    TITLEBAR_ICON_SCALE,
+    FILE_TREE_MIN_WIDTH, FILE_TREE_WIDTH, HEADER_BAR_HEIGHT, PANE_PADDING,
+    TERMINAL_CONTEXT_SURFACE_MIN_WIDTH, TITLEBAR_BUTTON_GAP, TITLEBAR_HEIGHT,
+    TITLEBAR_ICON_BUTTON_PAD_H, TITLEBAR_ICON_BUTTON_PAD_V, TITLEBAR_ICON_SCALE,
 };
 use crate::tide_core::{LayoutEngine, MouseButton, Rect, SplitDirection, Vec2};
 use crate::tide_input::GlobalAction;
@@ -264,8 +265,8 @@ fn terminal_context_surface_header_keeps_context_tab_chrome() {
 }
 
 #[test]
-fn terminal_context_surface_header_identity_names_owner_mode_and_count() {
-    // UC-2 BR-40: Terminal Context Surface headers identify their owning Stage Terminal.
+fn terminal_context_surface_header_identity_is_hidden_when_stacked_and_compact_when_split() {
+    // UC-10 BR-39/BR-40: Stacked context headers reserve no identity width; Split headers retain only the owner.
     let (mut app, terminal_id) = app_with_context_pane();
     if let Some(PaneKind::Terminal(terminal)) = app.panes.get_mut(&terminal_id) {
         terminal.context.osc_title = Some("tide-workbench".to_string());
@@ -275,9 +276,11 @@ fn terminal_context_surface_header_identity_names_owner_mode_and_count() {
         _ => panic!("stage terminal should exist"),
     };
 
+    let stacked_label = terminal_context_surface_header_identity_label(&app, first_context_id);
+    assert_eq!(stacked_label, None);
     assert_eq!(
-        terminal_context_surface_header_identity_label(&app, first_context_id).as_deref(),
-        Some("Context: tide-workbench / stacked / 1 pane")
+        header_surface_identity_width(8.0, stacked_label.as_deref()),
+        0.0
     );
     assert_eq!(
         terminal_context_surface_header_identity_label(&app, terminal_id),
@@ -296,7 +299,7 @@ fn terminal_context_surface_header_identity_names_owner_mode_and_count() {
 
     assert_eq!(
         terminal_context_surface_header_identity_label(&app, second_context_id).as_deref(),
-        Some("Context: tide-workbench / split / 2 panes")
+        Some("Context: tide-workbench")
     );
 }
 
@@ -944,6 +947,7 @@ fn titlebar_surface_toggles_are_icon_only_larger_controls() {
         titlebar_toggle_button_height(cell_h).to_bits(),
         (cell_h * TITLEBAR_ICON_SCALE + TITLEBAR_ICON_BUTTON_PAD_V * 2.0).to_bits()
     );
+    assert!(titlebar_toggle_button_height(cell_h) <= HEADER_BAR_HEIGHT);
     assert!(titlebar_toggle_button_width(cell_w) < old_hint_button_w);
 }
 

@@ -192,10 +192,12 @@ impl App {
 
         // ── Pre-render: mutable pane state preparation ──
         for &(id, rect) in &visual_pane_rects {
-            let pane_bar = bar_offset_for(id, &self.panes, &self.modal.save_confirm);
             if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&id) {
-                let content_rect =
-                    pane.content_rect(rect, TAB_BAR_HEIGHT + pane_bar, renderer.cell_size());
+                let content_rect = pane.content_rect_with_pane_bar(
+                    rect,
+                    self.modal.save_confirm.as_ref().map(|state| state.pane_id),
+                    renderer.cell_size(),
+                );
                 pane.prepare_inline_caches(
                     content_rect,
                     renderer.cell_size(),

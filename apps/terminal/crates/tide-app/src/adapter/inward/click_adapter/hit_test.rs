@@ -22,8 +22,7 @@ pub(crate) fn pixel_to_cell(
         .iter()
         .find(|(id, _)| *id == pane_id)?;
     let cell_size = ctx.cell_size();
-    let content_top = terminal_content_top(cell_size.height);
-    let inner = crate::pane::pane_content_rect(*visual_rect, content_top);
+    let inner = crate::pane::pane_content_rect(*visual_rect, TAB_BAR_HEIGHT);
     let origin = crate::pane::terminal_grid_origin(inner);
     let col = ((pos.x - origin.x) / cell_size.width).floor() as isize;
     let row = ((pos.y - origin.y) / cell_size.height).floor() as isize;
@@ -284,7 +283,11 @@ pub(crate) fn compute_hover_target(
         let cell_size = ctx.cell_size();
         for &(id, rect) in ctx.visual_pane_rects() {
             if let Some(PaneKind::Editor(pane)) = ctx.pane(id) {
-                let inner = pane.content_rect(rect, TAB_BAR_HEIGHT, cell_size);
+                let inner = pane.content_rect_with_pane_bar(
+                    rect,
+                    ctx.save_confirm_pane_id(),
+                    cell_size,
+                );
                 if pane.needs_scrollbar(inner, cell_size.height) {
                     let sb_x = inner.x + inner.width - SCROLLBAR_WIDTH_HOVER;
                     if pos.x >= sb_x
@@ -303,10 +306,14 @@ pub(crate) fn compute_hover_target(
     for &(id, rect) in ctx.visual_pane_rects() {
         let content = match ctx.pane(id) {
             Some(PaneKind::Terminal(_)) => {
-                crate::pane::pane_content_rect(rect, terminal_content_top(ctx.cell_size().height))
+                crate::pane::pane_content_rect(rect, TAB_BAR_HEIGHT)
             }
             Some(PaneKind::Editor(pane)) => {
-                pane.content_rect(rect, TAB_BAR_HEIGHT, ctx.cell_size())
+                pane.content_rect_with_pane_bar(
+                    rect,
+                    ctx.save_confirm_pane_id(),
+                    ctx.cell_size(),
+                )
             }
             Some(PaneKind::Diff(_))
             | Some(PaneKind::Browser(_))

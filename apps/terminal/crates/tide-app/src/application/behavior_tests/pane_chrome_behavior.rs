@@ -16,6 +16,7 @@ use crate::adapter::outward::view::header::{
     shared_tab_target_width, stage_terminal_dot_color, stage_terminal_dot_status,
     stage_terminal_dot_visual_state, tab_status_dot_width, terminal_chrome_agent_status,
     terminal_chrome_visual_state, terminal_header_title_color, AgentChromeState, HeaderHitAction,
+    HEADER_ACTION_TILE_SIZE,
 };
 use crate::adapter::outward::view::{
     integration_toggle_notification_indicator_color, pane_surface_attention_status,
@@ -30,8 +31,9 @@ use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalContext, TerminalPane};
 use crate::state::FocusArea;
 use crate::theme::{
-    ACTIVE_TAB_MAX_WIDTH, AGENT_BLINK_FREQUENCY, BADGE_GAP, BADGE_PADDING_H, DARK, LIGHT,
-    TAB_BAR_HEIGHT, TAB_CONTENT_SPACING, TAB_H_PAD, TAB_MAX_WIDTH, TAB_MIN_TITLE_WIDTH,
+    ACTIVE_TAB_MAX_WIDTH, AGENT_BLINK_FREQUENCY, BADGE_GAP, BADGE_PADDING_H, DARK,
+    FILE_TREE_HEADER_HEIGHT, HEADER_BAR_HEIGHT, LIGHT, TAB_BAR_HEIGHT, TAB_CONTENT_SPACING,
+    TAB_H_PAD, TAB_MAX_WIDTH, TAB_MIN_TITLE_WIDTH, TITLEBAR_HEIGHT,
 };
 use crate::tide_core::{DropZone, LayoutEngine, Rect, SplitDirection, Vec2};
 use crate::tide_terminal::git::{GitInfo, GitStatus, WorktreeInfo};
@@ -1076,7 +1078,7 @@ fn git_badges_yield_space_before_title_disappears() {
     );
 }
 
-// --- UC-4: RenderSharedTabSizingAndReadableTerminalLabels ---
+// --- UC-7: RenderCompactAlignedHeaderBandsAndReadableTerminalLabels ---
 
 #[test]
 fn focused_tabs_use_a_brighter_tint_than_unfocused_tabs() {
@@ -1092,12 +1094,14 @@ fn focused_tabs_use_a_brighter_tint_than_unfocused_tabs() {
 }
 
 #[test]
-fn shared_tab_chrome_is_slightly_larger_across_all_surfaces() {
-    // UC-7 BR-19: Shared tab chrome uses a slightly larger height and padding budget across stacked Stage tabs, Dock tabs, and single-Pane headers.
-    assert!(
-        TAB_BAR_HEIGHT >= 35.0,
-        "shared tab chrome should gain at least one pixel of height"
-    );
+fn aligned_header_bands_are_exactly_32_logical_pixels() {
+    // UC-7 BR-19: The titlebar, shared tab bar, and FileTree View header use one compact 32 px height while preserving fitting header actions.
+    assert_eq!(HEADER_BAR_HEIGHT, 32.0);
+    assert_eq!(TITLEBAR_HEIGHT, HEADER_BAR_HEIGHT);
+    assert_eq!(TAB_BAR_HEIGHT, HEADER_BAR_HEIGHT);
+    assert_eq!(FILE_TREE_HEADER_HEIGHT, HEADER_BAR_HEIGHT);
+    assert_eq!(HEADER_ACTION_TILE_SIZE, 18.0);
+    assert!(HEADER_ACTION_TILE_SIZE <= HEADER_BAR_HEIGHT);
     assert!(
         TAB_H_PAD >= 11.0,
         "shared tab chrome should gain a little more horizontal breathing room"
@@ -1509,6 +1513,55 @@ fn dock_stacked_single_pane_uses_single_pane_header_chrome() {
     assert!(
         dock_stacked_uses_shared_tab_bar(&[7, 8]),
         "multi-pane stacked Terminal Context Surface should keep the shared Dock stacked tab bar"
+    );
+}
+
+// --- UC-10: CompactTerminalContextSurfaceIdentity ---
+
+#[test]
+fn split_terminal_context_surface_scroll_bounds_reserve_identity_width() {
+    // UC-10 BR-40: Split Terminal Context Surface scroll bounds reserve the same compact owner identity width as rendering.
+    let mut app = test_app();
+    let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+
+    let first_id = app.layout.alloc_id();
+    let second_id = app.layout.alloc_id();
+    let third_id = app.layout.alloc_id();
+    let mut terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    terminal.context.osc_title = Some("a".to_string());
+    terminal.dock_view_mode = crate::state::ViewMode::Split;
+    terminal
+        .dock_layout
+        .insert_at_root(first_id, DropZone::Right);
+    assert!(terminal.dock_layout.add_tab(first_id, second_id));
+    assert!(terminal.dock_layout.add_tab(second_id, third_id));
+    assert!(terminal.dock_layout.set_active_tab(third_id));
+    terminal.dock_focused = Some(third_id);
+
+    app.panes.insert(terminal_id, PaneKind::Terminal(terminal));
+    for pane_id in [first_id, second_id, third_id] {
+        app.panes
+            .insert(pane_id, PaneKind::Editor(EditorPane::new_empty(pane_id)));
+        app.assoc.associated_terminal.insert(pane_id, terminal_id);
+    }
+    app.dock.dock_open = true;
+    app.focus.stage_focused = Some(terminal_id);
+    app.focus.focused = Some(third_id);
+    app.focus.focus_area = FocusArea::Dock;
+    let pane_rect = Rect::new(0.0, 0.0, 360.0, 320.0);
+    app.pane_rects = vec![(third_id, pane_rect)];
+    app.visual_pane_rects = vec![(third_id, pane_rect)];
+
+    let short_identity_scroll = AppCorePort::shared_tab_max_scroll(&app, third_id).unwrap();
+    if let Some(PaneKind::Terminal(terminal)) = app.panes.get_mut(&terminal_id) {
+        terminal.context.osc_title = Some("tide-workbench".to_string());
+    }
+    let long_identity_scroll = AppCorePort::shared_tab_max_scroll(&app, third_id).unwrap();
+
+    assert!(
+        long_identity_scroll > short_identity_scroll,
+        "manual-scroll bounds should grow with the rendered split identity width"
     );
 }
 

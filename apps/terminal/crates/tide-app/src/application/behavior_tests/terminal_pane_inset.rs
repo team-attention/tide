@@ -5,7 +5,7 @@ use std::time::Duration;
 use crate::adapter::outward::clock_adapter::FixedClock;
 use crate::pane::{terminal_grid_origin, PaneKind, TerminalPane};
 use crate::state::{FocusArea, SURFACE_VISIBILITY_ANIMATION_DURATION};
-use crate::theme::{terminal_content_top, terminal_top_padding, PANE_PADDING, TAB_BAR_HEIGHT};
+use crate::theme::TAB_BAR_HEIGHT;
 use crate::tide_core::{Rect, Vec2};
 use crate::tide_platform::{WindowCommand, WindowProxy};
 use crate::{ActionPort, App, AppCorePort, DockPort, LayoutPort};
@@ -57,8 +57,8 @@ fn test_window_proxy() -> (WindowProxy, std::sync::mpsc::Receiver<WindowCommand>
 }
 
 fn terminal_first_row_click(rect: Rect, cell_size: crate::tide_core::Size, col: usize) -> Vec2 {
-    let inner_x = rect.x + PANE_PADDING;
-    let inner_y = rect.y + terminal_content_top(cell_size.height);
+    let inner_x = rect.x;
+    let inner_y = rect.y + TAB_BAR_HEIGHT;
 
     Vec2::new(
         inner_x + (col as f32 + 0.5) * cell_size.width,
@@ -66,25 +66,30 @@ fn terminal_first_row_click(rect: Rect, cell_size: crate::tide_core::Size, col: 
     )
 }
 
-// --- UC-1: LayoutTerminalPaneContent ---
+// --- UC-1: LayoutFlushPaneContent ---
 
 #[test]
-fn terminal_content_top_offset_is_half_a_cell() {
-    // UC-1 BR-1: Terminal Pane content starts half a cell below the tab bar
-    assert_eq!(terminal_top_padding(16.0), 8.0);
-    assert_eq!(terminal_content_top(16.0), TAB_BAR_HEIGHT + 8.0);
+fn pane_content_rect_uses_full_width_below_header() {
+    // UC-1 BR-1: Base Pane content uses the full width and all remaining height below the header.
+    let pane_rect = Rect::new(24.0, 12.0, 320.0, 240.0);
+    let content = crate::pane::pane_content_rect(pane_rect, TAB_BAR_HEIGHT);
+
+    assert_eq!(content.x, pane_rect.x);
+    assert_eq!(content.y, pane_rect.y + TAB_BAR_HEIGHT);
+    assert_eq!(content.width, pane_rect.width);
+    assert_eq!(content.height, pane_rect.height - TAB_BAR_HEIGHT);
 }
 
 #[test]
-fn terminal_ime_cursor_area_uses_the_terminal_top_inset() {
-    // UC-1 BR-4: Terminal IME cursor geometry uses the same inset-adjusted origin as terminal rendering
+fn terminal_ime_cursor_area_starts_at_the_content_origin() {
+    // UC-1 BR-4: Terminal IME cursor geometry starts at the same flush origin as terminal rendering.
     let (mut app, terminal_id) = app_with_terminal(40, 6);
     let cell_size = app.window.cached_cell_size;
     let pane_rect = Rect::new(
         24.0,
         12.0,
-        40.0 * cell_size.width + 2.0 * PANE_PADDING,
-        terminal_content_top(cell_size.height) + 6.0 * cell_size.height + PANE_PADDING,
+        40.0 * cell_size.width,
+        TAB_BAR_HEIGHT + 6.0 * cell_size.height,
     );
     app.pane_rects = vec![(terminal_id, pane_rect)];
     app.visual_pane_rects = vec![(terminal_id, pane_rect)];
@@ -109,39 +114,38 @@ fn terminal_ime_cursor_area_uses_the_terminal_top_inset() {
 
     let (pane_id, x, y, w, h) = cursor_area.expect("terminal IME cursor area command");
     assert_eq!(pane_id, terminal_id);
-    assert_eq!(x, (pane_rect.x + PANE_PADDING) as f64);
-    assert_eq!(
-        y,
-        (pane_rect.y + terminal_content_top(cell_size.height)) as f64
-    );
+    assert_eq!(x, pane_rect.x as f64);
+    assert_eq!(y, (pane_rect.y + TAB_BAR_HEIGHT) as f64);
     assert_eq!(w, cell_size.width as f64);
     assert_eq!(h, cell_size.height as f64);
 }
 
 #[test]
 fn terminal_grid_origin_stays_left_anchored_when_width_changes() {
-    // UC-1 BR-9: Terminal Pane grid origin stays left-anchored inside the padded content rect when the rect width changes.
-    let narrow = Rect::new(32.0, 48.0, 501.0, 320.0);
-    let wide = Rect::new(32.0, 48.0, 537.0, 320.0);
+    // UC-1 BR-9: Terminal Pane grid origin stays left-anchored at the flush content origin when the rect width changes.
+    let narrow_pane = Rect::new(32.0, 48.0, 501.0, 320.0);
+    let wide_pane = Rect::new(32.0, 48.0, 537.0, 320.0);
+    let narrow = crate::pane::pane_content_rect(narrow_pane, TAB_BAR_HEIGHT);
+    let wide = crate::pane::pane_content_rect(wide_pane, TAB_BAR_HEIGHT);
 
-    assert_eq!(terminal_grid_origin(narrow).x, narrow.x);
-    assert_eq!(terminal_grid_origin(wide).x, narrow.x);
-    assert_eq!(terminal_grid_origin(wide).y, narrow.y);
+    assert_eq!(terminal_grid_origin(narrow).x, narrow_pane.x);
+    assert_eq!(terminal_grid_origin(wide).x, narrow_pane.x);
+    assert_eq!(terminal_grid_origin(wide).y, narrow_pane.y + TAB_BAR_HEIGHT);
 }
 
-// --- UC-2: MapTerminalCoordinates ---
+// --- UC-2: MapFlushPaneCoordinates ---
 
 #[test]
-fn terminal_click_mapping_respects_the_terminal_top_inset() {
-    // UC-2 BR-2, BR-3: Pointer positions inside the top inset do not map to row 0, while first-row positions still do
+fn terminal_click_mapping_starts_at_the_content_origin() {
+    // UC-2 BR-2, BR-3: Header positions do not map to row 0, while positions on the first content row do.
     let url = "https://example.com";
     let (mut app, terminal_id) = app_with_terminal(40, 6);
     let cell_size = app.window.cached_cell_size;
     let pane_rect = Rect::new(
         24.0,
         12.0,
-        40.0 * cell_size.width + 2.0 * PANE_PADDING,
-        terminal_content_top(cell_size.height) + 6.0 * cell_size.height + PANE_PADDING,
+        40.0 * cell_size.width,
+        TAB_BAR_HEIGHT + 6.0 * cell_size.height,
     );
     app.pane_rects = vec![(terminal_id, pane_rect)];
     app.visual_pane_rects = vec![(terminal_id, pane_rect)];
@@ -150,16 +154,32 @@ fn terminal_click_mapping_respects_the_terminal_top_inset() {
         pane.backend.load_mock_screen_for_test(url);
     }
 
-    let padding_click = Vec2::new(
-        pane_rect.x + PANE_PADDING + 2.0 * cell_size.width,
-        pane_rect.y + TAB_BAR_HEIGHT + terminal_top_padding(cell_size.height) / 2.0,
+    let header_click = Vec2::new(
+        pane_rect.x + 2.0 * cell_size.width,
+        pane_rect.y + TAB_BAR_HEIGHT - 0.5,
     );
     assert_eq!(
-        crate::TextExtractPort::extract_url_at(&app, terminal_id, padding_click),
+        crate::TextExtractPort::extract_url_at(&app, terminal_id, header_click),
+        None
+    );
+    assert_eq!(
+        crate::adapter::inward::click_adapter::hit_test::pixel_to_cell(
+            &app,
+            header_click,
+            terminal_id,
+        ),
         None
     );
 
-    let first_row_click = terminal_first_row_click(pane_rect, cell_size, 2);
+    let first_row_click = terminal_first_row_click(pane_rect, cell_size, 0);
+    assert_eq!(
+        crate::adapter::inward::click_adapter::hit_test::pixel_to_cell(
+            &app,
+            first_row_click,
+            terminal_id,
+        ),
+        Some((0, 0))
+    );
     assert_eq!(
         crate::TextExtractPort::extract_url_at(&app, terminal_id, first_row_click),
         Some(url.to_string())
@@ -169,30 +189,29 @@ fn terminal_click_mapping_respects_the_terminal_top_inset() {
 #[test]
 fn terminal_click_mapping_uses_left_anchored_grid_origin() {
     // UC-2 BR-10: Terminal pointer mapping uses the same left-anchored grid origin as terminal rendering.
-    let url = "https://example.com";
     let (mut app, terminal_id) = app_with_terminal(40, 6);
     let cell_size = app.window.cached_cell_size;
     let pane_rect = Rect::new(
         24.0,
         12.0,
-        40.0 * cell_size.width + 2.0 * PANE_PADDING + cell_size.width - 2.0,
-        terminal_content_top(cell_size.height) + 6.0 * cell_size.height + PANE_PADDING,
+        40.0 * cell_size.width + cell_size.width - 2.0,
+        TAB_BAR_HEIGHT + 6.0 * cell_size.height,
     );
     app.pane_rects = vec![(terminal_id, pane_rect)];
     app.visual_pane_rects = vec![(terminal_id, pane_rect)];
 
-    if let Some(PaneKind::Terminal(pane)) = app.panes.get_mut(&terminal_id) {
-        pane.backend.load_mock_screen_for_test(url);
-    }
-
     let left_anchored_click = Vec2::new(
-        pane_rect.x + PANE_PADDING + 2.5 * cell_size.width,
-        pane_rect.y + terminal_content_top(cell_size.height) + 0.5 * cell_size.height,
+        pane_rect.x + 2.5 * cell_size.width,
+        pane_rect.y + TAB_BAR_HEIGHT + 0.5 * cell_size.height,
     );
 
     assert_eq!(
-        crate::TextExtractPort::extract_url_at(&app, terminal_id, left_anchored_click),
-        Some(url.to_string())
+        crate::adapter::inward::click_adapter::hit_test::pixel_to_cell(
+            &app,
+            left_anchored_click,
+            terminal_id,
+        ),
+        Some((0, 2))
     );
 }
 

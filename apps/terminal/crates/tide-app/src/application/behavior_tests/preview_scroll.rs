@@ -2,7 +2,7 @@
 use crate::pane::editor::{self, EditorPane};
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
-use crate::theme::{PANE_PADDING, TAB_BAR_HEIGHT};
+use crate::theme::TAB_BAR_HEIGHT;
 use crate::tide_core::{Color, TextStyle};
 use crate::tide_editor::highlight::{StyledSpan, StyledSpanCursor};
 use crate::tide_editor::markdown::{render_markdown_preview, MarkdownTheme};
@@ -51,8 +51,7 @@ fn app_with_preview_editor(line_count: usize) -> (App, u64, crate::tide_core::Re
 }
 
 fn preview_visible_rows(app: &App, pane_rect: crate::tide_core::Rect) -> usize {
-    ((pane_rect.height - TAB_BAR_HEIGHT - PANE_PADDING) / app.window.cached_cell_size.height)
-        .floor() as usize
+    (preview_content_rect(pane_rect).height / app.window.cached_cell_size.height).floor() as usize
 }
 
 fn preview_max_scroll(app: &App, pane_id: u64, pane_rect: crate::tide_core::Rect) -> usize {
@@ -64,6 +63,18 @@ fn preview_max_scroll(app: &App, pane_id: u64, pane_rect: crate::tide_core::Rect
 }
 
 // --- markdown-preview-performance-polish UC-3: ReadFullMarkdownPreview ---
+
+#[test]
+fn preview_visible_rows_use_full_content_height() {
+    // terminal-pane-inset UC-2 BR-15: Preview capacity uses all remaining height below the header.
+    let app = test_app();
+    let pane_rect = crate::tide_core::Rect::new(12.0, 20.0, 420.0, 320.0);
+
+    assert_eq!(
+        preview_visible_rows(&app, pane_rect),
+        ((pane_rect.height - TAB_BAR_HEIGHT) / app.window.cached_cell_size.height).floor() as usize
+    );
+}
 
 #[test]
 fn wide_markdown_preview_uses_centered_readable_width() {

@@ -19,8 +19,7 @@ impl crate::TextExtractPort for App {
                     .find(|(id, _)| *id == pane_id)?;
                 let cell_size = self.cell_size();
 
-                let content_top = terminal_content_top(cell_size.height);
-                let inner = crate::pane::pane_content_rect(*visual_rect, content_top);
+                let inner = crate::pane::pane_content_rect(*visual_rect, TAB_BAR_HEIGHT);
                 let origin = crate::pane::terminal_grid_origin(inner);
 
                 let col = ((position.x - origin.x) / cell_size.width).floor() as isize;
@@ -64,8 +63,7 @@ impl crate::TextExtractPort for App {
             .find(|(id, _)| *id == pane_id)?;
         let cell_size = self.cell_size();
 
-        let content_top = terminal_content_top(cell_size.height);
-        let inner = crate::pane::pane_content_rect(*visual_rect, content_top);
+        let inner = crate::pane::pane_content_rect(*visual_rect, TAB_BAR_HEIGHT);
         let origin = crate::pane::terminal_grid_origin(inner);
 
         let col = ((position.x - origin.x) / cell_size.width).floor() as isize;

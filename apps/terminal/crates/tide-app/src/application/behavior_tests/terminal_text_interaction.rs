@@ -7,7 +7,7 @@ use crate::application::ports::inward::ActionPort;
 use crate::application::ports::outward::clipboard_port::ClipboardPort;
 use crate::pane::{PaneKind, Selection, TerminalPane};
 use crate::state::{ConfigPageState, ConfigSection, FocusArea};
-use crate::theme::{terminal_content_top, PANE_PADDING, TAB_BAR_HEIGHT};
+use crate::theme::TAB_BAR_HEIGHT;
 use crate::tide_core::{InputEvent, MouseButton, Rect, TerminalBackend, Vec2};
 use crate::tide_input::{Action, GlobalAction};
 use crate::App;
@@ -39,8 +39,8 @@ fn terminal_click_position(
     row: usize,
     col: usize,
 ) -> Vec2 {
-    let inner_x = rect.x + PANE_PADDING;
-    let inner_y = rect.y + terminal_content_top(cell_size.height);
+    let inner_x = rect.x;
+    let inner_y = rect.y + TAB_BAR_HEIGHT;
 
     Vec2::new(
         inner_x + (col as f32 + 0.5) * cell_size.width,
@@ -162,7 +162,7 @@ fn cmd_clicking_a_wrapped_terminal_url_opens_the_full_url() {
     let pane_rect = Rect::new(
         24.0,
         12.0,
-        25.0 * app.window.cached_cell_size.width + 2.0 * PANE_PADDING,
+        25.0 * app.window.cached_cell_size.width,
         TAB_BAR_HEIGHT + 6.0 * app.window.cached_cell_size.height,
     );
     app.pane_rects = vec![(terminal_id, pane_rect)];
@@ -205,7 +205,7 @@ fn cmd_clicking_osc8_hyperlink_opens_explicit_target() {
     let pane_rect = Rect::new(
         24.0,
         12.0,
-        80.0 * app.window.cached_cell_size.width + 2.0 * PANE_PADDING,
+        80.0 * app.window.cached_cell_size.width,
         TAB_BAR_HEIGHT + 6.0 * app.window.cached_cell_size.height,
     );
     app.pane_rects = vec![(terminal_id, pane_rect)];

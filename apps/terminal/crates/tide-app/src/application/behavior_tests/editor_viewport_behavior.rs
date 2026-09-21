@@ -23,6 +23,68 @@ fn char_col_to_byte(line: &str, char_col: usize) -> usize {
         .unwrap_or(line.len())
 }
 
+// --- terminal-pane-inset UC-1: LayoutFlushPaneContent ---
+
+#[test]
+fn editor_content_rect_uses_full_pane_width_below_header() {
+    // UC-1 BR-14: Editor Pane content starts from the shared flush base rectangle before semantic gutters.
+    let pane = EditorPane::new_empty(1);
+    let pane_rect = Rect::new(10.0, 20.0, 320.0, 220.0);
+    let cell_size = Size::new(8.0, 16.0);
+    let content = pane.content_rect(pane_rect, crate::theme::TAB_BAR_HEIGHT, cell_size);
+
+    assert_eq!(content.x, pane_rect.x);
+    assert_eq!(content.y, pane_rect.y + crate::theme::TAB_BAR_HEIGHT);
+    assert_eq!(content.width, pane_rect.width);
+    assert_eq!(
+        content.height,
+        pane_rect.height - crate::theme::TAB_BAR_HEIGHT
+    );
+}
+
+#[test]
+fn editor_click_target_tracks_optional_pane_bar() {
+    // UC-1 BR-18: Editor pointer mapping uses the rendered content origin with and without a Pane bar.
+    for bar_state in ["none", "notification", "save-confirm"] {
+        let mut app = App::new();
+        app.window.cached_cell_size = Size::new(8.0, 16.0);
+        let pane_id = 1;
+        let pane_rect = Rect::new(10.0, 20.0, 320.0, 220.0);
+        let mut pane = EditorPane::new_empty(pane_id);
+        pane.editor.buffer.lines = vec!["first".to_string(), "second".to_string()];
+        if bar_state == "notification" {
+            pane.disk_changed = true;
+        }
+        app.panes.insert(pane_id, PaneKind::Editor(pane));
+        app.visual_pane_rects = vec![(pane_id, pane_rect)];
+        if bar_state == "save-confirm" {
+            app.modal.save_confirm = Some(crate::SaveConfirmState { pane_id });
+        }
+
+        let pane_bar = if bar_state == "none" {
+            0.0
+        } else {
+            crate::theme::CONFLICT_BAR_HEIGHT
+        };
+        let position = Vec2::new(
+            pane_rect.x
+                + crate::pane::editor::GUTTER_WIDTH_CELLS as f32
+                    * app.window.cached_cell_size.width
+                + 1.0,
+            pane_rect.y
+                + crate::theme::TAB_BAR_HEIGHT
+                + pane_bar
+                + app.window.cached_cell_size.height / 2.0,
+        );
+
+        assert_eq!(
+            app.editor_click_target(pane_id, position),
+            Some((0, 0)),
+            "wrong Editor cell for {bar_state} Pane bar state"
+        );
+    }
+}
+
 // --- UC-1: KeepDocumentChromeAndCursorLocked ---
 
 #[test]
@@ -390,7 +452,7 @@ fn ime_cursor_area_matches_editor_cursor_geometry() {
         .authoring_cursor_rect(authoring_rect, cell_size, 0)
         .expect("cursor should be visible");
     let ime_rect = crate::adapter::inward::event_loop_adapter::editor_ime_cursor_area(
-        &pane, pane_rect, cell_size, "",
+        &pane, pane_rect, cell_size, "", None,
     )
     .expect("ime cursor area should be visible");
 
@@ -419,7 +481,7 @@ fn wrapped_ime_cursor_area_matches_editor_cursor_geometry() {
         .authoring_cursor_rect(authoring_rect, cell_size, 0)
         .expect("wrapped cursor should be visible");
     let ime_rect = crate::adapter::inward::event_loop_adapter::editor_ime_cursor_area(
-        &pane, pane_rect, cell_size, "",
+        &pane, pane_rect, cell_size, "", None,
     )
     .expect("wrapped ime cursor area should be visible");
 

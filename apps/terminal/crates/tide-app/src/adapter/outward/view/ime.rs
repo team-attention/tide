@@ -39,8 +39,7 @@ pub(crate) fn render_ime_and_drop_preview(
                 if let Some(PaneKind::Terminal(pane)) = app.panes.get(&target_id) {
                     let cursor = pane.backend.cursor();
                     let cell_size = renderer.cell_size();
-                    let ime_top = terminal_content_top(cell_size.height);
-                    let inner = pane_content_rect(*rect, ime_top);
+                    let inner = pane_content_rect(*rect, TAB_BAR_HEIGHT);
                     let inner_offset = terminal_grid_origin(inner);
                     let cx = inner_offset.x + cursor.col as f32 * cell_size.width;
                     let cy = inner_offset.y + cursor.row as f32 * cell_size.height;
@@ -227,7 +226,11 @@ fn render_editor_ime_preedit(
     // Determine the rect for this editor pane
     let (inner_x, inner_y) =
         if let Some((_, rect)) = visual_pane_rects.iter().find(|(id, _)| *id == target_id) {
-            let content_rect = pane.content_rect(*rect, TAB_BAR_HEIGHT, cell_size);
+            let content_rect = pane.content_rect_with_pane_bar(
+                *rect,
+                app.modal.save_confirm.as_ref().map(|state| state.pane_id),
+                cell_size,
+            );
             let authoring_rect = if pane.preview_mode {
                 content_rect
             } else {

@@ -55,11 +55,15 @@ pub(super) fn render_completion_popups(
         };
         let visual_col = cursor_char_col.saturating_sub(h_scroll);
 
-        let content_top = crate::theme::TAB_BAR_HEIGHT;
+        let content_rect = pane.content_rect_with_pane_bar(
+            *pane_rect,
+            app.modal.save_confirm.as_ref().map(|state| state.pane_id),
+            cell_size,
+        );
         let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
         let cursor_x =
-            pane_rect.x + PANE_PADDING + gutter_width + visual_col as f32 * cell_size.width;
-        let cursor_y = pane_rect.y + content_top + (visual_row as f32 + 1.0) * cell_size.height;
+            content_rect.x + gutter_width + visual_col as f32 * cell_size.width;
+        let cursor_y = content_rect.y + (visual_row as f32 + 1.0) * cell_size.height;
 
         // Compute popup dimensions
         let visible_count = visible.len().min(COMPLETION_VISIBLE_COUNT);
@@ -94,8 +98,7 @@ pub(super) fn render_completion_popups(
         }
         if popup_y + popup_h > logical.height {
             // Show above the cursor line instead
-            popup_y =
-                pane_rect.y + content_top + visual_row as f32 * cell_size.height - popup_h - 2.0;
+            popup_y = content_rect.y + visual_row as f32 * cell_size.height - popup_h - 2.0;
         }
 
         let popup_rect = Rect::new(popup_x, popup_y, popup_w, popup_h);

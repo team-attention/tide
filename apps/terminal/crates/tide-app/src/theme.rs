@@ -644,7 +644,6 @@ pub fn palette_for(dark_mode: bool, palette: ThemePalettePreference) -> &'static
 pub const BORDER_WIDTH: f32 = 1.0;
 pub const PANE_GAP: f32 = 2.0;
 pub const PANE_PADDING: f32 = 12.0;
-pub const TERMINAL_TOP_PADDING_CELLS: f32 = 0.5;
 pub const PANE_CORNER_RADIUS: f32 = 0.0;
 pub const FILE_TREE_LINE_SPACING: f32 = 1.7;
 /// Row rhythm for the file finder / command palette — roomier than the file
@@ -657,7 +656,8 @@ pub const TERMINAL_CONTEXT_SURFACE_WIDTH: f32 = 1040.0;
 pub const TERMINAL_CONTEXT_SURFACE_MIN_WIDTH: f32 = 360.0;
 pub const TERMINAL_CONTEXT_SURFACE_DEFAULT_RATIO: f32 = 0.42;
 
-pub const TAB_BAR_HEIGHT: f32 = 35.0;
+pub const HEADER_BAR_HEIGHT: f32 = 32.0;
+pub const TAB_BAR_HEIGHT: f32 = HEADER_BAR_HEIGHT;
 pub const SIDE_SURFACE_BORDER_HIT_SLOP: f32 = 8.0;
 pub const TAB_CLOSE_ICON_SIZE: f32 = 9.0;
 pub const TAB_H_PAD: f32 = 11.0;
@@ -682,18 +682,6 @@ pub fn terminal_context_surface_width_for_layout(stored_width: f32, window_width
     } else {
         stored_width
     }
-}
-
-pub fn terminal_top_padding(cell_height: f32) -> f32 {
-    if cell_height <= 0.0 {
-        0.0
-    } else {
-        (cell_height * TERMINAL_TOP_PADDING_CELLS).round()
-    }
-}
-
-pub fn terminal_content_top(cell_height: f32) -> f32 {
-    TAB_BAR_HEIGHT + terminal_top_padding(cell_height)
 }
 
 pub const TAB_ACTIVE_INDICATOR_HEIGHT: f32 = 2.0;
@@ -725,13 +713,13 @@ pub const CONFLICT_BAR_HEIGHT: f32 = 28.0;
 // Header badges
 /// Height of the macOS titlebar inset (traffic light area).
 /// Used to offset all layout rects so content doesn't overlap the titlebar controls.
-pub const TITLEBAR_HEIGHT: f32 = 40.0;
+pub const TITLEBAR_HEIGHT: f32 = HEADER_BAR_HEIGHT;
 
 pub const BADGE_PADDING_H: f32 = 8.0;
 pub const BADGE_GAP: f32 = 6.0;
 pub const BADGE_RADIUS: f32 = 100.0;
 
-pub const FILE_TREE_HEADER_HEIGHT: f32 = 38.0;
+pub const FILE_TREE_HEADER_HEIGHT: f32 = HEADER_BAR_HEIGHT;
 pub const TITLEBAR_ICON_BUTTON_PAD_H: f32 = 7.0;
 pub const TITLEBAR_ICON_BUTTON_PAD_V: f32 = 3.0;
 pub const TITLEBAR_ICON_SCALE: f32 = 1.18;
