@@ -37,6 +37,8 @@
    channel.
 4. Keep publishing the DMG to this monorepo's `v*` release with the default
    `github.token`.
+5. Pin `cargo-bundle` to the version compatible with Tide's custom Info.plist
+   configuration so upstream releases cannot break packaging.
 
 ## Bounded Contexts
 
@@ -87,6 +89,8 @@
     preferring `shasum` and falling back to `sha256sum`
   - BR-9: Workflow behavior tests should assert named release steps and their
     required tokens rather than depending on unrelated YAML formatting
+  - BR-10: The packaging tool must stay pinned to `cargo-bundle` 0.11.0 while
+    Tide uses the `info_plist_path` bundle field
 
 ## Invariants
 
@@ -105,6 +109,7 @@
 |----|----|---------------|
 | UC-1 | BR-1, BR-2 | `terminal_release_workflow_keeps_the_monorepo_download_release` |
 | UC-2 | BR-3, BR-4, BR-5, BR-9 | `terminal_release_workflow_publishes_the_update_feed_to_the_dedicated_repo` |
+| UC-2 | BR-10 | `terminal_release_workflow_uses_compatible_cargo_bundle_version` |
 | UC-2 | BR-6, BR-8 | `terminal_update_metadata_script_writes_latest_mac_json` |
 | UC-2 | BR-7 | `terminal_update_metadata_script_reports_missing_default_version_cleanly` |
 

@@ -82,6 +82,17 @@ fn terminal_release_workflow_publishes_the_update_feed_to_the_dedicated_repo() {
 }
 
 #[test]
+fn terminal_release_workflow_uses_compatible_cargo_bundle_version() {
+    // UC-2 BR-10: Packaging must use the cargo-bundle version that accepts Tide's Info.plist configuration.
+    let install_step = workflow_step("Install cargo-bundle");
+
+    assert_contains_all(
+        install_step,
+        &["crate: cargo-bundle", "version: \"0.11.0\""],
+    );
+}
+
+#[test]
 #[cfg(unix)]
 fn terminal_update_metadata_script_writes_latest_mac_json() {
     // UC-2 BR-6, BR-8: The metadata must include version, artifact name, size, SHA-256, release URL, and download URL.
