@@ -127,6 +127,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Workspace rail** | concept | The `WorkspaceManager`-backed side surface for task navigation and monitoring. It lists Workspaces, can show compact identity and attention metadata, and is not a `PaneKind` or `FocusArea` in V1. |
 | **Ratio** | `f32` | Split position (0.0–1.0). Clamped to [0.1, 0.9] minimum. |
 | **Cell Size** | `Size` | Pixel dimensions of one terminal character cell (font-dependent). |
+| **MSDF Font Store** | `MsdfFontStore` | Renderer mapping from font family/style keys to `fontdb` face identities used for MSDF glyph generation. Font bytes remain owned by `cosmic-text` rather than being copied into the store. |
 | **Context Artifact** | concept | A Workspace-local record of an optional captured Pane selection plus an optional user comment. Bound to a source PaneId and its Associated Terminal. |
 | **Source Label** | `String` | A human-readable origin label stored on a `Context Artifact` and used in paired-agent delivery text. `Editor` Panes prefer file paths; other Pane kinds use their most useful user-facing location label. |
 | **Pinned Pane** | legacy concept | A removed Dock model where a context Pane could appear in a global pinned group. Terminal Context Surface does not expose pinned Pane behavior; legacy pin actions are compatibility no-ops. |

@@ -24,7 +24,7 @@ use unicode_width::UnicodeWidthChar;
 
 use atlas::GlyphAtlas;
 use grid::PaneGridCache;
-use msdf::MsdfFontStore;
+pub(crate) use msdf::MsdfFontStore;
 pub(crate) use raster_icon::RasterIconAsset;
 use raster_icon::{RasterIconDrawCall, RasterIconTexture, TerminalImageDrawCall};
 pub(crate) use svg_icon::SvgIconPalette;

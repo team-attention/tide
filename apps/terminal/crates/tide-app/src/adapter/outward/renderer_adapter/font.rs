@@ -77,15 +77,9 @@ impl WgpuRenderer {
         bold: bool,
         italic: bool,
     ) -> bool {
-        let mut font_data = None;
-        self.font_system
-            .db()
-            .with_face_data(face_id, |data, index| {
-                font_data = Some((data.to_vec(), index));
-            });
-        if let Some((data, index)) = font_data {
+        if self.font_system.get_font(face_id).is_some() {
             self.msdf_font_store
-                .register_font(family_key, bold, italic, data, index);
+                .register_font(family_key, bold, italic, face_id);
             true
         } else {
             false
@@ -387,16 +381,19 @@ impl WgpuRenderer {
         // Ensure font is loaded
         let loaded = self
             .msdf_font_store
-            .load_font(&self.font_system, family, bold, italic);
+            .load_font(&mut self.font_system, family, bold, italic);
         if !loaded {
             return empty;
         }
 
         // Generate MSDF
-        let msdf_glyph = match self
-            .msdf_font_store
-            .generate(family, bold, italic, character)
-        {
+        let msdf_glyph = match self.msdf_font_store.generate(
+            &mut self.font_system,
+            family,
+            bold,
+            italic,
+            character,
+        ) {
             Some(g) => g,
             None => return empty,
         };
@@ -432,10 +429,13 @@ impl WgpuRenderer {
     ) -> AtlasRegion {
         let empty = Self::empty_atlas_region();
 
-        let msdf_glyph = match self
-            .msdf_font_store
-            .generate_by_glyph_id(family, bold, italic, glyph_id)
-        {
+        let msdf_glyph = match self.msdf_font_store.generate_by_glyph_id(
+            &mut self.font_system,
+            family,
+            bold,
+            italic,
+            glyph_id,
+        ) {
             Some(g) => g,
             None => return empty,
         };

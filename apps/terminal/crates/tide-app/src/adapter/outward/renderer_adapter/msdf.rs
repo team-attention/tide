@@ -6,22 +6,6 @@
 
 use std::collections::HashMap;
 
-/// Font data loaded for MSDF generation (owns the bytes).
-pub(crate) struct FontData {
-    data: Vec<u8>,
-    face_index: u32,
-}
-
-impl FontData {
-    pub fn new(data: Vec<u8>, face_index: u32) -> Self {
-        Self { data, face_index }
-    }
-
-    pub fn face(&self) -> ttf_parser::Face<'_> {
-        ttf_parser::Face::parse(&self.data, self.face_index).expect("failed to parse font face")
-    }
-}
-
 /// Key for looking up cached fonts.
 #[derive(Hash, Eq, PartialEq, Clone)]
 struct FontKey {
@@ -32,7 +16,7 @@ struct FontKey {
 
 /// Manages font loading and MSDF glyph generation.
 pub(crate) struct MsdfFontStore {
-    fonts: HashMap<FontKey, FontData>,
+    fonts: HashMap<FontKey, fontdb::ID>,
 }
 
 impl MsdfFontStore {
@@ -42,34 +26,49 @@ impl MsdfFontStore {
         }
     }
 
-    /// Register a font directly from raw data.
-    /// Used to ensure MSDF uses the exact same font face that cosmic-text resolved.
-    pub fn register_font(
-        &mut self,
-        family: &str,
-        bold: bool,
-        italic: bool,
-        data: Vec<u8>,
-        face_index: u32,
-    ) {
+    /// Register the exact font face that cosmic-text resolved.
+    pub fn register_font(&mut self, family: &str, bold: bool, italic: bool, face_id: fontdb::ID) {
         let key = FontKey {
             family: family.to_string(),
             bold,
             italic,
         };
-        self.fonts.insert(key, FontData::new(data, face_index));
+        self.fonts.insert(key, face_id);
+    }
+
+    pub fn face_id(&self, family: &str, bold: bool, italic: bool) -> Option<fontdb::ID> {
+        let key = FontKey {
+            family: family.to_string(),
+            bold,
+            italic,
+        };
+        self.fonts.get(&key).copied()
+    }
+
+    fn shared_font(
+        &self,
+        font_system: &mut cosmic_text::FontSystem,
+        family: &str,
+        bold: bool,
+        italic: bool,
+    ) -> Option<(std::sync::Arc<cosmic_text::Font>, u32)> {
+        let face_id = self.face_id(family, bold, italic)?;
+        let face_index = font_system.db().face(face_id)?.index;
+        let font = font_system.get_font(face_id)?;
+        Some((font, face_index))
     }
 
     /// Get em-relative ascender and descender for a loaded font.
     /// Returns (em_ascender, em_descender) where both are positive.
-    pub fn font_metrics(&self, family: &str, bold: bool, italic: bool) -> Option<(f32, f32)> {
-        let key = FontKey {
-            family: family.to_string(),
-            bold,
-            italic,
-        };
-        let font_data = self.fonts.get(&key)?;
-        let face = font_data.face();
+    pub fn font_metrics(
+        &self,
+        font_system: &mut cosmic_text::FontSystem,
+        family: &str,
+        bold: bool,
+        italic: bool,
+    ) -> Option<(f32, f32)> {
+        let (font, face_index) = self.shared_font(font_system, family, bold, italic)?;
+        let face = ttf_parser::Face::parse(font.data(), face_index).ok()?;
         let upm = face.units_per_em() as f32;
         let ascender = face.ascender() as f32 / upm;
         let descender = -(face.descender() as f32) / upm;
@@ -79,7 +78,7 @@ impl MsdfFontStore {
     /// Load a font by family name and style, using fontdb from cosmic-text.
     pub fn load_font(
         &mut self,
-        font_system: &cosmic_text::FontSystem,
+        font_system: &mut cosmic_text::FontSystem,
         family: &str,
         bold: bool,
         italic: bool,
@@ -93,7 +92,6 @@ impl MsdfFontStore {
             return true;
         }
 
-        let db = font_system.db();
         let weight = if bold {
             fontdb::Weight::BOLD
         } else {
@@ -105,60 +103,59 @@ impl MsdfFontStore {
             fontdb::Style::Normal
         };
 
-        let face_id = if family == "Monospace" {
-            // fontdb::Family::Monospace requires set_monospace_family() which
-            // cosmic-text doesn't configure.  Try well-known monospace fonts
-            // in preference order to match cosmic-text's resolution.
-            const MONOSPACE_CANDIDATES: &[&str] = &[
-                "Menlo",
-                "SF Mono",
-                "Monaco",
-                "DejaVu Sans Mono",
-                "Liberation Mono",
-                "Courier New",
-                "Courier",
-            ];
-            let mut found = None;
-            for candidate in MONOSPACE_CANDIDATES {
-                let name = candidate.to_string();
-                let families = vec![fontdb::Family::Name(&name)];
+        let face_id = {
+            let db = font_system.db();
+            if family == "Monospace" {
+                // fontdb::Family::Monospace requires set_monospace_family() which
+                // cosmic-text doesn't configure.  Try well-known monospace fonts
+                // in preference order to match cosmic-text's resolution.
+                const MONOSPACE_CANDIDATES: &[&str] = &[
+                    "Menlo",
+                    "SF Mono",
+                    "Monaco",
+                    "DejaVu Sans Mono",
+                    "Liberation Mono",
+                    "Courier New",
+                    "Courier",
+                ];
+                let mut found = None;
+                for candidate in MONOSPACE_CANDIDATES {
+                    let name = candidate.to_string();
+                    let families = vec![fontdb::Family::Name(&name)];
+                    let query = fontdb::Query {
+                        families: &families,
+                        weight,
+                        stretch: fontdb::Stretch::Normal,
+                        style,
+                    };
+                    if let Some(id) = db.query(&query) {
+                        found = Some(id);
+                        break;
+                    }
+                }
+                // Fallback: pick any monospace face from the database
+                found.or_else(|| {
+                    db.faces()
+                        .find(|f| f.monospaced && f.weight == weight && f.style == style)
+                        .or_else(|| db.faces().find(|f| f.monospaced))
+                        .map(|f| f.id)
+                })
+            } else {
+                let family_name = family.to_string();
+                let families = vec![fontdb::Family::Name(&family_name)];
                 let query = fontdb::Query {
                     families: &families,
                     weight,
                     stretch: fontdb::Stretch::Normal,
                     style,
                 };
-                if let Some(id) = db.query(&query) {
-                    found = Some(id);
-                    break;
-                }
+                db.query(&query)
             }
-            // Fallback: pick any monospace face from the database
-            found.or_else(|| {
-                db.faces()
-                    .find(|f| f.monospaced && f.weight == weight && f.style == style)
-                    .or_else(|| db.faces().find(|f| f.monospaced))
-                    .map(|f| f.id)
-            })
-        } else {
-            let family_name = family.to_string();
-            let families = vec![fontdb::Family::Name(&family_name)];
-            let query = fontdb::Query {
-                families: &families,
-                weight,
-                stretch: fontdb::Stretch::Normal,
-                style,
-            };
-            db.query(&query)
         };
 
         if let Some(face_id) = face_id {
-            let mut font_data = None;
-            db.with_face_data(face_id, |data, index| {
-                font_data = Some(FontData::new(data.to_vec(), index));
-            });
-            if let Some(fd) = font_data {
-                self.fonts.insert(key, fd);
+            if font_system.get_font(face_id).is_some() {
+                self.fonts.insert(key, face_id);
                 return true;
             }
         }
@@ -169,36 +166,28 @@ impl MsdfFontStore {
     /// Returns None if the font isn't loaded, glyph has no outline, etc.
     pub fn generate(
         &self,
+        font_system: &mut cosmic_text::FontSystem,
         family: &str,
         bold: bool,
         italic: bool,
         character: char,
     ) -> Option<MsdfGlyph> {
-        let key = FontKey {
-            family: family.to_string(),
-            bold,
-            italic,
-        };
-        let font_data = self.fonts.get(&key)?;
-        let face = font_data.face();
+        let (font, face_index) = self.shared_font(font_system, family, bold, italic)?;
+        let face = ttf_parser::Face::parse(font.data(), face_index).ok()?;
         generate_msdf_glyph(&face, character)
     }
 
     /// Generate MSDF for a shaped glyph id from a registered font face.
     pub fn generate_by_glyph_id(
         &self,
+        font_system: &mut cosmic_text::FontSystem,
         family: &str,
         bold: bool,
         italic: bool,
         glyph_id: u16,
     ) -> Option<MsdfGlyph> {
-        let key = FontKey {
-            family: family.to_string(),
-            bold,
-            italic,
-        };
-        let font_data = self.fonts.get(&key)?;
-        let face = font_data.face();
+        let (font, face_index) = self.shared_font(font_system, family, bold, italic)?;
+        let face = ttf_parser::Face::parse(font.data(), face_index).ok()?;
         generate_msdf_glyph_by_id(&face, ttf_parser::GlyphId(glyph_id), None)
     }
 }
