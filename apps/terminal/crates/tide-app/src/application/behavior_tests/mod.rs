@@ -41,6 +41,7 @@ mod markdown_reading_view;
 mod markdown_workspace_behavior;
 mod modal_behavior;
 mod modifier_keybinding;
+mod msdf_font_memory;
 mod navigation_polish_behavior;
 mod open_terminal_codex_app;
 mod pane_chrome_behavior;

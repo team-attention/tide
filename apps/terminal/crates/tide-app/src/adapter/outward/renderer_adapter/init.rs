@@ -460,14 +460,14 @@ impl WgpuRenderer {
         // Register exact font faces for regular and bold
         for bold in [false, true] {
             if let Some(face_id) = resolve_face(&mut font_system, bold) {
-                font_system.db().with_face_data(face_id, |data, index| {
-                    msdf_font_store.register_font("Monospace", bold, false, data.to_vec(), index);
-                });
+                msdf_font_store.register_font("Monospace", bold, false, face_id);
             }
         }
 
         // Extract baseline metrics from the regular monospace font
-        if let Some((asc, desc)) = msdf_font_store.font_metrics("Monospace", false, false) {
+        if let Some((asc, desc)) =
+            msdf_font_store.font_metrics(&mut font_system, "Monospace", false, false)
+        {
             mono_em_ascender = asc;
             mono_em_descender = desc;
         }
