@@ -523,6 +523,79 @@ mod tests {
     // --- TerminalSpawnConfig env injection (M-3: replaces the former statics) ---
 
     #[test]
+    fn shell_state_integration_is_independent_from_agent_auto_integration() {
+        let cfg = TerminalSpawnConfig {
+            shell_integration_dir: Some("/bundle/shell".into()),
+            auto_integration: false,
+            ..Default::default()
+        };
+        for shell in ["/bin/zsh", "/bin/bash", "/opt/homebrew/bin/fish"] {
+            let launch = cfg.shell_launch(
+                std::path::Path::new(shell),
+                std::path::Path::new("/work"),
+                "nonce",
+            );
+            assert!(launch.shell_state_enabled);
+            assert!(!launch.env.contains_key("__TIDE_TERMINAL_WRAPPER_DIR"));
+        }
+    }
+
+    #[test]
+    fn unsupported_shell_has_no_state_fallback() {
+        let launch = TerminalSpawnConfig::default().shell_launch(
+            std::path::Path::new("/bin/ksh"),
+            std::path::Path::new("/work"),
+            "nonce",
+        );
+        assert!(!launch.shell_state_enabled);
+        assert_eq!(launch.args, vec!["--login"]);
+    }
+
+    #[test]
+    fn supported_shell_launches_preserve_login_startup_contract() {
+        let cfg = TerminalSpawnConfig {
+            shell_integration_dir: Some("/bundle/shell".into()),
+            ..Default::default()
+        };
+
+        let zsh = cfg.shell_launch(
+            std::path::Path::new("/bin/zsh"),
+            std::path::Path::new("/work"),
+            "nonce",
+        );
+        assert_eq!(zsh.program, "/bin/zsh");
+        assert_eq!(zsh.args, ["--login"]);
+        assert_eq!(
+            zsh.env.get("ZDOTDIR").map(String::as_str),
+            Some("/bundle/shell")
+        );
+
+        let bash = cfg.shell_launch(
+            std::path::Path::new("/bin/bash"),
+            std::path::Path::new("/work"),
+            "nonce",
+        );
+        assert_eq!(bash.program, "/bin/bash");
+        assert_eq!(bash.args, ["--login"]);
+        assert_eq!(
+            bash.env.get("HOME").map(String::as_str),
+            Some("/bundle/shell")
+        );
+        assert!(bash.env.contains_key("__TIDE_TERMINAL_ORIG_HOME"));
+
+        let fish = cfg.shell_launch(
+            std::path::Path::new("/opt/homebrew/bin/fish"),
+            std::path::Path::new("/work"),
+            "nonce",
+        );
+        assert_eq!(fish.program, "/opt/homebrew/bin/fish");
+        assert_eq!(fish.args[0], "--login");
+        assert_eq!(fish.args[1], "--init-command");
+        assert!(fish.args[2].contains("set -g __tide_terminal_nonce 'nonce'"));
+        assert!(!fish.env.contains_key("__TIDE_TERMINAL_SHELL_NONCE"));
+    }
+
+    #[test]
     fn spawn_config_exports_gateway_socket_unconditionally() {
         let cfg = TerminalSpawnConfig {
             gateway_socket: Some("/tmp/tide.sock".to_string()),
@@ -541,7 +614,7 @@ mod tests {
     }
 
     #[test]
-    fn spawn_config_injects_wrapper_and_zdotdir_when_auto_integration_on() {
+    fn spawn_config_injects_wrapper_and_zsh_state_when_auto_integration_on() {
         let cfg = TerminalSpawnConfig {
             gateway_socket: Some("/tmp/tide.sock".to_string()),
             agent_wrapper_dir: Some("/bundle/bin".to_string()),
@@ -549,36 +622,57 @@ mod tests {
             auto_integration: true,
             ..Default::default()
         };
-        let mut env = std::collections::HashMap::new();
-        cfg.apply_integration_env(&mut env);
+        let launch = cfg.shell_launch(
+            std::path::Path::new("/bin/zsh"),
+            std::path::Path::new("/work"),
+            "nonce",
+        );
         assert_eq!(
-            env.get("__TIDE_TERMINAL_WRAPPER_DIR").map(String::as_str),
+            launch
+                .env
+                .get("__TIDE_TERMINAL_WRAPPER_DIR")
+                .map(String::as_str),
             Some("/bundle/bin")
         );
         assert_eq!(
-            env.get("ZDOTDIR").map(String::as_str),
+            launch.env.get("ZDOTDIR").map(String::as_str),
             Some("/bundle/shell")
         );
         assert_eq!(
-            env.get("TIDE_TERMINAL_SHELL_INTEGRATION_DIR")
+            launch
+                .env
+                .get("TIDE_TERMINAL_SHELL_INTEGRATION_DIR")
                 .map(String::as_str),
             Some("/bundle/shell")
+        );
+        assert_eq!(
+            launch
+                .env
+                .get("__TIDE_TERMINAL_SHELL_NONCE")
+                .map(String::as_str),
+            Some("nonce")
         );
     }
 
     #[test]
     fn bundled_shell_integration_covers_zsh_bash_and_fish_wrapper_path_setup() {
         let zsh = include_str!("../../../resources/shell-integration/.zshenv");
+        let bash_profile = include_str!("../../../resources/shell-integration/.bash_profile");
         let bash = include_str!("../../../resources/shell-integration/bash.sh");
         let fish = include_str!("../../../resources/shell-integration/config.fish");
 
         assert!(zsh.contains("__TIDE_TERMINAL_WRAPPER_DIR"));
-        assert!(zsh.contains("add-zsh-hook precmd _tide_fix_path"));
+        assert!(zsh.contains("add-zsh-hook precmd _tide_terminal_install_hooks"));
+        assert!(zsh.contains("_tide_terminal_nonce"));
+        assert!(bash_profile.contains("__TIDE_TERMINAL_ORIG_HOME"));
+        assert!(bash_profile.contains("bash.sh"));
         assert!(bash.contains("__TIDE_TERMINAL_WRAPPER_DIR"));
         assert!(bash.contains("_tide_path_without_wrapper=\":$PATH:\""));
         assert!(bash.contains("PATH=\"$__TIDE_TERMINAL_WRAPPER_DIR"));
+        assert!(bash.contains("_tide_terminal_nonce"));
         assert!(fish.contains("__TIDE_TERMINAL_WRAPPER_DIR"));
         assert!(fish.contains("set -gx PATH \"$__TIDE_TERMINAL_WRAPPER_DIR\""));
+        assert!(fish.contains("__tide_terminal_nonce"));
     }
 
     #[test]
@@ -707,4 +801,151 @@ fn synchronization_exposes_latest_output_with_an_older_snapshot_pending() {
         let text: String = terminal.grid().cells[0].iter().map(|cell| cell.character).collect();
         assert!(text.starts_with(&format!("frame-{index}")), "stale snapshot: {text:?}");
     }
+}
+
+#[test]
+fn runtime_event_queue_is_ordered_bounded_and_coalesces_duplicate_exit() {
+    use super::{
+        CommandBoundary, ShellStateSignal, TerminalRuntimeEvent, TerminalRuntimeEventQueue,
+    };
+
+    let queue = TerminalRuntimeEventQueue::default();
+    for index in 0..300 {
+        queue.push(TerminalRuntimeEvent::ShellState(
+            ShellStateSignal::CommandLifecycle {
+                boundary: CommandBoundary::CommandStart,
+                nonce: index.to_string(),
+            },
+        ));
+    }
+    queue.push(TerminalRuntimeEvent::ChildExited(Some(7)));
+    queue.push(TerminalRuntimeEvent::ChildExited(None));
+
+    let events = queue.drain();
+    assert_eq!(events.len(), 256);
+    assert!(matches!(
+        events.first(),
+        Some(TerminalRuntimeEvent::ShellState(
+            ShellStateSignal::CommandLifecycle { nonce, .. }
+        )) if nonce == "45"
+    ));
+    assert_eq!(
+        events.last(),
+        Some(&TerminalRuntimeEvent::ChildExited(Some(7)))
+    );
+}
+
+#[test]
+fn duplicate_exit_events_preserve_final_output_and_apply_once() {
+    use super::{TerminalRuntimeEvent, TerminalRuntimeEventQueue};
+
+    let queue = TerminalRuntimeEventQueue::default();
+    let stale_sync = queue.begin_snapshot_sync();
+    queue.defer_child_exit(Some(7));
+    queue.defer_child_exit(None);
+
+    queue.publish_deferred_child_exit(stale_sync);
+    assert!(queue.drain().is_empty());
+
+    let final_sync = queue.begin_snapshot_sync();
+    queue.publish_deferred_child_exit(final_sync);
+    assert_eq!(
+        queue.drain(),
+        vec![TerminalRuntimeEvent::ChildExited(Some(7))]
+    );
+    queue.publish_deferred_child_exit(final_sync);
+    assert!(queue.drain().is_empty());
+}
+
+#[test]
+fn trusted_working_directory_requires_local_uri_and_nonce() {
+    assert_eq!(
+        super::decode_working_directory("file://localhost/tmp/a%20%C3%BC?tide_nonce=n", "n"),
+        Some(std::path::PathBuf::from("/tmp/a ü")),
+    );
+    assert_eq!(
+        super::decode_working_directory("file://remote/tmp?a=tide_nonce=n", "n"),
+        None,
+    );
+    assert_eq!(
+        super::decode_working_directory("file://localhost/tmp?tide_nonce=stale", "n"),
+        None,
+    );
+    assert_eq!(
+        super::decode_working_directory("https://localhost/tmp?tide_nonce=n", "n"),
+        None
+    );
+    assert_eq!(
+        super::decode_working_directory("file://localhost/%GG?tide_nonce=n", "n"),
+        None
+    );
+}
+
+#[test]
+fn working_directory_accepts_machine_hostname_without_hostname_env() {
+    assert_eq!(
+        super::decode_working_directory_with_local_hostname(
+            "file://tide-mac.local/tmp/project?tide_nonce=n",
+            "n",
+            None,
+            Some("tide-mac.local"),
+        ),
+        Some(std::path::PathBuf::from("/tmp/project")),
+    );
+    assert_eq!(
+        super::decode_working_directory_with_local_hostname(
+            "file://remote-mac/tmp/project?tide_nonce=n",
+            "n",
+            None,
+            Some("tide-mac.local"),
+        ),
+        None,
+    );
+}
+
+#[test]
+fn terminal_pty_is_configured_to_drain_before_child_exit() {
+    assert!(super::PTY_DRAIN_ON_EXIT);
+}
+
+#[test]
+fn terminal_runtime_events_update_event_backed_cwd_and_reject_stale_nonce() {
+    use super::{ShellStateSignal, TerminalRuntimeEvent};
+    use crate::tide_core::TerminalBackend;
+
+    let initial = std::path::PathBuf::from("/tmp/initial");
+    let mut terminal = super::Terminal::with_cwd(80, 24, Some(initial.clone()), true, None)
+        .expect("terminal backend");
+    terminal.stop_pty_for_test();
+    assert_eq!(terminal.cwd(), Some(initial));
+
+    terminal.shell_state_nonce = Some("current".into());
+    terminal
+        .runtime_events
+        .push(TerminalRuntimeEvent::ShellState(
+            ShellStateSignal::WorkingDirectory {
+                uri: "file://localhost/tmp/stale?tide_nonce=stale".into(),
+                nonce: "stale".into(),
+            },
+        ));
+    assert!(terminal.drain_runtime_events().is_empty());
+    assert_eq!(
+        terminal.cwd(),
+        Some(std::path::PathBuf::from("/tmp/initial"))
+    );
+
+    terminal
+        .runtime_events
+        .push(TerminalRuntimeEvent::ShellState(
+            ShellStateSignal::WorkingDirectory {
+                uri: "file://localhost/tmp/next%20dir?tide_nonce=current".into(),
+                nonce: "current".into(),
+            },
+        ));
+    let events = terminal.drain_runtime_events();
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        terminal.cwd(),
+        Some(std::path::PathBuf::from("/tmp/next dir"))
+    );
 }

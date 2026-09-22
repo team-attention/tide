@@ -24,7 +24,7 @@ pub(crate) enum AgentStatus {
 }
 
 /// Detected agent process info for a terminal pane.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AgentInfo {
     /// Agent display name (e.g. "Claude Code", "Aider").
     pub name: &'static str,
@@ -36,6 +36,13 @@ pub(crate) struct AgentInfo {
     pub gateway_connected: bool,
     /// Lifecycle status reported by agent hooks. `None` if no hooks are active.
     pub status: Option<AgentStatus>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AgentObservationCause {
+    CommandStarted(u64),
+    CommandFinished(u64),
+    GatewayClientsChanged,
 }
 
 /// Known agent identifiers: (path_pattern, proc_name_pattern, display_name).
@@ -266,7 +273,7 @@ fn get_ppid(pid: u32) -> u32 {
 }
 
 /// Detect agent processes in the child process tree of a given shell PID.
-/// Uses proc_listallpids + PPID filtering (proc_listchildpids is unreliable on macOS).
+/// Uses proc_listallpids + PPID filtering.
 /// Checks both process name and full executable path for known agents.
 #[cfg(target_os = "macos")]
 pub(crate) fn detect_agent(shell_pid: u32) -> Option<AgentInfo> {
@@ -327,7 +334,7 @@ pub(crate) fn detect_agent(_shell_pid: u32) -> Option<AgentInfo> {
 }
 
 /// Find child PIDs by scanning all processes and filtering by PPID.
-/// This is more reliable than proc_listchildpids which often returns 0 on macOS.
+/// Find child PIDs without recurring observation.
 #[cfg(target_os = "macos")]
 fn find_children_via_allpids(parent_pid: u32) -> Vec<i32> {
     // Get all PIDs

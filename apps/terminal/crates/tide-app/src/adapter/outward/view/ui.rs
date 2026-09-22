@@ -14,7 +14,7 @@ pub(crate) fn pane_title(panes: &HashMap<PaneId, PaneKind>, id: PaneId) -> Strin
             if let Some(title) = pane.context.osc_title.as_ref() {
                 return title.clone();
             }
-            if let Some(cwd) = pane.backend.detect_cwd_fallback() {
+            if let Some(cwd) = pane.context.cwd.as_ref() {
                 let components: Vec<_> = cwd.components().collect();
                 if components.len() <= 2 {
                     return cwd.display().to_string();

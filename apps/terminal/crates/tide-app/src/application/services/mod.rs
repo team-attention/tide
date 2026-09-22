@@ -12,6 +12,7 @@ mod pane_create_service;
 mod path_identity;
 mod search_service;
 pub(crate) mod session_service;
+mod terminal_runtime_service;
 mod text_extract_service;
 mod update_service;
 pub(crate) mod workspace_infra_service;

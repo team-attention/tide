@@ -7,6 +7,7 @@
 use std::path::Path;
 use std::process::Command;
 
+use crate::application::ports::outward::repository_watcher_port::RepositoryWatchPaths;
 use crate::tide_terminal::git::{BranchInfo, GitInfo, GitStatus, StatusEntry, WorktreeInfo};
 
 /// Run a git command. Returns None if the command fails.
@@ -345,6 +346,27 @@ pub fn repo_root(cwd: &Path) -> Option<std::path::PathBuf> {
     } else {
         Some(std::path::PathBuf::from(root))
     }
+}
+
+fn absolute_git_path(cwd: &Path, value: &str) -> std::path::PathBuf {
+    let path = std::path::PathBuf::from(value.trim());
+    let absolute = if path.is_absolute() {
+        path
+    } else {
+        cwd.join(path)
+    };
+    std::fs::canonicalize(&absolute).unwrap_or(absolute)
+}
+
+pub fn repository_watch_paths(cwd: &Path) -> Option<RepositoryWatchPaths> {
+    let worktree_root = absolute_git_path(cwd, &run_git(&["rev-parse", "--show-toplevel"], cwd)?);
+    let git_dir = absolute_git_path(cwd, &run_git(&["rev-parse", "--absolute-git-dir"], cwd)?);
+    let git_common_dir = absolute_git_path(cwd, &run_git(&["rev-parse", "--git-common-dir"], cwd)?);
+    Some(RepositoryWatchPaths {
+        worktree_root,
+        git_dir,
+        git_common_dir,
+    })
 }
 
 fn detect_status(cwd: &Path) -> GitStatus {

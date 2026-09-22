@@ -26,10 +26,6 @@ use crate::PaneLifecyclePort;
 use crate::RouterPort;
 use crate::WorkspaceNavPort;
 
-pub(crate) fn terminal_badge_check_delay() -> Duration {
-    Duration::from_millis(16)
-}
-
 /// Events delivered to the app thread.
 pub(crate) enum AppEvent {
     /// A platform event forwarded from the main thread.
@@ -40,6 +36,8 @@ pub(crate) enum AppEvent {
     CliCommand(crate::adapter::inward::cli_adapter::CliCommand),
     /// Reload process-global settings into this App runtime.
     ReloadSettings,
+    /// The set of Agent Gateway client PIDs changed.
+    GatewayClientsChanged,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,9 +120,10 @@ pub(crate) fn handle_platform_event(
         PlatformEvent::CloseRequested => {
             // Check if there are running terminals or dirty editors
             if (ctx.has_terminals() || ctx.has_dirty_editors())
-                && !crate::tide_platform::show_close_confirm() {
-                    return PlatformEventOutcome::Continue;
-                }
+                && !crate::tide_platform::show_close_confirm()
+            {
+                return PlatformEventOutcome::Continue;
+            }
             ctx.save_full_session();
             window.close_window();
             return PlatformEventOutcome::ShutdownWindow;
@@ -715,6 +714,9 @@ impl App {
     pub(crate) fn init_phase1(&mut self, window: &dyn PlatformWindow) {
         // Swap noop ports for real implementations now that we have a window.
         self.ports = crate::app::Ports::real();
+        let waker = self.bg.event_loop_waker.clone();
+        self.ports.file_watcher.init(waker.clone());
+        self.ports.repository_watcher.init(waker);
         // Install the terminal spawn config (built in configure_window_app) into
         // the real factory so spawned terminals get the gateway/integration env.
         self.ports
@@ -807,13 +809,18 @@ impl App {
         window: WindowProxy,
     ) {
         'run: loop {
-            let timeout = self.next_timeout();
-
-            // Block until an event arrives or a timer fires
-            let event = match event_rx.recv_timeout(timeout) {
-                Ok(e) => Some(e),
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            let now = self.ports.clock.now();
+            let event = match self.next_runtime_deadline(now) {
+                None => match event_rx.recv() {
+                    Ok(event) => Some(event),
+                    Err(_) => break,
+                },
+                Some(deadline) if deadline.at <= now => None,
+                Some(deadline) => match event_rx.recv_timeout(deadline.at - now) {
+                    Ok(event) => Some(event),
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                },
             };
 
             // Process the received event and drain the queue
@@ -846,6 +853,9 @@ impl App {
                     AppEvent::ReloadSettings => {
                         self.reload_settings_from_persistence();
                     }
+                    AppEvent::GatewayClientsChanged => self.observe_agents(
+                        crate::state::gateway_status::AgentObservationCause::GatewayClientsChanged,
+                    ),
                     AppEvent::Wake => {}
                 }
             }
@@ -861,7 +871,7 @@ impl App {
             }
 
             // Poll background sources (PTY output, file watcher, git)
-            self.poll_background_events(&window);
+            self.drain_ready_events(&window);
             if self.tide_window_close_requested {
                 break 'run;
             }
@@ -877,47 +887,6 @@ impl App {
                     self.gateway
                         .notify("webview-message", serde_json::json!({"message": msg}));
                 }
-            }
-
-            // Sync connected client PIDs from socket server background thread
-            if self.gateway.sync_connected_pids() {
-                // PIDs changed — re-check gateway_connected for all detected agents
-                self.gateway.refresh_agent_connections();
-                // Re-detect agents in all terminals (an agent may have just connected)
-                let pane_ids: Vec<u64> = self.panes.keys().copied().collect();
-                for id in pane_ids {
-                    if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get(&id) {
-                        if let Some(pid) = tp.backend.child_pid() {
-                            if let Some(mut agent) = crate::state::gateway_status::detect_agent(pid)
-                            {
-                                // Preserve existing status when re-detecting (process scan
-                                // returns a fresh AgentInfo with status: None)
-                                if let Some(existing) = self.gateway.detected_agents.get(&id) {
-                                    agent.status = existing.status;
-                                    agent.wrapper_managed = existing.wrapper_managed;
-                                }
-                                agent.gateway_connected =
-                                    crate::state::gateway_status::is_agent_connected(
-                                        agent.pid,
-                                        &self.gateway.connected_pids,
-                                    );
-                                self.gateway.detected_agents.insert(id, agent);
-                            } else {
-                                // Keep wrapper-managed presence even when process scan misses a
-                                // launch window or intermittently fails across Workspace swaps.
-                                let keep_existing =
-                                    self.gateway.detected_agents.get(&id).is_some_and(|a| {
-                                        a.status.is_some()
-                                            || (a.wrapper_managed && a.gateway_connected)
-                                    });
-                                if !keep_existing {
-                                    self.gateway.detected_agents.remove(&id);
-                                }
-                            }
-                        }
-                    }
-                }
-                crate::AppCorePort::invalidate_chrome(&mut self);
             }
 
             // Periodic session auto-save for crash recovery (every 30s)
@@ -937,17 +906,20 @@ impl App {
             if self.cache.needs_redraw && !self.window.is_occluded && self.input.batch_depth == 0 {
                 let now = self.ports.clock.now();
                 let skip_coalesce = self.input.input_just_sent
-                    || self.input.input_sent_at.is_some_and(|at| {
-                        now.duration_since(at) < Duration::from_millis(16)
-                    })
-                    || self.input.scroll_at.is_some_and(|at| {
-                        now.duration_since(at) < Duration::from_millis(32)
-                    });
+                    || self
+                        .input
+                        .input_sent_at
+                        .is_some_and(|at| now.duration_since(at) < Duration::from_millis(16))
+                    || self
+                        .input
+                        .scroll_at
+                        .is_some_and(|at| now.duration_since(at) < Duration::from_millis(32));
                 if skip_coalesce
                     || now.duration_since(self.timing.last_frame) >= Duration::from_millis(2)
                 {
                     self.update();
                     if self.render() {
+                        self.timing.waiting_for_renderer = false;
                         self.cache.clear_redraw();
                         self.timing.last_frame = now;
 
@@ -963,9 +935,11 @@ impl App {
                             }
                             self.ports.platform.set_window_shown(true);
                         }
+                    } else {
+                        // Keep the dirty state, but wait for the renderer completion wake
+                        // instead of rescheduling an already-expired coalescing deadline.
+                        self.timing.waiting_for_renderer = true;
                     }
-                    // If render() returned false (render thread busy),
-                    // the render thread waker will wake us when it finishes.
                 }
             }
         }
@@ -989,62 +963,82 @@ impl App {
         }
     }
 
-    /// Compute the timeout for the next `recv_timeout` call.
-    fn next_timeout(&self) -> Duration {
-        let now = self.ports.clock.now();
-        let mut timeout = Duration::from_millis(100); // default max sleep
+    pub(crate) fn next_runtime_deadline(
+        &self,
+        now: std::time::Instant,
+    ) -> Option<crate::state::RuntimeDeadline> {
+        use crate::state::{RuntimeDeadline, RuntimeDeadlineKind};
+        let mut deadlines = Vec::new();
+        let mut push = |kind, at| deadlines.push(RuntimeDeadline { kind, at });
 
-        // Cursor blink: next toggle
         if self.focus.focused.is_some() {
             let blink_elapsed = now.duration_since(self.timing.cursor_blink_at);
             let next_toggle_ms = 530 - (blink_elapsed.as_millis() % 530) as u64;
-            timeout = timeout.min(Duration::from_millis(next_toggle_ms));
+            push(
+                RuntimeDeadlineKind::CursorBlink,
+                now + Duration::from_millis(next_toggle_ms),
+            );
         }
-
-        // Deferred resize
         if let Some(at) = self.timing.resize_deferred_at {
-            if at > now {
-                timeout = timeout.min(at - now);
-            } else {
-                return Duration::ZERO;
-            }
+            push(RuntimeDeadlineKind::DeferredResize, at);
         }
-
-        // Badge check
-        if let Some(at) = self.timing.badge_check_at {
-            if at > now {
-                timeout = timeout.min(at - now);
-            } else {
-                return Duration::ZERO;
-            }
+        if self.window.is_focused {
+            push(
+                RuntimeDeadlineKind::SessionAutosave,
+                self.timing.last_session_save + Duration::from_secs(30),
+            );
         }
-
-        // Layout animations should tick even when no external input arrives.
-        if self.layout_animation_frame_due() {
-            timeout = timeout.min(Duration::from_millis(16));
+        if self.layout_animation_frame_due() || (self.ft.scroll_target - self.ft.scroll).abs() > 0.0
+        {
+            push(
+                RuntimeDeadlineKind::AnimationFrame,
+                self.timing.last_frame + Duration::from_millis(16),
+            );
         }
-
-        // Frame pacing: if we need to render but are within 2ms coalescing window
-        if self.cache.needs_redraw && !self.window.is_occluded && self.input.batch_depth == 0 {
+        if let Some(tree_deadline) = self
+            .ft
+            .tree
+            .as_ref()
+            .and_then(crate::tide_tree::FsTree::next_refresh_deadline)
+        {
+            push(RuntimeDeadlineKind::FileTreeDebounce, tree_deadline);
+        }
+        if let Some(repository_deadline) = self.timing.repository_refresh_at {
+            push(RuntimeDeadlineKind::RepositoryDebounce, repository_deadline);
+        }
+        if let Some(agent_deadline) = self
+            .timing
+            .pending_agent_observations
+            .values()
+            .copied()
+            .min()
+        {
+            push(RuntimeDeadlineKind::AgentObservation, agent_deadline);
+        }
+        if self.cache.needs_redraw
+            && !self.timing.waiting_for_renderer
+            && !self.window.is_occluded
+            && self.input.batch_depth == 0
+        {
             let skip_coalesce = self.input.input_just_sent
-                || self.input.input_sent_at.is_some_and(|at| {
-                    now.duration_since(at) < Duration::from_millis(16)
-                })
-                || self.input.scroll_at.is_some_and(|at| {
-                    now.duration_since(at) < Duration::from_millis(32)
-                });
+                || self
+                    .input
+                    .input_sent_at
+                    .is_some_and(|at| now.duration_since(at) < Duration::from_millis(16))
+                || self
+                    .input
+                    .scroll_at
+                    .is_some_and(|at| now.duration_since(at) < Duration::from_millis(32));
             if skip_coalesce {
-                return Duration::ZERO; // render immediately
-            }
-            let since_last = now.duration_since(self.timing.last_frame);
-            if since_last < Duration::from_millis(2) {
-                timeout = timeout.min(Duration::from_millis(2) - since_last);
+                push(RuntimeDeadlineKind::RenderCoalescing, now);
             } else {
-                return Duration::ZERO; // past coalescing window, render now
+                push(
+                    RuntimeDeadlineKind::RenderCoalescing,
+                    self.timing.last_frame + Duration::from_millis(2),
+                );
             }
         }
-
-        timeout
+        deadlines.into_iter().min_by_key(|deadline| deadline.at)
     }
 
     /// Process pending IME proxy view operations and focus the correct proxy.
@@ -1129,9 +1123,28 @@ impl App {
         )
     }
 
-    /// Poll background events (PTY output, file watcher, git).
-    pub(crate) fn poll_background_events(&mut self, window: &WindowProxy) {
+    /// Drain background events (PTY output, file watcher, Git).
+    pub(crate) fn drain_ready_events(&mut self, window: &WindowProxy) {
         self.poll_render_result();
+        if self.ports.gpu.has_renderer() {
+            self.timing.waiting_for_renderer = false;
+        }
+        let now = self.ports.clock.now();
+
+        if let Some(tree) = self.ft.tree.as_mut() {
+            if matches!(
+                tree.drain_events(now),
+                crate::tide_tree::FsTreeDrain::Refreshed
+            ) {
+                self.sync_file_tree_path_identity_cache();
+                self.request_git_refresh(
+                    crate::state::background::GitRefreshCause::RepositoryChanged,
+                );
+                crate::AppCorePort::invalidate_chrome(self);
+            }
+        }
+        self.drain_repository_changes(now);
+        self.refresh_repository_if_due(now);
 
         // Deferred PTY resize
         if let Some(at) = self.timing.resize_deferred_at {
@@ -1143,7 +1156,6 @@ impl App {
         }
 
         // Check PTY output
-        let mut had_pty_output = false;
         for pane in self.panes.values() {
             if let PaneKind::Terminal(terminal) = pane {
                 if terminal.backend.has_new_output() {
@@ -1151,16 +1163,13 @@ impl App {
                     self.ime.cursor_dirty = true;
                     self.input.input_just_sent = false;
                     self.input.input_sent_at = None;
-                    had_pty_output = true;
                     break;
                 }
             }
         }
 
-        if had_pty_output {
-            self.timing.badge_check_at =
-                Some(self.ports.clock.now() + terminal_badge_check_delay());
-        }
+        self.drain_and_apply_terminal_runtime_events(now);
+        self.drain_due_agent_observations(now);
 
         // Drain terminal side-channel events (OSC 9, OSC 0/2, BEL, OSC 52).
         {
@@ -1278,7 +1287,10 @@ impl App {
             }
             for (id, previous, title) in title_transitions {
                 crate::adapter::inward::vibe_title_adapter::handle_vibe_title_change(
-                    self, id, previous.as_deref(), title.as_deref(),
+                    self,
+                    id,
+                    previous.as_deref(),
+                    title.as_deref(),
                 );
             }
         }
@@ -1333,9 +1345,12 @@ impl App {
             self.ports.file_watcher.clear_dirty();
             crate::AppCorePort::request_redraw(self);
         }
+        self.drain_editor_file_watch_events();
 
-        // Git poller
-        if self.consume_git_poll_results() {
+        self.reconcile_repository_watches();
+
+        // Git worker
+        if self.consume_git_refresh_results() {
             crate::AppCorePort::invalidate_chrome(self);
         }
 
@@ -1371,17 +1386,6 @@ impl App {
         );
         for url in new_tab_urls {
             self.open_browser_pane(Some(url));
-        }
-
-        // Badge check
-        if let Some(check_at) = self.timing.badge_check_at {
-            if self.ports.clock.now() >= check_at {
-                self.timing.badge_check_at = None;
-                self.update_file_tree_cwd();
-                self.update_terminal_badges();
-
-                self.trigger_git_poll();
-            }
         }
 
         // Update IME cursor area
@@ -1456,8 +1460,7 @@ impl App {
                         cell_size,
                         &self.ime.preedit,
                         self.modal.save_confirm.as_ref().map(|state| state.pane_id),
-                    )
-                    {
+                    ) {
                         window.set_ime_proxy_cursor_area(
                             target_id,
                             cursor_area.x as f64,
@@ -1504,7 +1507,10 @@ pub(crate) fn effective_ime_target(
     target
 }
 
-#[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix."
+)]
 pub(crate) fn overlay_ime_cursor_area(
     focused: Option<crate::tide_core::PaneId>,
     search_focus: Option<crate::tide_core::PaneId>,
@@ -1576,8 +1582,7 @@ pub(crate) fn editor_ime_cursor_area(
     preedit: &str,
     save_confirm_pane_id: Option<crate::tide_core::PaneId>,
 ) -> Option<crate::tide_core::Rect> {
-    let content_rect =
-        pane.content_rect_with_pane_bar(pane_rect, save_confirm_pane_id, cell_size);
+    let content_rect = pane.content_rect_with_pane_bar(pane_rect, save_confirm_pane_id, cell_size);
     let authoring_rect = pane.authoring_rect(content_rect, cell_size);
     let preedit_width_cells = preedit
         .chars()

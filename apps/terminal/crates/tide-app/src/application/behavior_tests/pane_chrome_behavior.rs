@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::adapter::inward::click_adapter::hit_test::compute_hover_target;
-use crate::adapter::inward::event_loop_adapter::terminal_badge_check_delay;
 use crate::adapter::inward::scroll_adapter::{
     clamp_shared_tab_scroll_offset, handle_scroll, shared_tab_scroll_delta,
     shared_tab_scroll_is_new_gesture, shared_tab_scroll_step,
@@ -1382,12 +1381,6 @@ fn shared_tab_scroll_offset_clamps_at_visible_bounds() {
 }
 
 #[test]
-fn terminal_badge_refresh_delay_matches_a_single_frame_scale_budget() {
-    // UC-7 BR-29: PTY-driven terminal badge refresh uses a near-immediate frame-scale delay.
-    assert_eq!(terminal_badge_check_delay(), Duration::from_millis(16));
-}
-
-#[test]
 fn single_pane_header_scroll_falls_through_to_preview_content() {
     // UC-7 BR-30: A non-overflow single-pane header must not swallow scroll that should reach pane content.
     let (mut app, pane_id, pane_rect) = app_with_single_preview_editor(200);
@@ -1635,22 +1628,22 @@ fn terminal_cwd_change_clears_stale_git_badges_before_poll_results_arrive() {
 }
 
 #[test]
-fn git_poller_prefers_the_latest_cwd_request_after_quick_repo_switches() {
-    // UC-7 BR-32: The background git poller must prefer the latest queued cwd refresh request before publishing repo chrome results.
-    use crate::state::background::GitPollRequest;
-    let req = |p: &str| GitPollRequest {
+fn git_refresh_worker_prefers_the_latest_cwd_request_after_quick_repo_switches() {
+    // UC-7 BR-32: The background Git worker must prefer the latest queued cwd refresh request before publishing repo chrome results.
+    use crate::state::background::{GitRefreshRequest, GitWorkerMessage};
+    let req = |p: &str| GitRefreshRequest {
         cwd: PathBuf::from(p),
         wants_diff: false,
     };
     let older = vec![req("/tmp/tide-life")];
     let latest = vec![req("/tmp/tide-minder")];
     let newest = vec![req("/tmp/tide-timetable")];
-    let (tx, rx) = std::sync::mpsc::channel::<Vec<GitPollRequest>>();
-    tx.send(latest.clone()).unwrap();
-    tx.send(newest.clone()).unwrap();
+    let (tx, rx) = std::sync::mpsc::channel::<GitWorkerMessage>();
+    tx.send(GitWorkerMessage::Refresh(latest.clone())).unwrap();
+    tx.send(GitWorkerMessage::Refresh(newest.clone())).unwrap();
 
     let coalesced =
-        crate::application::services::file_tree_service::latest_git_poll_requests(&rx, older);
+        crate::application::services::file_tree_service::latest_git_refresh_requests(&rx, older);
 
-    assert_eq!(coalesced, newest);
+    assert_eq!(coalesced, Some(newest));
 }

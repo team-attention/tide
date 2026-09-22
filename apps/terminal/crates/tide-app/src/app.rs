@@ -26,11 +26,14 @@ use crate::adapter::outward::persistence_adapter::{NoopPersistence, RealPersiste
 use crate::adapter::outward::platform_adapter::{NoopPlatform, RealPlatform};
 use crate::adapter::outward::process_adapter::{NoopProcess, SystemProcess};
 use crate::adapter::outward::renderer_adapter::port_impl::{NoopGpu, RealGpu};
+use crate::adapter::outward::repository_watcher_adapter::{
+    NoopRepositoryWatcher, RealRepositoryWatcher,
+};
 use crate::adapter::outward::terminal_factory_adapter::RealTerminalFactory;
 
 use crate::application::ports::outward::{
     ClipboardPort, ClockPort, FileSystemPort, FileWatcherPort, GitPort, GpuPort, LspPort,
-    PersistencePort, PlatformPort, ProcessPort, TerminalFactoryPort,
+    PersistencePort, PlatformPort, ProcessPort, RepositoryWatcherPort, TerminalFactoryPort,
 };
 
 const INITIAL_TERMINAL_COLS: u16 = 80;
@@ -71,6 +74,7 @@ pub(crate) struct Ports {
     pub git: Box<dyn GitPort>,
     pub terminal_factory: Box<dyn TerminalFactoryPort>,
     pub file_watcher: Box<dyn FileWatcherPort>,
+    pub repository_watcher: Box<dyn RepositoryWatcherPort>,
     pub lsp: Box<dyn LspPort>,
     pub gpu: Box<dyn GpuPort>,
     pub platform: Box<dyn PlatformPort>,
@@ -97,6 +101,7 @@ impl Ports {
             git: Box::new(NoopGit),
             terminal_factory: Box::new(RealTerminalFactory::default()),
             file_watcher: Box::new(NoopFileWatcher),
+            repository_watcher: Box::new(NoopRepositoryWatcher),
             lsp: Box::new(NoopLsp),
             gpu: Box::new(NoopGpu),
             platform: Box::new(NoopPlatform),
@@ -112,6 +117,7 @@ impl Ports {
             git: Box::new(RealGit),
             terminal_factory: Box::new(RealTerminalFactory::default()),
             file_watcher: Box::new(RealFileWatcher::new()),
+            repository_watcher: Box::new(RealRepositoryWatcher::new()),
             lsp: Box::new(RealLsp::new()),
             gpu: Box::new(RealGpu::new()),
             platform: Box::new(RealPlatform::new()),
@@ -616,7 +622,8 @@ impl App {
             .fs
             .current_dir()
             .unwrap_or_else(|_| PathBuf::from("/"));
-        let tree = FsTree::new(cwd.clone());
+        let mut tree = FsTree::new(cwd.clone());
+        tree.set_waker(self.bg.event_loop_waker.clone());
         self.ft.tree = Some(tree);
         self.sync_file_tree_path_identity_cache();
         self.sync_file_tree_modified_editor_cache();
@@ -836,7 +843,7 @@ impl crate::application::ports::inward::AppCorePort for App {
         }
         // Cold miss: list once synchronously and ask the poller to warm the
         // cache for next time.
-        self.trigger_git_poll();
+        self.request_git_refresh(crate::state::background::GitRefreshCause::DiffDemand);
         self.ports.git.list_worktrees(cwd)
     }
 
@@ -1015,10 +1022,8 @@ impl crate::application::ports::inward::AppCorePort for App {
                     leading_view_mode_width,
                     header_action_width,
                 ) {
-                    content_left += crate::header::header_surface_identity_width(
-                        cell_w,
-                        Some(&identity_label),
-                    );
+                    content_left +=
+                        crate::header::header_surface_identity_width(cell_w, Some(&identity_label));
                 }
             }
         }

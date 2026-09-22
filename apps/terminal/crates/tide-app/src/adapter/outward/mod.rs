@@ -10,6 +10,7 @@ pub(crate) mod lsp_adapter;
 pub(crate) mod persistence_adapter;
 pub(crate) mod platform_adapter;
 pub(crate) mod process_adapter;
+pub(crate) mod repository_watcher_adapter;
 pub(crate) mod terminal_factory_adapter;
 
 // Infrastructure modules

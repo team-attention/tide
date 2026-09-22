@@ -10,10 +10,12 @@
 // so input events are never blocked by terminal output processing.
 
 use std::borrow::Cow;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::HashMap;
+use std::hash::BuildHasher;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use alacritty_terminal::event::{Event, EventListener, WindowSize};
 use alacritty_terminal::event_loop::{EventLoop, Msg, Notifier};
@@ -34,11 +36,13 @@ mod graphics;
 mod grid_sync;
 mod key_input;
 mod mouse_input;
+mod runtime_event;
 mod urls;
 mod wheel_input;
 
 use graphics::{GraphicsUpdate, TerminalGraphicsState};
 use grid_sync::*;
+pub use runtime_event::*;
 pub(crate) use urls::{terminal_url_regex, trim_url_trailing};
 
 use crate::tide_core::{
@@ -80,9 +84,36 @@ pub const TERM_ENV_VALUE: &str = "xterm-256color";
 /// Truecolor capability marker exported alongside TERM.
 pub const COLORTERM_ENV_VALUE: &str = "truecolor";
 
-/// Whether agent auto-integration is enabled (wrapper PATH injection + shell integration).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SupportedShell {
+    Zsh,
+    Bash,
+    Fish,
+    Other,
+}
+
+impl SupportedShell {
+    fn from_path(shell: &Path) -> Self {
+        match shell.file_name().and_then(|name| name.to_str()) {
+            Some("zsh") => Self::Zsh,
+            Some("bash") => Self::Bash,
+            Some("fish") => Self::Fish,
+            _ => Self::Other,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ShellLaunch {
+    pub program: String,
+    pub args: Vec<String>,
+    pub env: HashMap<String, String>,
+    pub shell_state_enabled: bool,
+}
+
 /// Explicit terminal spawn configuration — the Agent Gateway socket, agent
-/// wrapper / shell-integration directories, and whether auto-integration is on.
+/// wrapper / shell-integration directories, and whether Agent Wrapper
+/// auto-integration is on.
 /// Built once in `main` (per process), owned by the terminal factory, and passed
 /// into the spawn functions. Replaces the former process-global statics so this
 /// configuration is explicit data, not ambient global state in the domain.
@@ -93,10 +124,11 @@ pub struct TerminalSpawnConfig {
     /// Directory of agent wrapper scripts (claude, codex, …), prepended to PATH
     /// via shell integration so wrappers shadow the real binaries.
     pub agent_wrapper_dir: Option<String>,
-    /// Directory of shell-integration files. zsh is automatic through ZDOTDIR;
-    /// bash and fish can source the bundled snippets from this directory.
+    /// Directory of shell-integration files installed automatically for zsh,
+    /// Bash, and fish.
     pub shell_integration_dir: Option<String>,
-    /// Whether agent auto-integration (wrapper + shell hook) is enabled.
+    /// Whether Agent Wrapper PATH injection is enabled. Shell-state signals are
+    /// configured independently.
     pub auto_integration: bool,
     /// Maximum number of scrollback history lines for newly spawned terminals.
     pub scrollback_lines: usize,
@@ -132,22 +164,11 @@ impl TerminalSpawnConfig {
         self.scrollback_lines.min(MAX_SCROLLBACK_LINES)
     }
 
-    /// Inject the Agent Gateway and (when auto-integration is on) the wrapper /
-    /// shell-integration environment into a child PTY's env map. The gateway
-    /// socket is always exported; the ZDOTDIR hijack only when auto-integration
-    /// is enabled. (Behaviour preserved from the former statics.)
-    pub fn apply_integration_env(&self, env: &mut std::collections::HashMap<String, String>) {
+    /// Inject the Agent Gateway and optional Agent Wrapper environment.
+    pub fn apply_integration_env(&self, env: &mut HashMap<String, String>) {
         if let Some(socket) = &self.gateway_socket {
             env.insert(String::from("TIDE_TERMINAL_SOCKET"), socket.clone());
         }
-        // Agent wrappers: shell integration + __TIDE_TERMINAL_WRAPPER_DIR env var.
-        // Only injected when auto-integration is enabled.
-        // Direct PATH injection doesn't work on macOS because /etc/zprofile
-        // runs path_helper which reconstructs PATH from scratch.
-        // For zsh, ZDOTDIR points to shell-integration/ which has a .zshenv
-        // that registers a precmd hook after all init files have run. For bash
-        // and fish, Tide exposes the same shell-integration directory so users
-        // can opt into the bundled snippets from their normal startup files.
         if self.auto_integration {
             if let Some(wrapper_dir) = &self.agent_wrapper_dir {
                 env.insert(
@@ -155,20 +176,88 @@ impl TerminalSpawnConfig {
                     wrapper_dir.clone(),
                 );
             }
-            if let Some(shell_dir) = &self.shell_integration_dir {
+        }
+    }
+
+    pub fn shell_launch(&self, shell: &Path, cwd: &Path, nonce: &str) -> ShellLaunch {
+        let supported_shell = SupportedShell::from_path(shell);
+        let mut env = HashMap::new();
+        self.apply_integration_env(&mut env);
+
+        let mut args = vec![String::from("--login")];
+        let shell_state_enabled = match (supported_shell, self.shell_integration_dir.as_ref()) {
+            (SupportedShell::Zsh, Some(shell_dir)) => {
                 env.insert(
                     String::from("TIDE_TERMINAL_SHELL_INTEGRATION_DIR"),
                     shell_dir.clone(),
                 );
-                // Save user's original ZDOTDIR before overwriting
+                env.insert(
+                    String::from("__TIDE_TERMINAL_SHELL_NONCE"),
+                    nonce.to_string(),
+                );
                 if let Ok(orig) = std::env::var("ZDOTDIR") {
                     env.insert(String::from("__TIDE_TERMINAL_ORIG_ZDOTDIR"), orig);
                 }
                 env.insert(String::from("ZDOTDIR"), shell_dir.clone());
+                true
             }
+            (SupportedShell::Bash, Some(shell_dir)) => {
+                env.insert(
+                    String::from("TIDE_TERMINAL_SHELL_INTEGRATION_DIR"),
+                    shell_dir.clone(),
+                );
+                env.insert(
+                    String::from("__TIDE_TERMINAL_SHELL_NONCE"),
+                    nonce.to_string(),
+                );
+                let original_home =
+                    std::env::var("HOME").unwrap_or_else(|_| cwd.to_string_lossy().into_owned());
+                env.insert(String::from("__TIDE_TERMINAL_ORIG_HOME"), original_home);
+                env.insert(String::from("HOME"), shell_dir.clone());
+                true
+            }
+            (SupportedShell::Fish, Some(shell_dir)) => {
+                let nonce = fish_single_quote(nonce);
+                let integration = fish_single_quote(shell_dir);
+                args.extend([
+                    String::from("--init-command"),
+                    format!(
+                        "set -g __tide_terminal_nonce {nonce}; source {integration}/config.fish"
+                    ),
+                ]);
+                true
+            }
+            _ => false,
+        };
+
+        ShellLaunch {
+            program: shell.to_string_lossy().into_owned(),
+            args,
+            env,
+            shell_state_enabled,
         }
     }
 }
+
+fn fish_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'"))
+}
+
+fn new_shell_state_nonce(cwd: &Path) -> String {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    let sequence = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let state = std::collections::hash_map::RandomState::new();
+    let first = state.hash_one((std::process::id(), sequence, timestamp, cwd));
+    let second = state.hash_one((timestamp, cwd, sequence, std::process::id()));
+    format!("{first:016x}{second:016x}")
+}
+
+const PTY_DRAIN_ON_EXIT: bool = true;
 
 pub fn apply_terminal_compat_env(
     env: &mut std::collections::HashMap<String, String>,
@@ -231,13 +320,17 @@ pub struct Terminal {
     notifier: Notifier,
     /// Cached grid — swapped in from the sync thread's SharedSnapshot
     cached_grid: TerminalGrid,
-    /// Detected current working directory (from OSC 7 or fallback)
+    /// Current working directory initialized at spawn and updated by trusted OSC 7 events.
     current_dir: Option<PathBuf>,
+    /// Nonce authenticating shell-state signals for this PTY.
+    shell_state_nonce: Option<String>,
+    /// Ordered terminal lifecycle events produced by the PTY thread.
+    runtime_events: Arc<TerminalRuntimeEventQueue>,
     /// Current column count
     cols: u16,
     /// Current row count
     rows: u16,
-    /// The child process ID for CWD detection fallback
+    /// The shell process ID used for event-triggered agent observation.
     child_pid: Option<u32>,
     /// Atomic flag: sync thread has a new snapshot ready to consume
     snapshot_ready: Arc<AtomicBool>,
@@ -266,12 +359,15 @@ pub struct Terminal {
     /// Dirty flag (shared with PTY thread and sync thread)
     dirty: Arc<AtomicBool>,
     /// Shared waker callback — installed by main thread, called by sync thread
-    #[expect(clippy::type_complexity, reason = "Keep the established callback or result contract without an unrelated API refactor.")]
+    #[expect(
+        clippy::type_complexity,
+        reason = "Keep the established callback or result contract without an unrelated API refactor."
+    )]
     waker: Arc<Mutex<Option<Box<dyn Fn() + Send>>>>,
     /// Pending PTY resize notification retained for compatibility with older queued paths.
     pending_pty_resize: Option<(WindowSize, Instant)>,
-    /// Handle to sync thread for unparking
-    sync_thread_handle: Arc<Mutex<Option<std::thread::Thread>>>,
+    /// Coalescing wake channel for the sync thread.
+    sync_waker: std::sync::mpsc::SyncSender<()>,
     /// Shutdown flag for sync thread
     sync_shutdown: Arc<AtomicBool>,
     /// Sync thread join handle (joined on Drop)
@@ -317,7 +413,10 @@ impl Terminal {
         Self::with_cwd_for_window(cols, rows, cwd, dark_mode, pane_id, None, None, None)
     }
 
-    #[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix."
+    )]
     pub fn with_cwd_for_window(
         cols: u16,
         rows: u16,
@@ -345,8 +444,7 @@ impl Terminal {
 
         let dirty = Arc::new(AtomicBool::new(true));
         let pty_writer = Arc::new(Mutex::new(None));
-        let sync_thread_handle: Arc<Mutex<Option<std::thread::Thread>>> =
-            Arc::new(Mutex::new(None));
+        let (sync_waker, sync_wake_rx) = std::sync::mpsc::sync_channel(1);
         let dark_mode_flag = Arc::new(AtomicBool::new(dark_mode));
         let mode_2031_flag = Arc::new(AtomicBool::new(false));
         let notifications: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
@@ -358,10 +456,16 @@ impl Terminal {
             Arc::new(Mutex::new(Vec::new()));
         let clipboard_read_allowed = Arc::new(AtomicBool::new(false));
         let graphics_events = Arc::new(Mutex::new(Vec::new()));
+        let runtime_events = Arc::new(TerminalRuntimeEventQueue::default());
+        #[expect(
+            clippy::type_complexity,
+            reason = "Keep the established callback or result contract without an unrelated API refactor."
+        )]
+        let waker: Arc<Mutex<Option<Box<dyn Fn() + Send>>>> = Arc::new(Mutex::new(None));
         let listener = TermEventListener {
             dirty: dirty.clone(),
             pty_writer: pty_writer.clone(),
-            sync_thread: sync_thread_handle.clone(),
+            sync_waker: sync_waker.clone(),
             dark_mode: dark_mode_flag.clone(),
             mode_2031: mode_2031_flag.clone(),
             notifications: notifications.clone(),
@@ -371,9 +475,16 @@ impl Terminal {
             clipboard_loads: clipboard_loads.clone(),
             clipboard_read_allowed: clipboard_read_allowed.clone(),
             graphics_events: graphics_events.clone(),
+            runtime_events: runtime_events.clone(),
+            waker: waker.clone(),
         };
 
-        let config = TermConfig { scrolling_history: scrollback_lines, osc52: alacritty_terminal::term::Osc52::CopyPaste, kitty_keyboard: true, ..TermConfig::default() };
+        let config = TermConfig {
+            scrolling_history: scrollback_lines,
+            osc52: alacritty_terminal::term::Osc52::CopyPaste,
+            kitty_keyboard: true,
+            ..TermConfig::default()
+        };
         // Allow OSC 52 copy and paste at the engine level. The actual paste
         // (clipboard read) is additionally gated by `clipboard_read_allowed`
         // (default off) in the listener — engine `OnlyCopy` would deny reads
@@ -388,6 +499,25 @@ impl Terminal {
 
         // Use provided cwd, or fall back to $HOME so .app bundles don't land in /
         let working_directory = cwd.or_else(|| std::env::var("HOME").ok().map(PathBuf::from));
+        let (launch, shell_state_nonce) = if let Some(config) = spawn_config {
+            let launch_cwd = working_directory
+                .as_deref()
+                .unwrap_or_else(|| Path::new("/"));
+            let nonce = new_shell_state_nonce(launch_cwd);
+            let launch = config.shell_launch(Path::new(&shell), launch_cwd, &nonce);
+            let shell_state_nonce = launch.shell_state_enabled.then_some(nonce);
+            (launch, shell_state_nonce)
+        } else {
+            (
+                ShellLaunch {
+                    program: shell,
+                    args: vec![String::from("--login")],
+                    env: HashMap::new(),
+                    shell_state_enabled: false,
+                },
+                None,
+            )
+        };
         let mut env = std::collections::HashMap::new();
         apply_terminal_compat_env(&mut env, dark_mode);
         if let Some(id) = pane_id {
@@ -410,14 +540,10 @@ impl Terminal {
                 exe.to_string_lossy().to_string(),
             );
         }
-        // Agent Gateway socket + (when auto-integration is on) the wrapper /
-        // shell-integration env, from the explicit spawn config.
-        if let Some(config) = spawn_config {
-            config.apply_integration_env(&mut env);
-        }
+        env.extend(launch.env);
         let pty_config = tty::Options {
-            shell: Some(tty::Shell::new(shell, vec![String::from("--login")])),
-            working_directory,
+            shell: Some(tty::Shell::new(launch.program, launch.args)),
+            working_directory: working_directory.clone(),
             env,
             ..tty::Options::default()
         };
@@ -429,7 +555,7 @@ impl Terminal {
         let child_pid = pty.child().id();
 
         // Create the event loop that bridges PTY I/O with the terminal emulator
-        let event_loop = EventLoop::new(term.clone(), listener, pty, false, false)?;
+        let event_loop = EventLoop::new(term.clone(), listener, pty, PTY_DRAIN_ON_EXIT, false)?;
         let notifier = Notifier(event_loop.channel());
         if let Ok(mut guard) = pty_writer.lock() {
             *guard = Some(Notifier(event_loop.channel()));
@@ -442,9 +568,6 @@ impl Terminal {
         let dark_mode_changed = Arc::new(AtomicBool::new(false));
         let snapshot_ready = Arc::new(AtomicBool::new(false));
         let sync_shutdown = Arc::new(AtomicBool::new(false));
-        #[expect(clippy::type_complexity, reason = "Keep the established callback or result contract without an unrelated API refactor.")]
-        let waker: Arc<Mutex<Option<Box<dyn Fn() + Send>>>> = Arc::new(Mutex::new(None));
-
         let snapshot = Arc::new(Mutex::new(SharedSnapshot {
             grid: Self::build_empty_grid(cols, rows),
             inverse_cursor: None,
@@ -486,21 +609,22 @@ impl Terminal {
 
         // Spawn the grid sync thread
         let sync_join = {
-            let handle = sync_thread_handle.clone();
             let dirty = dirty.clone();
             let snapshot = snapshot.clone();
             let snapshot_ready = snapshot_ready.clone();
+            let runtime_events = runtime_events.clone();
             let waker = waker.clone();
             let shutdown = sync_shutdown.clone();
             std::thread::Builder::new()
                 .name("grid-sync".to_string())
                 .spawn(move || {
                     grid_sync_thread_main(
-                        handle,
                         syncer,
                         dirty,
+                        sync_wake_rx,
                         snapshot,
                         snapshot_ready,
+                        runtime_events,
                         waker,
                         shutdown,
                     );
@@ -510,11 +634,15 @@ impl Terminal {
 
         Ok(Terminal {
             #[cfg(test)]
-            stop_pty_reader: Some(Box::new(move || { let _ = _pty_join.join(); })),
+            stop_pty_reader: Some(Box::new(move || {
+                let _ = _pty_join.join();
+            })),
             term,
             notifier,
             cached_grid,
-            current_dir: None,
+            current_dir: working_directory,
+            shell_state_nonce,
+            runtime_events,
             cols,
             rows,
             child_pid: Some(child_pid),
@@ -538,7 +666,7 @@ impl Terminal {
             dirty,
             waker,
             pending_pty_resize: None,
-            sync_thread_handle,
+            sync_waker,
             sync_shutdown,
             _sync_join: Some(sync_join),
             notifications,
@@ -597,7 +725,10 @@ impl Terminal {
 
     /// Preserve lifecycle transitions even when multiple titles arrive per frame.
     pub fn drain_titles(&self) -> Vec<TitleChange> {
-        self.pending_title.lock().map(|mut titles| std::mem::take(&mut *titles)).unwrap_or_default()
+        self.pending_title
+            .lock()
+            .map(|mut titles| std::mem::take(&mut *titles))
+            .unwrap_or_default()
     }
 
     /// Take and clear the edge-triggered bell flag. Returns true if the program
@@ -637,7 +768,12 @@ impl Terminal {
             return;
         }
         self.scrollback_lines = lines;
-        let config = TermConfig { scrolling_history: lines, osc52: alacritty_terminal::term::Osc52::CopyPaste, kitty_keyboard: true, ..TermConfig::default() };
+        let config = TermConfig {
+            scrolling_history: lines,
+            osc52: alacritty_terminal::term::Osc52::CopyPaste,
+            kitty_keyboard: true,
+            ..TermConfig::default()
+        };
         {
             let mut term = self.term.lock();
             term.set_options(config);
@@ -686,63 +822,9 @@ impl Terminal {
         TerminalGrid { cols, rows, cells }
     }
 
-    /// Detect the CWD of the child process using native OS APIs (no subprocess).
-    #[cfg(target_os = "macos")]
-    pub fn detect_cwd_fallback(&self) -> Option<PathBuf> {
-        let pid = self.child_pid? as i32;
-
-        const PROC_PIDVNODEPATHINFO: i32 = 9;
-        const BUF_SIZE: usize = 2352;
-        const PATH_OFFSET: usize = 152;
-        const MAXPATHLEN: usize = 1024;
-
-        let mut buf = [0u8; BUF_SIZE];
-        let ret = unsafe {
-            libc::proc_pidinfo(
-                pid,
-                PROC_PIDVNODEPATHINFO,
-                0,
-                buf.as_mut_ptr() as *mut libc::c_void,
-                BUF_SIZE as i32,
-            )
-        };
-
-        if ret <= 0 {
-            return None;
-        }
-
-        let path_bytes = &buf[PATH_OFFSET..PATH_OFFSET + MAXPATHLEN];
-        let len = path_bytes.iter().position(|&b| b == 0).unwrap_or(0);
-        if len == 0 {
-            return None;
-        }
-
-        let path = std::str::from_utf8(&path_bytes[..len]).ok()?;
-        let p = PathBuf::from(path);
-        if p.is_dir() {
-            Some(p)
-        } else {
-            None
-        }
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    pub fn detect_cwd_fallback(&self) -> Option<PathBuf> {
-        if let Some(pid) = self.child_pid {
-            let path = format!("/proc/{}/cwd", pid);
-            std::fs::read_link(path).ok()
-        } else {
-            None
-        }
-    }
-
-    /// Unpark the sync thread so it processes pending dirty flags.
+    /// Wake the sync thread so it processes pending dirty flags.
     fn notify_sync_thread(&self) {
-        if let Ok(guard) = self.sync_thread_handle.lock() {
-            if let Some(ref thread) = *guard {
-                thread.unpark();
-            }
-        }
+        let _ = self.sync_waker.try_send(());
     }
 
     /// Consume the latest snapshot from the sync thread (if available).
@@ -751,7 +833,9 @@ impl Terminal {
             return;
         }
         if let Ok(mut snap) = self.snapshot.lock() {
-            if !self.snapshot_ready.swap(false, Ordering::Relaxed) { return; }
+            if !self.snapshot_ready.swap(false, Ordering::Relaxed) {
+                return;
+            }
             std::mem::swap(&mut self.cached_grid, &mut snap.grid);
             self.inverse_cursor = snap.inverse_cursor;
             std::mem::swap(&mut self.url_ranges, &mut snap.url_ranges);
@@ -773,56 +857,54 @@ impl Terminal {
         }
     }
 
+    pub fn drain_runtime_events(&mut self) -> Vec<TerminalRuntimeEvent> {
+        let expected_nonce = self.shell_state_nonce.as_deref();
+        let mut accepted = Vec::new();
+        for event in self.runtime_events.drain() {
+            match &event {
+                TerminalRuntimeEvent::ShellState(ShellStateSignal::WorkingDirectory {
+                    uri,
+                    nonce,
+                }) => {
+                    let Some(expected_nonce) = expected_nonce else {
+                        continue;
+                    };
+                    if nonce != expected_nonce {
+                        continue;
+                    }
+                    let Some(cwd) = decode_working_directory(uri, expected_nonce) else {
+                        continue;
+                    };
+                    self.current_dir = Some(cwd);
+                    accepted.push(event);
+                }
+                TerminalRuntimeEvent::ShellState(ShellStateSignal::CommandLifecycle {
+                    nonce,
+                    ..
+                }) => {
+                    if expected_nonce.is_some_and(|expected| expected == nonce) {
+                        accepted.push(event);
+                    }
+                }
+                TerminalRuntimeEvent::ChildExited(_) => accepted.push(event),
+            }
+        }
+        accepted
+    }
+
+    #[cfg(test)]
+    pub(crate) fn queue_runtime_event_for_test(
+        &mut self,
+        event: TerminalRuntimeEvent,
+        expected_nonce: Option<&str>,
+    ) {
+        self.shell_state_nonce = expected_nonce.map(str::to_owned);
+        self.runtime_events.push(event);
+    }
+
     /// Returns the child PID of the shell process.
     pub fn child_pid(&self) -> Option<u32> {
         self.child_pid
-    }
-
-    /// Check if the child shell process is still alive.
-    pub fn is_child_alive(&self) -> bool {
-        let pid = match self.child_pid {
-            Some(p) => p,
-            None => return false,
-        };
-        // kill(pid, 0) checks if the process exists without sending a signal.
-        // Returns 0 if alive, -1 with ESRCH if dead.
-        unsafe { libc::kill(pid as i32, 0) == 0 }
-    }
-
-    /// Detect whether the shell is idle (no foreground child process running).
-    #[cfg(target_os = "macos")]
-    pub fn is_shell_idle(&self) -> bool {
-        let pid = match self.child_pid {
-            Some(p) => p,
-            None => return false,
-        };
-        let mut pids = [0i32; 16];
-        let ret = unsafe {
-            libc::proc_listchildpids(
-                pid as i32,
-                pids.as_mut_ptr() as *mut libc::c_void,
-                (pids.len() * std::mem::size_of::<i32>()) as i32,
-            )
-        };
-        ret <= 0
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    pub fn is_shell_idle(&self) -> bool {
-        let pid = match self.child_pid {
-            Some(p) => p,
-            None => return false,
-        };
-        let stat_path = format!("/proc/{}/stat", pid);
-        if let Ok(contents) = std::fs::read_to_string(&stat_path) {
-            let fields: Vec<&str> = contents.split_whitespace().collect();
-            if fields.len() > 7 {
-                let pgrp = fields[4].parse::<i32>().unwrap_or(0);
-                let tpgid = fields[7].parse::<i32>().unwrap_or(-1);
-                return pgrp == tpgid;
-            }
-        }
-        false
     }
 
     /// Returns true if the sync thread has produced a new snapshot since the
@@ -851,7 +933,10 @@ impl Terminal {
             self.notify_sync_thread();
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
             while !self.snapshot_ready.load(Ordering::Relaxed) {
-                assert!(std::time::Instant::now() < deadline, "grid synchronization timed out");
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "grid synchronization timed out"
+                );
                 std::thread::yield_now();
             }
             self.consume_snapshot();
@@ -900,7 +985,11 @@ impl Terminal {
             let point = Point::new(line, Column(col_idx));
             let cell = &grid[point];
             let terminal_cell = TerminalCell {
-                character: if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) { '\0' } else { cell.c },
+                character: if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+                    '\0'
+                } else {
+                    cell.c
+                },
                 hyperlink: cell.hyperlink().map(|link| link.uri().to_string()),
                 ..TerminalCell::default()
             };
@@ -1187,35 +1276,23 @@ impl TerminalBackend for Terminal {
     }
 }
 
-/// Wait for a child process to exit after SIGHUP, polling with `waitpid`.
+/// Wait for a child process to exit after SIGHUP.
 /// If the child doesn't exit within 200ms, escalate to SIGKILL.
 fn wait_for_child_exit(pid: u32) {
-    use std::time::{Duration, Instant};
+    const EXIT_GRACE: std::time::Duration = std::time::Duration::from_millis(200);
 
-    let deadline = Instant::now() + Duration::from_millis(200);
-    loop {
-        let ret = unsafe { libc::waitpid(pid as i32, std::ptr::null_mut(), libc::WNOHANG) };
-        // ret > 0: child exited; ret == -1: ECHILD (already reaped)
-        if ret != 0 {
-            return;
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let result = unsafe { libc::waitpid(pid as i32, std::ptr::null_mut(), 0) };
+        let _ = tx.send(result);
+    });
+    if rx.recv_timeout(EXIT_GRACE).is_err() {
+        unsafe {
+            libc::kill(-(pid as i32), libc::SIGKILL);
         }
-        if Instant::now() >= deadline {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(5));
-    }
-
-    // Child didn't exit in time — escalate to SIGKILL
-    unsafe {
-        libc::kill(-(pid as i32), libc::SIGKILL);
-    }
-    let kill_deadline = Instant::now() + Duration::from_millis(50);
-    loop {
-        let ret = unsafe { libc::waitpid(pid as i32, std::ptr::null_mut(), libc::WNOHANG) };
-        if ret != 0 || Instant::now() >= kill_deadline {
-            return;
-        }
-        std::thread::sleep(Duration::from_millis(1));
+        // A failed signal or stuck kernel wait must not make pane teardown
+        // block forever. The waiter owns the eventual reap if it completes.
+        let _ = rx.recv_timeout(EXIT_GRACE);
     }
 }
 
@@ -1236,7 +1313,7 @@ impl Drop for Terminal {
         }
 
         // Signal the sync thread to shut down and wait for it
-        self.sync_shutdown.store(true, Ordering::Relaxed);
+        self.sync_shutdown.store(true, Ordering::Release);
         self.notify_sync_thread();
         if let Some(handle) = self._sync_join.take() {
             let _ = handle.join();

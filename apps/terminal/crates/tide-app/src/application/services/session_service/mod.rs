@@ -198,7 +198,7 @@ fn snapshot_to_session(snap: &LayoutSnapshot, app: &App) -> SessionLayout {
                 .copied()
                 .unwrap_or(0);
             let cwd = match app.panes.get(&id) {
-                Some(PaneKind::Terminal(pane)) => pane.backend.detect_cwd_fallback(),
+                Some(PaneKind::Terminal(pane)) => pane.context.cwd.clone(),
                 _ => None,
             };
             SessionLayout::Leaf { pane_id: id, cwd }
@@ -208,7 +208,7 @@ fn snapshot_to_session(snap: &LayoutSnapshot, app: &App) -> SessionLayout {
                 .iter()
                 .map(|id| {
                     let cwd = match app.panes.get(id) {
-                        Some(PaneKind::Terminal(pane)) => pane.backend.detect_cwd_fallback(),
+                        Some(PaneKind::Terminal(pane)) => pane.context.cwd.clone(),
                         _ => None,
                     };
                     LeafGroupTab { pane_id: *id, cwd }
@@ -263,7 +263,10 @@ impl App {
         });
     }
 
-    #[expect(clippy::manual_clamp, reason = "Preserve min/max behavior for non-finite geometry values.")]
+    #[expect(
+        clippy::manual_clamp,
+        reason = "Preserve min/max behavior for non-finite geometry values."
+    )]
     pub(crate) fn restore_from_session(&mut self, session: Session) -> bool {
         // Rebuild layout tree from session, collecting pane info
         let mut pane_infos: Vec<(PaneId, Option<PathBuf>)> = Vec::new();
@@ -375,7 +378,8 @@ impl App {
             .first()
             .and_then(|(_, c)| c.clone())
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")));
-        let tree = crate::tide_tree::FsTree::new(cwd.clone());
+        let mut tree = crate::tide_tree::FsTree::new(cwd.clone());
+        tree.set_waker(self.bg.event_loop_waker.clone());
         self.ft.tree = Some(tree);
         self.sync_file_tree_path_identity_cache();
         self.sync_file_tree_modified_editor_cache();

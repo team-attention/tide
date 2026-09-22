@@ -824,12 +824,7 @@ fn workspace_terminal_cwd(app: &App, workspace_index: usize) -> Option<std::path
                 .into_iter()
                 .find_map(|pane_id| terminal_cwd_from_workspace(workspace, pane_id))
         })
-        .or_else(|| {
-            workspace
-                .panes
-                .values()
-                .find_map(terminal_cwd_from_pane)
-        })
+        .or_else(|| workspace.panes.values().find_map(terminal_cwd_from_pane))
 }
 
 fn terminal_cwd_from_workspace(
@@ -844,11 +839,7 @@ fn terminal_cwd_from_workspace(
 
 fn terminal_cwd_from_pane(pane: &crate::pane::PaneKind) -> Option<std::path::PathBuf> {
     match pane {
-        crate::pane::PaneKind::Terminal(terminal) => terminal
-            .context
-            .cwd
-            .clone()
-            .or_else(|| terminal.backend.detect_cwd_fallback()),
+        crate::pane::PaneKind::Terminal(terminal) => terminal.context.cwd.clone(),
         _ => None,
     }
 }

@@ -1783,7 +1783,7 @@ fn wrapper_managed_presence_with_unknown_pid_survives_gateway_connection_refresh
 }
 
 #[test]
-fn wrapper_managed_presence_with_unknown_pid_survives_shell_idle_redetection_gap() {
+fn wrapper_managed_presence_with_unknown_pid_survives_unrelated_badge_refresh() {
     // Spec: docs/specs/agent-auto-integration.md
     // UC-4 BR-14: A wrapper-managed Codex presence with unknown PID must keep gateway_connected through shell-idle-driven re-detection gaps.
     let (mut app, pane_id) = app_with_terminal();
@@ -1794,12 +1794,8 @@ fn wrapper_managed_presence_with_unknown_pid_survives_shell_idle_redetection_gap
     )
     .unwrap();
 
-    let backend_idle = match app.panes.get(&pane_id) {
-        Some(PaneKind::Terminal(tp)) => tp.backend.is_shell_idle(),
-        _ => panic!("expected terminal pane"),
-    };
     match app.panes.get_mut(&pane_id) {
-        Some(PaneKind::Terminal(tp)) => tp.context.shell_idle = !backend_idle,
+        Some(PaneKind::Terminal(tp)) => tp.context.shell_idle = false,
         _ => panic!("expected terminal pane"),
     }
 
@@ -3863,7 +3859,7 @@ fn inactive_workspace_osc9_notification_sets_workspace_dot_without_loading_works
     app.ws.active = 0;
 
     let window = test_window_proxy();
-    app.poll_background_events(&window);
+    app.drain_ready_events(&window);
 
     let agent = app
         .gateway

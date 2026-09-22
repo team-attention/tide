@@ -10,6 +10,7 @@ pub(crate) mod lsp_port;
 pub(crate) mod persistence_port;
 pub(crate) mod platform_port;
 pub(crate) mod process_port;
+pub(crate) mod repository_watcher_port;
 pub(crate) mod terminal_factory_port;
 
 // Re-export traits from port modules
@@ -23,4 +24,5 @@ pub(crate) use lsp_port::LspPort;
 pub(crate) use persistence_port::PersistencePort;
 pub(crate) use platform_port::PlatformPort;
 pub(crate) use process_port::ProcessPort;
+pub(crate) use repository_watcher_port::RepositoryWatcherPort;
 pub(crate) use terminal_factory_port::TerminalFactoryPort;

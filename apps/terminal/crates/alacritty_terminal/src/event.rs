@@ -3,7 +3,7 @@ use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
 
 use crate::term::ClipboardType;
-use crate::vte::ansi::Rgb;
+use crate::vte::ansi::{CommandBoundary, Rgb};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GraphicsProtocol {
@@ -31,6 +31,15 @@ pub enum Event {
     /// Window title change.
     Title(String),
 
+    /// Working directory URI reported by the shell.
+    WorkingDirectory(String),
+
+    /// Shell command lifecycle boundary.
+    CommandBoundary {
+        boundary: CommandBoundary,
+        params: Vec<String>,
+    },
+
     /// Reset to the default window title.
     ResetTitle,
 
@@ -41,7 +50,10 @@ pub enum Event {
     ///
     /// The attached function is a formatter which will correctly transform the clipboard content
     /// into the expected escape sequence format.
-    ClipboardLoad(ClipboardType, Arc<dyn Fn(&str) -> String + Sync + Send + 'static>),
+    ClipboardLoad(
+        ClipboardType,
+        Arc<dyn Fn(&str) -> String + Sync + Send + 'static>,
+    ),
 
     /// Request to write the RGB value of a color to the PTY.
     ///
@@ -68,7 +80,7 @@ pub enum Event {
     Exit,
 
     /// Child process exited with an error code.
-    ChildExit(i32),
+    ChildExit(Option<i32>),
 
     /// An unknown private mode was set or unset by the running program.
     /// First field is the mode number (e.g. 2031), second is true for set, false for unset.
@@ -92,20 +104,29 @@ impl Debug for Event {
             Event::ColorRequest(index, _) => write!(f, "ColorRequest({index})"),
             Event::PtyWrite(text) => write!(f, "PtyWrite({text})"),
             Event::Title(title) => write!(f, "Title({title})"),
+            Event::WorkingDirectory(uri) => write!(f, "WorkingDirectory({uri})"),
+            Event::CommandBoundary { boundary, params } => {
+                write!(f, "CommandBoundary({boundary:?}, {params:?})")
+            }
             Event::CursorBlinkingChange => write!(f, "CursorBlinkingChange"),
             Event::MouseCursorDirty => write!(f, "MouseCursorDirty"),
             Event::ResetTitle => write!(f, "ResetTitle"),
             Event::Wakeup => write!(f, "Wakeup"),
             Event::Bell => write!(f, "Bell"),
             Event::Exit => write!(f, "Exit"),
-            Event::ChildExit(code) => write!(f, "ChildExit({code})"),
+            Event::ChildExit(code) => write!(f, "ChildExit({code:?})"),
             Event::PrivateModeUpdate(mode, enabled) => {
                 write!(f, "PrivateModeUpdate({mode}, {enabled})")
-            },
+            }
             Event::Notification(msg) => write!(f, "Notification({msg})"),
             Event::Graphics(data) => {
-                write!(f, "Graphics({:?}, {} bytes)", data.protocol, data.payload.len())
-            },
+                write!(
+                    f,
+                    "Graphics({:?}, {} bytes)",
+                    data.protocol,
+                    data.payload.len()
+                )
+            }
         }
     }
 }
