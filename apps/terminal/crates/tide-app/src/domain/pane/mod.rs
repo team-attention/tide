@@ -11,7 +11,7 @@ use unicode_width::UnicodeWidthChar;
 
 use crate::tide_core::{
     Color, CursorShape, Key, Modifiers, Rect, Renderer, Size, TerminalBackend,
-    TerminalGraphicProtocol, TerminalGrid, Vec2,
+    TerminalCell, TerminalGraphicProtocol, TerminalGrid, Vec2,
 };
 use crate::tide_renderer::WgpuRenderer;
 use crate::tide_terminal::git::GitInfo;
@@ -40,6 +40,35 @@ pub(crate) fn terminal_grid_origin(content_rect: Rect) -> Vec2 {
 
 pub(crate) fn terminal_grid_cols(content_rect: Rect, cell_size: Size) -> usize {
     (content_rect.width / cell_size.width).floor().max(0.0) as usize
+}
+
+pub(crate) fn terminal_trailing_cell_background(
+    content_rect: Rect,
+    cell_size: Size,
+    row: usize,
+    rendered_cells: &[TerminalCell],
+) -> Option<(Rect, Color)> {
+    let max_cols = terminal_grid_cols(content_rect, cell_size);
+    if rendered_cells.is_empty() || rendered_cells.len() != max_cols {
+        return None;
+    }
+
+    let background = rendered_cells.last()?.style.background?;
+    let grid_width = max_cols as f32 * cell_size.width;
+    let trailing_width = content_rect.width - grid_width;
+    if trailing_width <= 0.0 || trailing_width >= cell_size.width {
+        return None;
+    }
+
+    Some((
+        Rect::new(
+            content_rect.x + grid_width,
+            content_rect.y + row as f32 * cell_size.height,
+            trailing_width,
+            cell_size.height,
+        ),
+        background,
+    ))
 }
 
 const MIN_READABLE_TERMINAL_BACKEND_COLS: u16 = 4;
@@ -375,6 +404,12 @@ impl TerminalPane {
 
         for row in 0..rows {
             renderer.draw_grid_row(&grid.cells[row], row, cols, cell_size, offset);
+            let rendered_cells = &grid.cells[row][..cols.min(grid.cells[row].len())];
+            if let Some((trailing_rect, background)) =
+                terminal_trailing_cell_background(rect, cell_size, row, rendered_cells)
+            {
+                renderer.draw_grid_rect(trailing_rect, background);
+            }
         }
     }
 

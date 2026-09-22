@@ -25,6 +25,7 @@ Terminal rendering, PTY sizing, pointer mapping, cursor, IME, selection, scrolli
 5. Derive Editor, Diff, Markdown preview, scroll, search, and completion geometry from the shared base rectangle and existing viewport helpers.
 6. Preserve semantic internal spacing, non-content chrome padding, Browser Pane native-frame behavior, and Launcher centering.
 7. Preserve layout-level PTY resize coalescing, normal primary-screen reflow, and the minimum readable Terminal backend width.
+8. Fill any sub-cell trailing width at the right edge of a Terminal Pane row with that row's final visible cell background, without stretching glyphs or changing Terminal backend dimensions.
 
 ## Bounded Contexts
 
@@ -55,6 +56,7 @@ Terminal rendering, PTY sizing, pointer mapping, cursor, IME, selection, scrolli
   - BR-9: Terminal glyphs remain left-anchored at the shared content x-origin when Pane width changes.
   - BR-14: Editor, Diff, and Markdown Pane content starts from the shared flush base rectangle before semantic gutters and readable-column logic.
   - BR-18: Editor render and interaction geometry uses the same content rectangle after any notification or save-confirm bar.
+  - BR-19: When Terminal Pane width is not evenly divisible by cell width, an explicit background on the final visible cell extends across the remaining right-edge pixels without changing grid columns, glyph geometry, or cell content.
   - BR-16: Browser Pane native geometry remains on the dedicated already-flush `browser_webview_frame()` path.
   - BR-17: Launcher uses the flush base rectangle while retaining internal centering and minimum spacing.
 
@@ -104,6 +106,7 @@ Terminal rendering, PTY sizing, pointer mapping, cursor, IME, selection, scrolli
 6. Browser Pane native geometry remains dedicated and flush.
 7. Launcher internal centering remains intact after its base rectangle becomes flush.
 8. Terminal backend resize remains coalesced by layout state and terminal glyph x-origin remains independent of content width.
+9. Right-edge background extension is visual only: it does not change Terminal backend dimensions, glyph geometry, selection, pointer mapping, or extracted text.
 
 ## Tests
 
@@ -114,6 +117,7 @@ Terminal rendering, PTY sizing, pointer mapping, cursor, IME, selection, scrolli
 | UC-1 | BR-9 | `terminal_grid_origin_stays_left_anchored_when_width_changes` |
 | UC-1 | BR-14 | `editor_content_rect_uses_full_pane_width_below_header` |
 | UC-1 | BR-18 | `editor_click_target_tracks_optional_pane_bar` |
+| UC-1 | BR-19 | `terminal_trailing_cell_background_reaches_content_edge` |
 | UC-2 | BR-2, BR-3 | `terminal_click_mapping_starts_at_the_content_origin` |
 | UC-2 | BR-10 | `terminal_click_mapping_uses_left_anchored_grid_origin` |
 | UC-2 | BR-15 | `preview_visible_rows_use_full_content_height` |

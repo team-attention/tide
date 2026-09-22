@@ -3,10 +3,12 @@
 use std::time::Duration;
 
 use crate::adapter::outward::clock_adapter::FixedClock;
-use crate::pane::{terminal_grid_origin, PaneKind, TerminalPane};
+use crate::pane::{
+    terminal_grid_origin, terminal_trailing_cell_background, PaneKind, TerminalPane,
+};
 use crate::state::{FocusArea, SURFACE_VISIBILITY_ANIMATION_DURATION};
 use crate::theme::TAB_BAR_HEIGHT;
-use crate::tide_core::{Rect, Vec2};
+use crate::tide_core::{Color, Rect, TerminalCell, Vec2};
 use crate::tide_platform::{WindowCommand, WindowProxy};
 use crate::{ActionPort, App, AppCorePort, DockPort, LayoutPort};
 
@@ -131,6 +133,39 @@ fn terminal_grid_origin_stays_left_anchored_when_width_changes() {
     assert_eq!(terminal_grid_origin(narrow).x, narrow_pane.x);
     assert_eq!(terminal_grid_origin(wide).x, narrow_pane.x);
     assert_eq!(terminal_grid_origin(wide).y, narrow_pane.y + TAB_BAR_HEIGHT);
+}
+
+#[test]
+fn terminal_trailing_cell_background_reaches_content_edge() {
+    // UC-1 BR-19: A final cell background fills only the sub-cell remainder at the Pane edge.
+    let cell_size = crate::tide_core::Size::new(8.0, 16.0);
+    let content = Rect::new(24.0, 40.0, 83.0, 64.0);
+    let background = Color::rgb(0.3, 0.4, 0.5);
+    let mut cells = vec![TerminalCell::default(); 10];
+    cells[9].character = '\0';
+    cells[9].style.background = Some(background);
+
+    let (fill, color) = terminal_trailing_cell_background(content, cell_size, 2, &cells)
+        .expect("explicit final-cell background should fill the trailing pixels");
+
+    assert_eq!(color, background);
+    assert_eq!(fill, Rect::new(104.0, 72.0, 3.0, 16.0));
+    assert_eq!(fill.x + fill.width, content.x + content.width);
+
+    assert!(terminal_trailing_cell_background(
+        Rect::new(24.0, 40.0, 80.0, 64.0),
+        cell_size,
+        2,
+        &cells,
+    )
+    .is_none());
+
+    cells[9].style.background = None;
+    assert!(terminal_trailing_cell_background(content, cell_size, 2, &cells).is_none());
+
+    cells[8].style.background = Some(background);
+    assert!(terminal_trailing_cell_background(content, cell_size, 2, &cells[..9]).is_none());
+    assert!(terminal_trailing_cell_background(content, cell_size, 2, &[]).is_none());
 }
 
 // --- UC-2: MapFlushPaneCoordinates ---
