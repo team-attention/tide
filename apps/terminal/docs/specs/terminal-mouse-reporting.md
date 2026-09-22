@@ -46,9 +46,12 @@ legacy X10 `CSI M Cb Cx Cy` format.
   Meta is intentionally ignored for terminal mouse reporting.
 - BR-6: Buttonless pointer motion never changes the focused Pane, including when
   the Terminal Pane under the pointer has any-motion tracking enabled.
+- BR-7: Terminal mouse reporting does not bypass Tide's pointer-shape update
+  when the pointer leaves UI chrome and enters terminal content.
 
 ## Tests
 
 | UC | BR | Test Function |
 |----|----|---------------|
 | UC-3 | BR-6 | `terminal_any_motion_reporting_does_not_move_focus_between_panes` |
+| UC-3 | BR-7 | `terminal_any_motion_reporting_still_updates_the_window_cursor` |

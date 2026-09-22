@@ -3,7 +3,7 @@
 use crate::pane::{PaneKind, TerminalPane};
 use crate::state::FocusArea;
 use crate::tide_core::{LayoutEngine, Rect, SplitDirection, Vec2};
-use crate::tide_platform::WindowProxy;
+use crate::tide_platform::{CursorIcon, WindowCommand, WindowProxy};
 use crate::App;
 
 fn test_window_proxy() -> WindowProxy {
@@ -54,4 +54,46 @@ fn terminal_any_motion_reporting_does_not_move_focus_between_panes() {
     assert_eq!(app.focus.focused, Some(first_id));
     assert_eq!(app.focus.stage_focused, Some(first_id));
     assert_eq!(app.cache.chrome_generation, chrome_generation);
+}
+
+#[test]
+fn terminal_any_motion_reporting_still_updates_the_window_cursor() {
+    // UC-3 BR-7: A Terminal consuming buttonless pointer motion must not bypass
+    // Tide's cursor update after a border drag ends.
+    let mut app = App::new();
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
+    app.window.window_size = (960, 640);
+
+    let (layout, pane_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    let mut pane = TerminalPane::with_cwd(pane_id, 40, 20, None, true).unwrap();
+    pane.backend.stop_pty_for_test();
+    pane.backend.bench_write_to_term(b"\x1b[?1003h\x1b[?1006h");
+    app.panes.insert(pane_id, PaneKind::Terminal(pane));
+    app.pane_rects = vec![(pane_id, Rect::new(0.0, 0.0, 400.0, 400.0))];
+    app.visual_pane_rects = app.pane_rects.clone();
+    app.interaction.hover_target = Some(crate::state::drag_types::HoverTarget::SplitBorder(
+        SplitDirection::Vertical,
+    ));
+
+    crate::adapter::inward::mouse_adapter::handle_mouse_up(
+        &mut app,
+        crate::tide_core::MouseButton::Left,
+    );
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let window = WindowProxy::new(tx, std::sync::Arc::new(|| {}));
+    crate::adapter::inward::mouse_adapter::drag::handle_cursor_moved_logical(
+        &mut app,
+        Vec2::new(100.0, 80.0),
+        &window,
+    );
+
+    assert_eq!(
+        app.interaction.hover_target,
+        Some(crate::state::drag_types::HoverTarget::PaneContent)
+    );
+    assert!(rx
+        .try_iter()
+        .any(|command| matches!(command, WindowCommand::SetCursorIcon(CursorIcon::IBeam))));
 }

@@ -225,15 +225,16 @@ pub(crate) fn handle_cursor_moved_logical(
             ctx.request_redraw();
         }
     } else {
-        if let Some(button) = ctx.interaction().mouse_pressed_button {
+        let terminal_motion_forwarded = if let Some(button) = ctx.interaction().mouse_pressed_button
+        {
             if super::forward_terminal_mouse_drag(ctx, pos, button) {
                 ctx.request_redraw();
                 return;
             }
-        } else if super::forward_terminal_mouse_move(ctx, pos) {
-            ctx.request_redraw();
-            return;
-        }
+            false
+        } else {
+            super::forward_terminal_mouse_move(ctx, pos)
+        };
 
         // URL bar drag selection
         if ctx.interaction().mouse_left_pressed {
@@ -266,6 +267,11 @@ pub(crate) fn handle_cursor_moved_logical(
             if visual_changed {
                 ctx.request_redraw();
             }
+        }
+
+        if terminal_motion_forwarded {
+            ctx.request_redraw();
+            return;
         }
 
         let input = InputEvent::MouseMove { position: pos };
