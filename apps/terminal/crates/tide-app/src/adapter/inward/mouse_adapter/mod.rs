@@ -158,7 +158,9 @@ fn forward_terminal_mouse_report(
         return false;
     };
 
-    ctx.focus_terminal(pane_id);
+    if matches!(report, TerminalMouseReport::Press(_)) {
+        ctx.focus_terminal(pane_id);
+    }
     if let Some(PaneKind::Terminal(pane)) = ctx.pane_mut(pane_id) {
         pane.backend.write(&bytes);
         true

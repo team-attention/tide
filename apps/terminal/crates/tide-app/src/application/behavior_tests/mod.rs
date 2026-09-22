@@ -57,6 +57,7 @@ mod single_process_multi_window;
 mod soft_wrap_behavior;
 mod stage_split_only;
 mod terminal_context;
+mod terminal_mouse_reporting;
 mod terminal_pane_inset;
 mod terminal_text_interaction;
 mod terminal_update_feed;

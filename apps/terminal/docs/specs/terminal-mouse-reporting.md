@@ -23,7 +23,8 @@ forwarded as a drag report.
 
 When a program enables any-motion tracking (`DECSET 1003`), pointer movement
 with no button pressed is forwarded as a motion report while the pointer is over
-the terminal grid.
+the terminal grid. Forwarding the report does not move keyboard focus between
+Panes; only an explicit press may focus the target Terminal Pane.
 
 ### UC-4: Coordinate Encoding
 
@@ -43,3 +44,11 @@ legacy X10 `CSI M Cb Cx Cy` format.
   offset is added.
 - BR-5: Shift, Alt, and Ctrl add the standard mouse modifier bits 4, 8, and 16.
   Meta is intentionally ignored for terminal mouse reporting.
+- BR-6: Buttonless pointer motion never changes the focused Pane, including when
+  the Terminal Pane under the pointer has any-motion tracking enabled.
+
+## Tests
+
+| UC | BR | Test Function |
+|----|----|---------------|
+| UC-3 | BR-6 | `terminal_any_motion_reporting_does_not_move_focus_between_panes` |
