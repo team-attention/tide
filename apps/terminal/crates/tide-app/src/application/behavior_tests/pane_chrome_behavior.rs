@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::adapter::inward::click_adapter::hit_test::compute_hover_target;
 use crate::adapter::inward::event_loop_adapter::terminal_badge_check_delay;
 use crate::adapter::inward::scroll_adapter::{
     clamp_shared_tab_scroll_offset, handle_scroll, shared_tab_scroll_delta,
@@ -30,11 +31,11 @@ use crate::pane::browser::{BrowserPane, BrowserPermissionKind, BrowserPermission
 use crate::pane::diff::{DiffFileEntry, DiffPane};
 use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalContext, TerminalPane};
-use crate::state::FocusArea;
+use crate::state::{drag_types::HoverTarget, FocusArea};
 use crate::theme::{
-    ACTIVE_TAB_MAX_WIDTH, BADGE_GAP, BADGE_PADDING_H, DARK, FILE_TREE_HEADER_HEIGHT,
-    HEADER_BAR_HEIGHT, LIGHT, TAB_BAR_HEIGHT, TAB_CONTENT_SPACING, TAB_H_PAD, TAB_MAX_WIDTH,
-    TAB_MIN_TITLE_WIDTH, TITLEBAR_HEIGHT,
+    ACTIVE_TAB_MAX_WIDTH, BADGE_GAP, BADGE_PADDING_H, CHROME_FONT_SIZE, DARK,
+    FILE_TREE_HEADER_HEIGHT, HEADER_BAR_HEIGHT, LIGHT, TAB_BAR_HEIGHT, TAB_CONTENT_SPACING,
+    TAB_H_PAD, TAB_MAX_WIDTH, TAB_MIN_TITLE_WIDTH, TITLEBAR_HEIGHT,
 };
 use crate::tide_core::{DropZone, LayoutEngine, Rect, Size, SplitDirection, Vec2};
 use crate::tide_terminal::git::{GitInfo, GitStatus, WorktreeInfo};
@@ -1080,11 +1081,12 @@ fn focused_tabs_use_a_brighter_tint_than_unfocused_tabs() {
 
 #[test]
 fn titlebar_and_content_headers_use_distinct_compact_heights() {
-    // UC-7 BR-19: The native titlebar remains 32 px while Pane, TabGroup, and FileTree chrome share a compact 28 px height.
+    // UC-7 BR-19: The native titlebar remains 32 px while Pane, TabGroup, and FileTree chrome share 26 px height and 13 px type.
     assert_eq!(TITLEBAR_HEIGHT, 32.0);
-    assert_eq!(HEADER_BAR_HEIGHT, 28.0);
+    assert_eq!(HEADER_BAR_HEIGHT, 26.0);
     assert_eq!(TAB_BAR_HEIGHT, HEADER_BAR_HEIGHT);
     assert_eq!(FILE_TREE_HEADER_HEIGHT, HEADER_BAR_HEIGHT);
+    assert_eq!(CHROME_FONT_SIZE, 13.0);
     assert_eq!(HEADER_ACTION_TILE_SIZE, 18.0);
     assert!(HEADER_ACTION_TILE_SIZE <= HEADER_BAR_HEIGHT);
     assert!(
@@ -1106,11 +1108,23 @@ fn titlebar_and_content_headers_use_distinct_compact_heights() {
 }
 
 #[test]
+fn native_titlebar_hit_targets_keep_reference_geometry_when_content_chrome_shrinks() {
+    // UC-7 BR-19: Shrinking content chrome must not move or shrink native titlebar controls.
+    let mut app = test_app();
+    app.window.chrome_cell_size = Size::new(7.0, 15.0);
+
+    assert_eq!(
+        compute_hover_target(&app, Vec2::new(800.0, TITLEBAR_HEIGHT / 2.0)),
+        Some(HoverTarget::TitlebarWorkspace)
+    );
+}
+
+#[test]
 fn header_chrome_metrics_do_not_follow_content_font_zoom() {
     // UC-7 BR-19: Content font zoom is canceled when Tide draws fixed-size header chrome.
-    assert_eq!(chrome_font_scale(14.0).to_bits(), 1.0_f32.to_bits());
-    assert_eq!(chrome_font_scale(8.0).to_bits(), 1.75_f32.to_bits());
-    assert_eq!(chrome_font_scale(32.0).to_bits(), 0.4375_f32.to_bits());
+    assert_eq!(chrome_font_scale(13.0).to_bits(), 1.0_f32.to_bits());
+    assert_eq!(chrome_font_scale(8.0).to_bits(), 1.625_f32.to_bits());
+    assert_eq!(chrome_font_scale(32.0).to_bits(), 0.40625_f32.to_bits());
 
     let mut app = test_app();
     let chrome_cell_size = AppCorePort::chrome_cell_size(&app);
@@ -1122,8 +1136,8 @@ fn header_chrome_metrics_do_not_follow_content_font_zoom() {
     let (large_zoom_cell, large_zoom_scale) = fixed_chrome_text_metrics(fixed_cell, 32.0, 1.0);
     assert_eq!(small_zoom_cell, fixed_cell);
     assert_eq!(large_zoom_cell, fixed_cell);
-    assert_eq!((8.0 * small_zoom_scale).to_bits(), 14.0_f32.to_bits());
-    assert_eq!((32.0 * large_zoom_scale).to_bits(), 14.0_f32.to_bits());
+    assert_eq!((8.0 * small_zoom_scale).to_bits(), 13.0_f32.to_bits());
+    assert_eq!((32.0 * large_zoom_scale).to_bits(), 13.0_f32.to_bits());
 }
 
 #[test]

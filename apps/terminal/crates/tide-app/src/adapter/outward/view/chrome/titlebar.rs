@@ -995,11 +995,12 @@ pub(super) fn render_titlebar_and_sidebar(
         // Leading identity uses the otherwise empty traffic-light lane without turning
         // the titlebar into a centered label.
         let cs = renderer.chrome_cell_size();
+        let titlebar_cs = renderer.titlebar_cell_size();
         {
             let title_text = titlebar_workspace_title(app);
             let meta_text = titlebar_workspace_meta_text(app, app.ws.active);
             let identity_x = titlebar_identity_origin_x_for_window(app.window.is_fullscreen);
-            let controls_left = titlebar_controls_left_edge(logical.width, cs.width);
+            let controls_left = titlebar_controls_left_edge(logical.width, titlebar_cs.width);
             let identity_w = (controls_left - identity_x - PANE_PADDING).max(0.0);
             let title_y = (app.window.top_inset - cs.height) / 2.0;
             if identity_w >= cs.width * 4.0 {
@@ -1052,8 +1053,8 @@ pub(super) fn render_titlebar_and_sidebar(
         }
         // Right: titlebar icons
         {
-            let btn_w = titlebar_toggle_button_width(cs.width);
-            let btn_h = titlebar_toggle_button_height(cs.height);
+            let btn_w = titlebar_toggle_button_width(titlebar_cs.width);
+            let btn_h = titlebar_toggle_button_height(titlebar_cs.height);
 
             // Settings gear icon
             {
@@ -1140,8 +1141,8 @@ pub(super) fn render_titlebar_and_sidebar(
                  is_active: bool,
                  is_hovered: bool|
                  -> f32 {
-                    let btn_w = titlebar_toggle_button_width(cs.width);
-                    let btn_h = titlebar_toggle_button_height(cs.height);
+                    let btn_w = titlebar_toggle_button_width(titlebar_cs.width);
+                    let btn_h = titlebar_toggle_button_height(titlebar_cs.height);
                     let btn_x = right_edge - btn_w;
                     let btn_y = (app.window.top_inset - btn_h) / 2.0;
                     let btn_rect = Rect::new(btn_x, btn_y, btn_w, btn_h);

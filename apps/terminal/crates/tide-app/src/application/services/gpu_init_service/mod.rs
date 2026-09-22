@@ -110,6 +110,7 @@ impl App {
 
         self.window.cached_cell_size = renderer.cell_size();
         self.window.chrome_cell_size = renderer.chrome_cell_size();
+        self.window.titlebar_cell_size = renderer.titlebar_cell_size();
         self.window.cell_size_table = renderer.cell_size_table().to_vec();
         self.ports.gpu.set_device_and_queue(device, queue);
         self.ports.gpu.set_surface_config(config);

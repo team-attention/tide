@@ -42,7 +42,7 @@ pub(crate) fn compute_hover_target(
     // Titlebar buttons (right-to-left: settings, integration, surface visibility)
     if ctx.top_inset() > 0.0 {
         let logical = ctx.logical_size();
-        let cs = ctx.chrome_cell_size();
+        let cs = ctx.titlebar_cell_size();
         let btn_w = cs.width * TITLEBAR_ICON_SCALE + TITLEBAR_ICON_BUTTON_PAD_H * 2.0;
         let btn_h = cs.height * TITLEBAR_ICON_SCALE + TITLEBAR_ICON_BUTTON_PAD_V * 2.0;
 

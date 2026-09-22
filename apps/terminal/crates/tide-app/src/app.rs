@@ -660,6 +660,10 @@ impl crate::application::ports::inward::AppCorePort for App {
         self.window.chrome_cell_size
     }
 
+    fn titlebar_cell_size(&self) -> Size {
+        self.window.titlebar_cell_size
+    }
+
     fn apply_font_size(&mut self, size: f32) {
         let size = size.clamp(8.0, 32.0);
         if (size - self.window.current_font_size).abs() < 0.01 {

@@ -217,6 +217,15 @@ impl WgpuRenderer {
             .unwrap_or(self.cached_cell_size)
     }
 
+    pub fn titlebar_cell_size(&self) -> Size {
+        let idx =
+            (crate::theme::TITLEBAR_CONTROL_FONT_SIZE.round() as u32).saturating_sub(8) as usize;
+        self.cell_size_table
+            .get(idx)
+            .copied()
+            .unwrap_or(self.cached_cell_size)
+    }
+
     /// Scale factor for converting em-relative glyph metrics to physical pixels.
     fn em_scale(&self) -> f32 {
         self.em_scale_for_font(1.0)

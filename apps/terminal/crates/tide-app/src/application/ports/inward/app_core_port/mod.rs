@@ -10,6 +10,7 @@ pub(crate) trait AppCorePort {
     fn logical_size(&self) -> Size;
     fn cell_size(&self) -> Size;
     fn chrome_cell_size(&self) -> Size;
+    fn titlebar_cell_size(&self) -> Size;
     fn apply_font_size(&mut self, size: f32);
     fn cycle_theme_palette(&mut self);
     fn dismiss_first_run_guide_at(&mut self, pos: Vec2) -> bool;
