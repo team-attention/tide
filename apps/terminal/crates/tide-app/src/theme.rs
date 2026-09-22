@@ -692,10 +692,6 @@ pub const ACTIVE_TAB_SOFT_MAX_WIDTH: f32 = 320.0;
 pub const TAB_MIN_WIDTH: f32 = 48.0;
 pub const TAB_MIN_TITLE_WIDTH: f32 = 48.0;
 
-/// Blink animation frequency for agent NeedsInput indicators (rad/s).
-/// Period ≈ 1.5 seconds. Used for tab dots, pane borders, and workspace sidebar dots.
-pub const AGENT_BLINK_FREQUENCY: f64 = 4.2;
-
 pub const PANE_CLOSE_SIZE: f32 = 14.0;
 
 pub const DROP_PREVIEW_BORDER_WIDTH: f32 = 1.0;

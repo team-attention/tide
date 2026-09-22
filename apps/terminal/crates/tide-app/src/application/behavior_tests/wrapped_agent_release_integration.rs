@@ -322,8 +322,8 @@ fn idle_status_is_attention_orange_until_acknowledged_then_connected_blue() {
     use crate::adapter::outward::view::header::agent_status_dot_color;
     use crate::state::gateway_status::AgentStatus;
 
-    let unresolved = agent_status_dot_color(AgentStatus::Idle, true, Some(0.0));
-    let acknowledged = agent_status_dot_color(AgentStatus::Idle, false, Some(0.0));
+    let unresolved = agent_status_dot_color(AgentStatus::Idle, true);
+    let acknowledged = agent_status_dot_color(AgentStatus::Idle, false);
 
     assert_eq!(unresolved, Color::new(0.95, 0.65, 0.2, 1.0));
     assert_eq!(acknowledged, Color::new(0.3, 0.55, 0.95, 1.0));
@@ -335,7 +335,7 @@ fn needs_input_status_stays_attention_orange_when_focused() {
     use crate::adapter::outward::view::header::agent_status_dot_color;
     use crate::state::gateway_status::AgentStatus;
 
-    let focused = agent_status_dot_color(AgentStatus::NeedsInput, false, Some(0.0));
+    let focused = agent_status_dot_color(AgentStatus::NeedsInput, false);
     assert_eq!(focused, Color::new(0.95, 0.65, 0.2, 1.0));
 }
 

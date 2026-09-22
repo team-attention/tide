@@ -10,7 +10,7 @@ Dock split chrome also still over-uses the shared tab bar. `render_pane_chrome()
 
 ### To-Be
 
-Focused `Pane`s stay easy to identify in both Stage and Dock through the current brighter active header/tab treatment, without adding a new full-pane outline around the terminal body. `Terminal-Owned Attention` is dot-only: it renders only on `Workspace` list items and on direct wrapped-agent owner `Terminal`s in Stage. A direct wrapped-agent Stage `Terminal` with `Running` shows a solid green dot. A direct wrapped-agent Stage `Terminal` with unresolved `Idle` or `NeedsInput` shows the same orange blinking dot family, and that blink must follow a stable clock that does not depend on frame-to-frame render cadence. A direct wrapped-agent Stage `Terminal` with `Wrapped Agent Presence` but no active `AgentStatus` shows a solid idle-presence dot in a muted cool color. Tide does not add wrapped-agent fill or underline to the entire Stage `Pane` surface. Non-terminal `Pane`s never inherit wrapped-agent dots through `Associated Terminal`, and Dock chrome never renders a wrapped-agent dot. If an alerting Stage `Terminal` is clipped out of the `ViewMode::Stacked` flat Stage tab strip, the tab-strip edge in the hidden direction shows the same orange blinking dot. Workspace items show the strongest direct Stage-terminal state for that `Workspace`, regardless of whether the `Workspace` is active or inactive: orange blinking alert takes precedence over green running, which takes precedence over idle-presence. Active headers, active stacked Stage tabs, and busy `Terminal Pane` headers preserve readable labels before optional git badges consume the remaining width. The macOS titlebar remains 32 logical pixels high, while Pane headers, shared tab bars, and the FileTree View header share a denser 28 logical-pixel height. Header typography and icon layout use fixed chrome metrics so content font zoom does not enlarge the surrounding chrome. A Dock `TabGroup` with one `Pane` uses the single-`Pane` header chrome instead of a shared tab bar, so the title and close affordance sit in the same layout family as the rest of Tide. A Stacked Terminal Context Surface with one `Pane` follows the same rule so the active file or surface name remains visible. Stacked Terminal Context Surface headers omit the redundant identity badge entirely so Pane tabs receive that width; Split mode retains only `Context: <owner>`. The shared active-tab width budget continues to reserve space for the Stage-terminal dot, shared tab scrolling remains stable and directionally consistent, and git badges continue to refresh on a near-immediate frame-scale delay. When repo-to-repo navigation queues multiple git refreshes, the background poller must prefer the latest pending `cwd` request instead of spending extra time publishing obsolete repo results first.
+Focused `Pane`s stay easy to identify in both Stage and Dock through the current brighter active header/tab treatment, without adding a new full-pane outline around the terminal body. `Terminal-Owned Attention` is dot-only: it renders only on `Workspace` list items and on direct wrapped-agent owner `Terminal`s in Stage. A direct wrapped-agent Stage `Terminal` with `Running` shows a solid green dot. A direct wrapped-agent Stage `Terminal` with unresolved `Idle` or `NeedsInput` shows the same solid orange dot family. A direct wrapped-agent Stage `Terminal` with `Wrapped Agent Presence` but no active `AgentStatus` shows a solid idle-presence dot in a muted cool color. Tide does not add wrapped-agent fill or underline to the entire Stage `Pane` surface. Non-terminal `Pane`s never inherit wrapped-agent dots through `Associated Terminal`, and Dock chrome never renders a wrapped-agent dot. If an alerting Stage `Terminal` is clipped out of the `ViewMode::Stacked` flat Stage tab strip, the tab-strip edge in the hidden direction shows the same solid orange dot. Workspace items show the strongest direct Stage-terminal state for that `Workspace`, regardless of whether the `Workspace` is active or inactive: solid orange alert takes precedence over green running, which takes precedence over idle-presence. Wrapped-agent lifecycle transitions invalidate chrome and request one redraw, but unresolved attention does not keep the render loop active. Active headers, active stacked Stage tabs, and busy `Terminal Pane` headers preserve readable labels before optional git badges consume the remaining width. The macOS titlebar remains 32 logical pixels high, while Pane headers, shared tab bars, and the FileTree View header share a denser 28 logical-pixel height. Header typography and icon layout use fixed chrome metrics so content font zoom does not enlarge the surrounding chrome. A Dock `TabGroup` with one `Pane` uses the single-`Pane` header chrome instead of a shared tab bar, so the title and close affordance sit in the same layout family as the rest of Tide. A Stacked Terminal Context Surface with one `Pane` follows the same rule so the active file or surface name remains visible. Stacked Terminal Context Surface headers omit the redundant identity badge entirely so Pane tabs receive that width; Split mode retains only `Context: <owner>`. The shared active-tab width budget continues to reserve space for the Stage-terminal dot, shared tab scrolling remains stable and directionally consistent, and git badges continue to refresh on a near-immediate frame-scale delay. When repo-to-repo navigation queues multiple git refreshes, the background poller must prefer the latest pending `cwd` request instead of spending extra time publishing obsolete repo results first.
 
 ### Approach
 
@@ -18,26 +18,27 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
 2. Limit wrapped-agent chrome to `Terminal-Owned Attention` on the direct wrapped-agent owner `Terminal`; do not inherit dots through `Associated Terminal`.
 3. Remove wrapper-managed pane-surface fill and underline from Stage `Pane` chrome.
 4. Map direct Stage-terminal `Running` to a solid green dot.
-5. Map direct Stage-terminal `Idle` and `NeedsInput` to the same orange blinking alert dot family, driven by a stable blink clock instead of frame delta.
+5. Map direct Stage-terminal `Idle` and `NeedsInput` to the same solid orange alert dot family.
 6. Map `Wrapped Agent Presence` plus `AgentStatus = None` to a solid idle-presence dot on direct Stage `Terminal`s.
-7. Project Workspace list-item dots from Stage terminals only: orange blinking for alert, green for running, idle-presence color for connected idle, using the same stable blink clock and the same strongest-state precedence for active and inactive `Workspace`s.
+7. Project Workspace list-item dots from Stage terminals only: solid orange for alert, green for running, idle-presence color for connected idle, using the same strongest-state precedence for active and inactive `Workspace`s.
 8. Keep the `Workspace` item synchronized with the strongest visible Stage-terminal state instead of suppressing active-Workspace alerts.
-9. When an alerting Stage-terminal tab is scrolled outside the visible shared-tab range, render the orange blinking indicator on the corresponding tab-strip edge.
-9. Reserve a minimum title region in active headers and active tabs, eliding optional git badges before the title disappears.
-10. Use a readable shared label color path for busy `Terminal Pane` headers so terminal names do not fall back to a dimmed badge color.
-11. Keep the macOS titlebar at 32 logical pixels while Pane headers, shared tab bars, and the FileTree View header use one exact 28 logical-pixel height; keep header typography and icon layout fixed when content font zoom changes.
-12. Reserve shared-tab width for the Stage-terminal dot whenever a visible Stage `Terminal` has direct wrapper-managed lifecycle state.
-13. Keep explicit horizontal tab scrolling stable by auto-fitting the active tab only on active-tab changes, not on every render while the user is manually browsing overflowed tabs.
-14. Make shared tab bars treat horizontal precise delta as the primary gesture signal, leaving vertical fallback for wheel-style scrolling when no horizontal delta is present.
-15. Give shared tab bars a modest starter step only on a fresh precise stroke or an immediate direction change, then fall back to lighter continuous motion so tab scrolling feels responsive without becoming over-sensitive.
-16. Use the same horizontal delta sign convention for shared tab bars that editor and diff panes already use, so horizontal scroll direction stays consistent across Tide.
-17. Clamp stored shared-tab scroll offset to the visible bounds at input time, not only during render, so edge overscroll never creates hidden reverse-scroll debt.
-18. Schedule PTY-driven terminal badge refresh on a near-immediate frame-scale delay instead of a long fixed delay.
-19. Only consume header-area scroll for shared tab bars that actually have horizontal overflow; otherwise route the scroll to the pane content below.
-20. Clear stale terminal git and worktree badge state as soon as cached `cwd` changes, before the next background git poll result arrives.
-21. Collapse queued git-poll `cwd` refresh requests to the latest pending request before publishing results, so repo chrome repopulates promptly after repo-to-repo navigation.
-22. Render Dock shared tab bar chrome only when the Dock `TabGroup` or Stacked Terminal Context Surface actually has multiple tabs; a single Dock `Pane` falls back to the normal single-`Pane` header.
-23. Omit the Terminal Context Surface identity badge in Stacked mode; in Split mode render only the compacted owning Stage `Terminal` label as `Context: <owner>`.
+9. When an alerting Stage-terminal tab is scrolled outside the visible shared-tab range, render the solid orange indicator on the corresponding tab-strip edge.
+10. Request redraw when wrapped-agent lifecycle state changes, but do not request continuous redraw while attention remains unresolved.
+11. Reserve a minimum title region in active headers and active tabs, eliding optional git badges before the title disappears.
+12. Use a readable shared label color path for busy `Terminal Pane` headers so terminal names do not fall back to a dimmed badge color.
+13. Keep the macOS titlebar at 32 logical pixels while Pane headers, shared tab bars, and the FileTree View header use one exact 28 logical-pixel height; keep header typography and icon layout fixed when content font zoom changes.
+14. Reserve shared-tab width for the Stage-terminal dot whenever a visible Stage `Terminal` has direct wrapper-managed lifecycle state.
+15. Keep explicit horizontal tab scrolling stable by auto-fitting the active tab only on active-tab changes, not on every render while the user is manually browsing overflowed tabs.
+16. Make shared tab bars treat horizontal precise delta as the primary gesture signal, leaving vertical fallback for wheel-style scrolling when no horizontal delta is present.
+17. Give shared tab bars a modest starter step only on a fresh precise stroke or an immediate direction change, then fall back to lighter continuous motion so tab scrolling feels responsive without becoming over-sensitive.
+18. Use the same horizontal delta sign convention for shared tab bars that editor and diff panes already use, so horizontal scroll direction stays consistent across Tide.
+19. Clamp stored shared-tab scroll offset to the visible bounds at input time, not only during render, so edge overscroll never creates hidden reverse-scroll debt.
+20. Schedule PTY-driven terminal badge refresh on a near-immediate frame-scale delay instead of a long fixed delay.
+21. Only consume header-area scroll for shared tab bars that actually have horizontal overflow; otherwise route the scroll to the pane content below.
+22. Clear stale terminal git and worktree badge state as soon as cached `cwd` changes, before the next background git poll result arrives.
+23. Collapse queued git-poll `cwd` refresh requests to the latest pending request before publishing results, so repo chrome repopulates promptly after repo-to-repo navigation.
+24. Render Dock shared tab bar chrome only when the Dock `TabGroup` or Stacked Terminal Context Surface actually has multiple tabs; a single Dock `Pane` falls back to the normal single-`Pane` header.
+25. Omit the Terminal Context Surface identity badge in Stacked mode; in Split mode render only the compacted owning Stage `Terminal` label as `Context: <owner>`.
 
 ## Bounded Contexts
 
@@ -76,7 +77,7 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
 - **Postcondition**: Wrapped-agent attention stays attached to the owning Stage `Terminal`
 - **Business Rules**:
   - BR-3: Wrapper-managed attention does not add fill or underline to the Stage `Pane` surface
-  - BR-4: `Idle` and `NeedsInput` share the same orange blinking Stage-terminal alert dot family
+  - BR-4: `Idle` and `NeedsInput` share the same solid orange Stage-terminal alert dot family
   - BR-5: A non-terminal `Pane` never inherits wrapped-agent pane chrome from its `Associated Terminal`
   - BR-6: A focused direct wrapped-agent Stage `Terminal` keeps its alert dot while the alert remains unresolved
 
@@ -88,13 +89,13 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
 - **Flow**:
   1. Tide resolves the direct wrapper-managed lifecycle state for the Stage `Terminal`
   2. Tide reserves dot width in the Stage header or tab
-  3. Tide renders the Stage-terminal dot with the color and animation for that state
+  3. Tide renders the Stage-terminal dot with the color for that state
 - **Postcondition**: The Stage-terminal dot reflects the wrapped-agent state on the direct wrapped-agent owner
 - **Business Rules**:
   - BR-7: Only a direct wrapped-agent owner `Terminal` in Stage may render the wrapped-agent dot
   - BR-8: `Running` renders a solid green Stage-terminal dot
   - BR-9: Dock chrome does not render the wrapped-agent dot, even when the docked `Pane` is a `Terminal`
-  - BR-10: Unresolved `Idle` and `NeedsInput` render the same orange blinking Stage-terminal dot family from a stable blink clock that does not reset every frame
+  - BR-10: Unresolved `Idle` and `NeedsInput` render the same solid orange Stage-terminal dot and do not require continuous redraw
 
 ### UC-4: RenderWorkspaceIndicatorChrome
 
@@ -107,7 +108,7 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
   3. Tide renders the same strongest-state mapping for active and inactive `Workspace`s
 - **Postcondition**: Workspace items reflect the strongest Stage-terminal wrapped-agent state with a dot-only indicator
 - **Business Rules**:
-  - BR-11: A `Workspace` item with unresolved Stage-terminal `Idle` or `NeedsInput` renders an orange blinking dot from the same stable blink clock
+  - BR-11: A `Workspace` item with unresolved Stage-terminal `Idle` or `NeedsInput` renders a solid orange dot
   - BR-12: A `Workspace` item with Stage-terminal `Running` and no alert renders a green dot
   - BR-13: A `Workspace` item with both running and alerting Stage terminals renders the orange alert state
   - BR-14: A `Workspace` item with only connected-idle Stage terminals renders the idle-presence dot
@@ -120,11 +121,11 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
 - **Flow**:
   1. Tide computes the visible shared-tab range after scroll offset and clipping
   2. Tide determines whether alert tabs exist left of the visible range, right of the visible range, or both
-  3. Tide renders the orange blinking edge indicator on the corresponding tab-strip edge
+  3. Tide renders the solid orange edge indicator on the corresponding tab-strip edge
 - **Postcondition**: Hidden wrapped-agent alert tabs remain discoverable while scrolled out of view
 - **Business Rules**:
-  - BR-14: A hidden alert tab left of the visible range renders an orange blinking left-edge indicator
-  - BR-15: A hidden alert tab right of the visible range renders an orange blinking right-edge indicator
+  - BR-14: A hidden alert tab left of the visible range renders a solid orange left-edge indicator
+  - BR-15: A hidden alert tab right of the visible range renders a solid orange right-edge indicator
 
 ### UC-6: PreserveHeaderTitleBesideGitBadges
 
@@ -208,7 +209,7 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
 4. Ordinary focus does not introduce a new full-pane outline around the terminal body.
 5. Header title preservation rules apply consistently to single-pane headers and active tabs.
 6. The macOS titlebar remains exactly 32 logical pixels high, while Pane headers, shared tab bars, and the FileTree View header share an exact 28 logical-pixel height and fixed chrome metrics.
-7. Wrapped-agent alert blink uses a stable timebase instead of per-frame elapsed time.
+7. Wrapped-agent lifecycle transitions invalidate chrome and request redraw, while unresolved attention does not request continuous redraw.
 8. `Wrapped Agent Presence` may render an idle-presence dot, but it must not route macOS notifications by itself.
 9. Dock shared tab chrome appears only for Dock `TabGroup`s with two or more tabs.
 10. Stacked Terminal Context Surface headers reserve no identity-badge width.
@@ -226,10 +227,11 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
 | UC-3 | BR-7 | `running_stage_terminal_renders_the_wrapped_agent_dot` |
 | UC-3 | BR-8 | `running_stage_terminal_uses_a_green_dot_signal` |
 | UC-3 | BR-9 | `dock_terminal_does_not_render_the_wrapped_agent_dot` |
-| UC-3 | BR-10 | `attention_stage_terminal_renders_an_orange_blinking_dot` |
-| UC-3 | BR-10 | `wrapped_agent_alert_blink_uses_a_stable_timebase` |
-| UC-4 | BR-11 | `inactive_workspace_alert_renders_an_orange_blinking_dot` |
-| UC-4 | BR-11 | `active_workspace_alert_renders_an_orange_blinking_dot` |
+| UC-3 | BR-10 | `attention_stage_terminal_renders_a_solid_orange_dot` |
+| UC-3 | BR-10 | `wrapped_agent_attention_color_is_time_independent` |
+| UC-3 | BR-10 | `unresolved_wrapped_agent_attention_does_not_schedule_animation_redraw` |
+| UC-4 | BR-11 | `inactive_workspace_alert_renders_a_solid_orange_dot` |
+| UC-4 | BR-11 | `active_workspace_alert_renders_a_solid_orange_dot` |
 | UC-4 | BR-12 | `workspace_running_renders_a_green_dot` |
 | UC-4 | BR-13 | `workspace_alert_takes_precedence_over_running` |
 | UC-4 | BR-14 | `workspace_connected_idle_renders_an_idle_presence_dot` |
@@ -272,5 +274,6 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
 | Chrome renderer | `crates/tide-app/src/adapter/outward/view/chrome/tab_bar.rs` | Stage-terminal dot placement plus overflow edge indicators |
 | Header renderer | `crates/tide-app/src/adapter/outward/view/header.rs` | Stage-terminal dot rendering plus title and git badge layout |
 | Workspace rail renderer | `crates/tide-app/src/adapter/outward/view/chrome/titlebar.rs` | Workspace item running/alert dot rendering |
+| Event loop adapter | `crates/tide-app/src/adapter/inward/event_loop_adapter/mod.rs` | Transition-driven redraw without unresolved-attention animation frames |
 | Theme palette | `crates/tide-app/src/theme.rs` | Colors and spacing tokens used by the new chrome treatment and shared tab sizing |
 | Terminal badge updater | `crates/tide-app/src/application/services/file_tree_service/mod.rs` | Cached `cwd` and git chrome synchronization for `Terminal Pane` badges |

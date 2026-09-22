@@ -317,15 +317,6 @@ pub(super) fn render_pane_chrome(
     let dock_header_anchor = region_header_anchor_pane_id(app, visual_pane_rects, true);
     let stage_mode_stacked = app.focus.zoomed_pane.is_some();
 
-    // Compute blink time for wrapped-agent alert animation across Stage terminals
-    // and inactive Workspace indicators.
-    let has_blinking = app.has_any_stage_wrapped_agent_alert();
-    let blink_time = crate::adapter::outward::view::wrapped_agent_blink_time(
-        app.ports.clock.now(),
-        app.timing.wrapped_agent_blink_at,
-        has_blinking,
-    );
-
     for &(id, rect) in visual_pane_rects {
         // Skip stale pane rects (pane was removed but layout not yet recomputed)
         if !app.panes.contains_key(&id) {
@@ -356,7 +347,6 @@ pub(super) fn render_pane_chrome(
                 renderer,
                 app.can_show_context_comment_badge(id),
                 &app.gateway.detected_agents,
-                blink_time,
                 scroll_off,
                 auto_fit_active_tab,
                 surface_identity_label.as_deref(),
@@ -385,7 +375,6 @@ pub(super) fn render_pane_chrome(
                 renderer,
                 app.can_show_context_comment_badge(tg.active_pane()),
                 &app.gateway.detected_agents,
-                blink_time,
                 scroll_off,
                 auto_fit_active_tab,
                 surface_identity_label.as_deref(),
@@ -414,7 +403,6 @@ pub(super) fn render_pane_chrome(
                 renderer,
                 false,
                 &app.gateway.detected_agents,
-                blink_time,
                 scroll_off,
                 auto_fit_active_tab,
                 Some(
@@ -476,7 +464,6 @@ pub(super) fn render_pane_chrome(
                 p,
                 renderer,
                 agent_chrome_state,
-                blink_time,
                 agent_chrome_state.is_some(),
                 surface_kind,
                 surface_identity_label.as_deref(),

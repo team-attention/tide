@@ -3323,22 +3323,6 @@ fn unknown_notification_authorization_status_is_preserved() {
     );
 }
 
-// --- UC-5: BlinkTabDot ---
-
-#[test]
-fn needs_input_dot_blinks_when_unfocused() {
-    // UC-5 BR-1,2: NeedsInput dot blinks when pane is unfocused
-    // Verify blink computation produces opacity in range [0.3, 1.0]
-    let frequency = crate::theme::AGENT_BLINK_FREQUENCY;
-    // Sample at various times
-    for i in 0..20 {
-        let t = i as f64 * 0.1;
-        let opacity = 0.65 + 0.35 * (t * frequency).sin();
-        assert!(opacity >= 0.29, "opacity {} too low at t={}", opacity, t);
-        assert!(opacity <= 1.01, "opacity {} too high at t={}", opacity, t);
-    }
-}
-
 #[test]
 fn idle_wrapped_agent_states_queue_notifications_without_user_attention() {
     // UC-3 BR-4, UC-4 BR-5: Idle routes background notifications for supported wrapped agents, but never requests user attention.
@@ -3954,49 +3938,6 @@ fn focusing_pane_clears_workspace_notification_if_no_others() {
         app.gateway.detected_agents.get(&agent_pane).unwrap().status,
         Some(crate::state::gateway_status::AgentStatus::NeedsInput)
     );
-}
-
-// --- UC-5: BlinkTabDotAndBorder (enhanced) ---
-
-#[test]
-fn needs_input_border_blinks_orange_when_unfocused() {
-    // UC-5 BR-6,7: Unfocused NeedsInput keeps the alert redraw path alive for the blinking Stage-terminal dot.
-    let (mut app, agent_pane, other_pane) = app_with_unfocused_agent();
-    app.handle_terminal_notification(agent_pane, "tide:agent-needs-input");
-    let status = app.gateway.detected_agents.get(&agent_pane).unwrap().status;
-    assert_eq!(
-        status,
-        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
-    );
-    // Pane is unfocused (other_pane is focused)
-    assert_eq!(app.focus.focused, Some(other_pane));
-    // needs_redraw should be set so the alert dot can animate.
-    assert!(app.cache.needs_redraw);
-}
-
-// --- UC-6: ShowWorkspaceSidebarDot (enhanced) ---
-
-#[test]
-fn workspace_sidebar_dot_blinks_for_notification() {
-    // UC-6 BR-4: Workspace sidebar dot blinks with same frequency as tab dot
-    // Verify blink computation for workspace sidebar produces opacity in range [0.3, 1.0]
-    let frequency = crate::theme::AGENT_BLINK_FREQUENCY;
-    for i in 0..20 {
-        let t = i as f64 * 0.1;
-        let opacity = 0.65 + 0.35 * (t * frequency).sin();
-        assert!(
-            opacity >= 0.29,
-            "sidebar dot opacity {} too low at t={}",
-            opacity,
-            t
-        );
-        assert!(
-            opacity <= 1.01,
-            "sidebar dot opacity {} too high at t={}",
-            opacity,
-            t
-        );
-    }
 }
 
 // --- UC-9: RouteNotifyForInactiveWorkspace ---

@@ -11,16 +11,10 @@ use super::header::AgentChromeState;
 
 pub(crate) fn stage_terminal_dot_color(
     state: impl Into<AgentChromeState>,
-    blink_time: Option<f64>,
 ) -> crate::tide_core::Color {
     match state.into() {
         AgentChromeState::Running => crate::tide_core::Color::new(0.3, 0.8, 0.4, 1.0),
-        AgentChromeState::Attention => {
-            let opacity = blink_time
-                .map(|t| 0.72 + 0.28 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32)
-                .unwrap_or(0.9);
-            crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity)
-        }
+        AgentChromeState::Attention => crate::tide_core::Color::new(0.95, 0.65, 0.2, 1.0),
         AgentChromeState::ConnectedIdle => crate::tide_core::Color::new(0.36, 0.56, 0.82, 1.0),
     }
 }
@@ -28,7 +22,6 @@ pub(crate) fn stage_terminal_dot_color(
 pub(crate) fn agent_status_dot_color(
     status: crate::state::gateway_status::AgentStatus,
     attention_unresolved: bool,
-    blink_time: Option<f64>,
 ) -> crate::tide_core::Color {
     let chrome_state = match status {
         crate::state::gateway_status::AgentStatus::Idle if !attention_unresolved => {
@@ -39,12 +32,7 @@ pub(crate) fn agent_status_dot_color(
 
     match chrome_state {
         AgentChromeState::Running => crate::tide_core::Color::new(0.3, 0.8, 0.4, 1.0),
-        AgentChromeState::Attention => {
-            let opacity = blink_time
-                .map(|t| 0.85 + 0.15 * (t * crate::theme::AGENT_BLINK_FREQUENCY).cos() as f32)
-                .unwrap_or(1.0);
-            crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity)
-        }
+        AgentChromeState::Attention => crate::tide_core::Color::new(0.95, 0.65, 0.2, 1.0),
         AgentChromeState::ConnectedIdle => crate::tide_core::Color::new(0.3, 0.55, 0.95, 1.0),
     }
 }

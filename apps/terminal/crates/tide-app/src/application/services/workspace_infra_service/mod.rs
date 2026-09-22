@@ -172,20 +172,6 @@ impl App {
             .unwrap_or((false, false, false))
     }
 
-    pub(crate) fn has_any_stage_wrapped_agent_alert(&self) -> bool {
-        if self.workspace_stage_agent_flags(self.ws.active).1 {
-            return true;
-        }
-
-        self.ws
-            .workspaces
-            .iter()
-            .enumerate()
-            .any(|(workspace_idx, _)| {
-                workspace_idx != self.ws.active && self.workspace_stage_agent_flags(workspace_idx).1
-            })
-    }
-
     fn workspace_has_wrapped_agent_attention(&self, workspace_idx: usize) -> bool {
         self.workspace_stage_agent_flags(workspace_idx).1
     }

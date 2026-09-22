@@ -2,7 +2,6 @@
 
 pub(crate) struct TimingState {
     pub last_frame: std::time::Instant,
-    pub wrapped_agent_blink_at: std::time::Instant,
     pub last_child_check: std::time::Instant,
     pub resize_deferred_at: Option<std::time::Instant>,
     pub last_live_terminal_resize_at: Option<std::time::Instant>,
@@ -18,7 +17,6 @@ impl TimingState {
         let now = std::time::Instant::now();
         Self {
             last_frame: now,
-            wrapped_agent_blink_at: now,
             last_child_check: now,
             resize_deferred_at: None,
             last_live_terminal_resize_at: None,

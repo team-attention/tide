@@ -36,18 +36,12 @@ pub(crate) fn workspace_item_indicator_status(
 
 pub(crate) fn workspace_item_indicator_color(
     status: impl Into<crate::header::AgentChromeState>,
-    blink_time: Option<f64>,
 ) -> crate::tide_core::Color {
     use crate::header::AgentChromeState;
 
     match status.into() {
         AgentChromeState::Running => crate::tide_core::Color::new(0.3, 0.8, 0.4, 1.0),
-        AgentChromeState::Attention => {
-            let opacity = blink_time
-                .map(|t| 0.65 + 0.35 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32)
-                .unwrap_or(1.0);
-            crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity)
-        }
+        AgentChromeState::Attention => crate::tide_core::Color::new(0.95, 0.65, 0.2, 1.0),
         AgentChromeState::ConnectedIdle => crate::tide_core::Color::new(0.36, 0.56, 0.82, 1.0),
     }
 }
@@ -984,12 +978,6 @@ pub(super) fn render_titlebar_and_sidebar(
     p: &ThemePalette,
     logical: crate::tide_core::Size,
 ) {
-    let blink_time = crate::adapter::outward::view::wrapped_agent_blink_time(
-        app.ports.clock.now(),
-        app.timing.wrapped_agent_blink_at,
-        app.has_any_stage_wrapped_agent_alert(),
-    );
-
     // Draw titlebar background, border, and title (macOS transparent titlebar)
     if app.window.top_inset > 0.0 {
         let tb = Rect::new(0.0, 0.0, logical.width, app.window.top_inset);
@@ -1265,8 +1253,7 @@ pub(super) fn render_titlebar_and_sidebar(
                 has_alert,
                 has_connected_idle,
             );
-            let indicator_color =
-                indicator_status.map(|status| workspace_item_indicator_color(status, blink_time));
+            let indicator_color = indicator_status.map(workspace_item_indicator_color);
 
             let item_rect = geo.item_rect(i);
 
@@ -1498,7 +1485,6 @@ pub(super) fn render_titlebar_and_sidebar(
                     let dot_size = 7.0_f32;
                     let dot_color = workspace_item_indicator_color(
                         panel_status.unwrap_or(crate::header::AgentChromeState::ConnectedIdle),
-                        blink_time,
                     );
                     let text_x = panel_rect.x + WS_SIDEBAR_ITEM_PAD_H + dot_size + 7.0;
                     let summary_y = panel_rect.y + 6.0;

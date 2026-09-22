@@ -931,32 +931,7 @@ impl App {
                 }
             }
 
-            // Cursor blink
-            let blink_elapsed = self
-                .ports
-                .clock
-                .now()
-                .duration_since(self.timing.cursor_blink_at);
-            let blink_phase = (blink_elapsed.as_millis() / 530).is_multiple_of(2);
-            if blink_phase != self.timing.cursor_visible {
-                self.timing.cursor_visible = blink_phase;
-                crate::AppCorePort::request_redraw(&mut self);
-            }
-
-            // Wrapped-agent alert blink: continuous redraw while any Stage Terminal
-            // or inactive Workspace still has unresolved alert state.
-            {
-                let has_blinking = self.has_any_stage_wrapped_agent_alert();
-                if has_blinking {
-                    crate::AppCorePort::request_redraw(&mut self);
-                }
-            }
-
-            // Layout animations recompute geometry from the current animated width or split ratio.
-            if self.layout_animation_active() {
-                self.compute_layout();
-                crate::AppCorePort::request_redraw(&mut self);
-            }
+            self.update_continuous_animation_redraws();
 
             // Render if needed
             if self.cache.needs_redraw && !self.window.is_occluded && self.input.batch_depth == 0 {
@@ -993,6 +968,24 @@ impl App {
                     // the render thread waker will wake us when it finishes.
                 }
             }
+        }
+    }
+
+    pub(crate) fn update_continuous_animation_redraws(&mut self) {
+        let blink_elapsed = self
+            .ports
+            .clock
+            .now()
+            .duration_since(self.timing.cursor_blink_at);
+        let blink_phase = (blink_elapsed.as_millis() / 530).is_multiple_of(2);
+        if blink_phase != self.timing.cursor_visible {
+            self.timing.cursor_visible = blink_phase;
+            crate::AppCorePort::request_redraw(self);
+        }
+
+        if self.layout_animation_active() {
+            self.compute_layout();
+            crate::AppCorePort::request_redraw(self);
         }
     }
 

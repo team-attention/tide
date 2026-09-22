@@ -53,14 +53,6 @@ use crate::App;
 use crate::AppCorePort;
 use crate::LayoutPort;
 
-pub(crate) fn wrapped_agent_blink_time(
-    now: std::time::Instant,
-    blink_origin: std::time::Instant,
-    has_blinking: bool,
-) -> Option<f64> {
-    has_blinking.then(|| now.duration_since(blink_origin).as_secs_f64())
-}
-
 /// Compute the bar offset for a pane. Returns CONFLICT_BAR_HEIGHT if a notification bar
 /// (conflict or save confirm) is visible, else 0.
 pub(super) fn bar_offset_for(

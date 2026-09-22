@@ -1087,7 +1087,6 @@ pub fn render_pane_header(
         p,
         renderer,
         None,
-        None,
         false,
         HeaderSurfaceKind::TerminalContextSurface,
         None,
@@ -1107,7 +1106,6 @@ pub fn render_pane_header_inner(
     p: &ThemePalette,
     renderer: &mut WgpuRenderer,
     agent_chrome_state: Option<AgentChromeState>,
-    blink_time: Option<f64>,
     show_stage_terminal_dot: bool,
     surface_kind: HeaderSurfaceKind,
     surface_identity_label: Option<&str>,
@@ -1348,7 +1346,7 @@ pub fn render_pane_header_inner(
             }
             SinglePaneHeaderPaintStep::Dot => {
                 if let Some(state) = visible_dot_state {
-                    let dot_color = stage_terminal_dot_color(state, blink_time);
+                    let dot_color = stage_terminal_dot_color(state);
                     let dot_size = 8.0_f32;
                     let dot_y = rect.y + (TAB_BAR_HEIGHT - dot_size) / 2.0;
                     renderer.draw_chrome_rounded_rect(
@@ -1482,7 +1480,6 @@ pub fn render_dock_tab_bar(
     renderer: &mut WgpuRenderer,
     show_comment_badge: bool,
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
-    blink_time: Option<f64>,
     tab_scroll_offset: f32,
     auto_fit_active_tab: bool,
     surface_identity_label: Option<&str>,
@@ -1502,7 +1499,6 @@ pub fn render_dock_tab_bar(
         false,
         show_comment_badge,
         detected_agents,
-        blink_time,
         tab_scroll_offset,
         auto_fit_active_tab,
         surface_identity_label,
@@ -1528,7 +1524,6 @@ fn render_tab_bar_impl(
     _is_stacked: bool,
     show_comment_badge: bool,
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
-    blink_time: Option<f64>,
     tab_scroll_offset: f32,
     auto_fit_active_tab: bool,
     surface_identity_label: Option<&str>,
@@ -1708,7 +1703,7 @@ fn render_tab_bar_impl(
         if let Some(state) = pane_agent_chrome_visual_state(panes, detected_agents, *tid)
             .filter(|_| !is_dock || matches!(panes.get(tid), Some(PaneKind::Browser(_))))
         {
-            let dot_color = stage_terminal_dot_color(state, blink_time);
+            let dot_color = stage_terminal_dot_color(state);
             let dot_size = 8.0_f32;
             let dot_x = cx + TAB_H_PAD;
             let dot_y = tab_y + (tab_h - dot_size) / 2.0;
@@ -1867,7 +1862,7 @@ fn render_tab_bar_impl(
             visible_w,
             effective_scroll,
         );
-        let edge_color = stage_terminal_dot_color(AgentChromeState::Attention, blink_time);
+        let edge_color = stage_terminal_dot_color(AgentChromeState::Attention);
         let dot_size = 8.0_f32;
         let dot_y = tab_y + (tab_h - dot_size) / 2.0;
 
@@ -1917,7 +1912,6 @@ pub fn render_stage_tab_bar(
     renderer: &mut WgpuRenderer,
     show_comment_badge: bool,
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
-    blink_time: Option<f64>,
     tab_scroll_offset: f32,
     auto_fit_active_tab: bool,
     surface_view_mode_action: Option<HeaderHitAction>,
@@ -1939,7 +1933,6 @@ pub fn render_stage_tab_bar(
         true,
         show_comment_badge,
         detected_agents,
-        blink_time,
         tab_scroll_offset,
         auto_fit_active_tab,
         None,
@@ -1959,7 +1952,6 @@ pub fn render_dock_stacked_tab_bar(
     renderer: &mut WgpuRenderer,
     show_comment_badge: bool,
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
-    blink_time: Option<f64>,
     tab_scroll_offset: f32,
     auto_fit_active_tab: bool,
     surface_identity_label: Option<&str>,
@@ -1982,7 +1974,6 @@ pub fn render_dock_stacked_tab_bar(
         true,
         show_comment_badge,
         detected_agents,
-        blink_time,
         tab_scroll_offset,
         auto_fit_active_tab,
         surface_identity_label,
