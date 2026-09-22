@@ -77,8 +77,8 @@ pub(super) struct TermEventListener {
     pub(super) dirty: Arc<AtomicBool>,
     /// Lazily initialized after EventLoop creation so PtyWrite can be forwarded.
     pub(super) pty_writer: Arc<Mutex<Option<Notifier>>>,
-    /// Handle to the grid sync thread — unparked when new output arrives.
-    pub(super) sync_thread: Arc<Mutex<Option<std::thread::Thread>>>,
+    /// Coalescing wake channel for the grid sync thread.
+    pub(super) sync_waker: std::sync::mpsc::SyncSender<()>,
     /// Dark/light mode — used to resolve OSC 10/11 color queries.
     pub(super) dark_mode: Arc<AtomicBool>,
     /// Mode 2031: app opted in to dark/light color-scheme notifications.
@@ -97,6 +97,10 @@ pub(super) struct TermEventListener {
     pub(super) clipboard_read_allowed: Arc<AtomicBool>,
     /// Terminal graphics payloads queued for main thread parsing/rendering.
     pub(super) graphics_events: Arc<Mutex<Vec<alacritty_terminal::event::GraphicsData>>>,
+    /// Shell-state and child-lifecycle events consumed by the main thread.
+    pub(super) runtime_events: Arc<TerminalRuntimeEventQueue>,
+    /// Direct main-thread wake callback for non-grid runtime events.
+    pub(super) waker: Arc<Mutex<Option<Box<dyn Fn() + Send>>>>,
 }
 
 /// Map alacritty's `ClipboardType` onto our boundary `ClipboardTarget`.
@@ -193,6 +197,7 @@ impl TermEventListener {
 
 impl EventListener for TermEventListener {
     fn send_event(&self, event: Event) {
+        let mut runtime_event = None;
         match &event {
             Event::PtyWrite(text) => {
                 if let Ok(guard) = self.pty_writer.lock() {
@@ -286,15 +291,39 @@ impl EventListener for TermEventListener {
                     queue.push(data.clone());
                 }
             }
+            Event::WorkingDirectory(uri) => {
+                runtime_event = Some(TerminalRuntimeEvent::ShellState(
+                    ShellStateSignal::WorkingDirectory {
+                        uri: uri.clone(),
+                        nonce: nonce_from_working_directory_uri(uri),
+                    },
+                ));
+            }
+            Event::CommandBoundary { boundary, params } => {
+                runtime_event = Some(TerminalRuntimeEvent::ShellState(
+                    ShellStateSignal::CommandLifecycle {
+                        boundary: boundary.clone().into(),
+                        nonce: nonce_parameter(params),
+                    },
+                ));
+            }
+            Event::ChildExit(code) => {
+                self.runtime_events.defer_child_exit(*code);
+            }
+            Event::Exit => {}
             _ => {}
+        }
+        if let Some(event) = runtime_event {
+            self.runtime_events.push(event);
+            if let Ok(waker) = self.waker.lock() {
+                if let Some(wake) = waker.as_ref() {
+                    wake();
+                }
+            }
         }
         self.dirty.store(true, Ordering::Relaxed);
         // Wake the sync thread to process new output
-        if let Ok(guard) = self.sync_thread.lock() {
-            if let Some(ref thread) = *guard {
-                thread.unpark();
-            }
-        }
+        let _ = self.sync_waker.try_send(());
     }
 }
 
@@ -624,29 +653,34 @@ impl GridSyncer {
 // Sync thread entry point
 // ──────────────────────────────────────────────
 
-#[expect(clippy::type_complexity, reason = "Keep the established callback or result contract without an unrelated API refactor.")]
+#[expect(
+    clippy::type_complexity,
+    reason = "Keep the established callback or result contract without an unrelated API refactor."
+)]
 pub(super) fn grid_sync_thread_main(
-    thread_handle: Arc<Mutex<Option<std::thread::Thread>>>,
     mut syncer: GridSyncer,
     dirty: Arc<AtomicBool>,
+    wake_rx: std::sync::mpsc::Receiver<()>,
     snapshot: Arc<Mutex<SharedSnapshot>>,
     snapshot_ready: Arc<AtomicBool>,
+    runtime_events: Arc<TerminalRuntimeEventQueue>,
     waker: Arc<Mutex<Option<Box<dyn Fn() + Send>>>>,
     shutdown: Arc<AtomicBool>,
 ) {
-    // Install our thread handle so PTY thread / main thread can unpark us
-    {
-        let mut guard = thread_handle.lock().unwrap();
-        *guard = Some(std::thread::current());
-    }
-
     loop {
+        // Shutdown can race with thread startup, before `thread_handle` is
+        // published and therefore before the caller can unpark us.
+        if shutdown.load(Ordering::Acquire) {
+            return;
+        }
+
         // Process all pending dirty flags before parking
         while dirty.swap(false, Ordering::Relaxed) {
-            if shutdown.load(Ordering::Relaxed) {
+            if shutdown.load(Ordering::Acquire) {
                 return;
             }
 
+            let sync_epoch = runtime_events.begin_snapshot_sync();
             syncer.sync();
 
             // Copy results into shared snapshot
@@ -662,6 +696,10 @@ pub(super) fn grid_sync_thread_main(
                 snapshot_ready.store(true, Ordering::Relaxed);
             }
 
+            // Child exit becomes visible only after the final dirty terminal
+            // generation has been copied into the renderer snapshot.
+            runtime_events.publish_deferred_child_exit(sync_epoch);
+
             // Wake main thread event loop
             if let Ok(guard) = waker.lock() {
                 if let Some(f) = guard.as_ref() {
@@ -670,10 +708,12 @@ pub(super) fn grid_sync_thread_main(
             }
         }
 
-        // Park until PTY thread or main thread unparks us
-        std::thread::park();
+        // Block until an explicit producer wake or channel shutdown.
+        if wake_rx.recv().is_err() {
+            return;
+        }
 
-        if shutdown.load(Ordering::Relaxed) {
+        if shutdown.load(Ordering::Acquire) {
             return;
         }
     }

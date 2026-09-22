@@ -10,8 +10,8 @@ use std::path::PathBuf;
 use unicode_width::UnicodeWidthChar;
 
 use crate::tide_core::{
-    Color, CursorShape, Key, Modifiers, Rect, Renderer, Size, TerminalBackend,
-    TerminalCell, TerminalGraphicProtocol, TerminalGrid, Vec2,
+    Color, CursorShape, Key, Modifiers, Rect, Renderer, Size, TerminalBackend, TerminalCell,
+    TerminalGraphicProtocol, TerminalGrid, Vec2,
 };
 use crate::tide_renderer::WgpuRenderer;
 use crate::tide_terminal::git::GitInfo;
@@ -74,7 +74,10 @@ pub(crate) fn terminal_trailing_cell_background(
 const MIN_READABLE_TERMINAL_BACKEND_COLS: u16 = 4;
 
 /// Polymorphic pane: terminal, editor, diff viewer, embedded browser, or launcher.
-#[expect(clippy::large_enum_variant, reason = "PaneKind owns each Pane directly; boxing changes layout and allocation behavior.")]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "PaneKind owns each Pane directly; boxing changes layout and allocation behavior."
+)]
 pub enum PaneKind {
     Terminal(TerminalPane),
     Editor(EditorPane),
@@ -95,11 +98,11 @@ pub struct Selection {
 /// Separated from the heavy backend so it can be retained after terminal close.
 #[derive(Clone)]
 pub struct TerminalContext {
-    /// Cached CWD for header badge display (updated periodically).
+    /// Cached CWD for header badge display (updated from terminal events).
     pub cwd: Option<PathBuf>,
     /// Cached git info for header badge display (updated periodically).
     pub git_info: Option<GitInfo>,
-    /// Whether the shell is idle (no foreground process).
+    /// Whether the shell is idle (updated from command lifecycle events).
     pub shell_idle: bool,
     /// Cached worktree count for badge display (updated periodically).
     pub worktree_count: usize,
@@ -194,7 +197,10 @@ impl TerminalPane {
         )
     }
 
-    #[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix."
+    )]
     pub fn with_cwd_for_window(
         id: PaneId,
         cols: u16,
@@ -215,13 +221,17 @@ impl TerminalPane {
             workspace_name,
             spawn_config,
         )?;
+        let context = TerminalContext {
+            cwd: backend.cwd(),
+            ..TerminalContext::default()
+        };
         Ok(Self {
             id,
             backend,
             selection: None,
             search: None,
             cursor_suppress: 3,
-            context: TerminalContext::default(),
+            context,
             dock_layout: crate::tide_layout::SplitLayout::new(),
             dock_view_mode: ViewMode::Stacked,
             dock_focused: None,
@@ -232,13 +242,17 @@ impl TerminalPane {
     /// Used for early PTY spawn: the terminal was created before GPU init
     /// so the shell starts loading in parallel with GPU initialization.
     pub fn with_terminal(id: PaneId, backend: Terminal) -> Self {
+        let context = TerminalContext {
+            cwd: backend.cwd(),
+            ..TerminalContext::default()
+        };
         Self {
             id,
             backend,
             selection: None,
             search: None,
             cursor_suppress: 3,
-            context: TerminalContext::default(),
+            context,
             dock_layout: crate::tide_layout::SplitLayout::new(),
             dock_view_mode: ViewMode::Stacked,
             dock_focused: None,
@@ -589,7 +603,10 @@ impl TerminalPane {
         self.backend.scroll_display(delta);
     }
 
-    #[expect(clippy::manual_clamp, reason = "Preserve min/max behavior for non-finite geometry values.")]
+    #[expect(
+        clippy::manual_clamp,
+        reason = "Preserve min/max behavior for non-finite geometry values."
+    )]
     pub fn resize_to_rect(&mut self, rect: Rect, cell_size: Size) {
         let cols = ((rect.width / cell_size.width).max(1.0).min(1000.0)) as u16;
         let rows = ((rect.height / cell_size.height).max(1.0).min(500.0)) as u16;

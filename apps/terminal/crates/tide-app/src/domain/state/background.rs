@@ -4,19 +4,33 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-/// Results from the background git poller (one entry per CWD).
-pub(crate) type GitPollResults = HashMap<PathBuf, GitPollCwdResult>;
+/// Results from an explicit background Git refresh (one entry per CWD).
+pub(crate) type GitRefreshResults = HashMap<PathBuf, GitRefreshRepoResult>;
 
-/// One unit of work for the background git poller: a cwd and whether the main
+/// One unit of work for the background Git worker: a cwd and whether the main
 /// thread wants per-file diff data for it (true only when a DiffPane is open
-/// for that cwd/repo — see `App::git_poll_requests`).
+/// for that cwd/repo — see `App::git_refresh_requests`).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct GitPollRequest {
+pub(crate) struct GitRefreshRequest {
     pub cwd: PathBuf,
     pub wants_diff: bool,
 }
 
-pub(crate) struct GitPollCwdResult {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GitRefreshCause {
+    Startup,
+    ShellLifecycle,
+    RepositoryChanged,
+    TideMutation,
+    DiffDemand,
+}
+
+pub(crate) enum GitWorkerMessage {
+    Refresh(Vec<GitRefreshRequest>),
+    Shutdown,
+}
+
+pub(crate) struct GitRefreshRepoResult {
     pub git_info: Option<crate::tide_terminal::git::GitInfo>,
     pub worktree_count: usize,
     pub current_worktree: Option<crate::tide_terminal::git::WorktreeInfo>,
@@ -24,6 +38,8 @@ pub(crate) struct GitPollCwdResult {
     /// so opening it never spawns git on the app thread).
     pub worktrees: Vec<crate::tide_terminal::git::WorktreeInfo>,
     pub repo_root: Option<PathBuf>,
+    pub repository_watch_paths:
+        Option<crate::application::ports::outward::repository_watcher_port::RepositoryWatchPaths>,
     pub status_entries: Vec<crate::tide_terminal::git::StatusEntry>,
     /// Pre-computed diff file entries. `Some` (possibly empty) only when the
     /// request had `wants_diff` set, so a loading DiffPane can settle on a
@@ -50,6 +66,11 @@ pub(crate) enum WorkspaceScanRequest {
         base_dir: PathBuf,
         entries: Arc<Vec<PathBuf>>,
     },
+}
+
+pub(crate) enum WorkspaceScanMessage {
+    Work(WorkspaceScanRequest),
+    Shutdown,
 }
 
 /// Results from the background workspace-scan worker, correlated by id.
@@ -98,6 +119,11 @@ pub(crate) enum WorktreeJob {
     },
 }
 
+pub(crate) enum WorktreeWorkerMessage {
+    Work(WorktreeJob),
+    Shutdown,
+}
+
 /// Result of a worktree job, applied on the app thread.
 pub(crate) enum WorktreeJobResult {
     Added {
@@ -114,37 +140,64 @@ pub(crate) enum WorktreeJobResult {
 
 pub(crate) struct BackgroundServices {
     pub event_loop_waker: Option<crate::tide_platform::WakeCallback>,
-    pub git_poll_rx: Option<std::sync::mpsc::Receiver<GitPollResults>>,
-    pub git_poll_cwd_tx: Option<std::sync::mpsc::Sender<Vec<GitPollRequest>>>,
-    pub git_poll_handle: Option<std::thread::JoinHandle<()>>,
-    pub git_poll_stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub git_refresh_rx: Option<std::sync::mpsc::Receiver<GitRefreshResults>>,
+    pub git_worker_tx: Option<std::sync::mpsc::Sender<GitWorkerMessage>>,
+    pub git_worker_handle: Option<std::thread::JoinHandle<()>>,
     pub cached_repo_roots: HashMap<PathBuf, Option<PathBuf>>,
+    pub repository_watch_paths: HashMap<
+        PathBuf,
+        Option<crate::application::ports::outward::repository_watcher_port::RepositoryWatchPaths>,
+    >,
     /// Latest worktree list per repo root, from the git poller. Lets the Git
     /// Switcher open without spawning git on the app thread (P-5).
     pub cached_worktrees: HashMap<PathBuf, Vec<crate::tide_terminal::git::WorktreeInfo>>,
 
     // ── Workspace-scan worker (FileFinder `/` search + `#` symbols) ──
-    pub workspace_scan_tx: Option<std::sync::mpsc::Sender<WorkspaceScanRequest>>,
+    pub workspace_scan_tx: Option<std::sync::mpsc::Sender<WorkspaceScanMessage>>,
     pub workspace_scan_rx: Option<std::sync::mpsc::Receiver<WorkspaceScanResult>>,
     pub workspace_scan_handle: Option<std::thread::JoinHandle<()>>,
     pub workspace_scan_stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
 
     // ── Worktree mutation worker (add/remove off the app thread, P-5) ──
-    pub worktree_job_tx: Option<std::sync::mpsc::Sender<WorktreeJob>>,
+    pub worktree_job_tx: Option<std::sync::mpsc::Sender<WorktreeWorkerMessage>>,
     pub worktree_job_rx: Option<std::sync::mpsc::Receiver<WorktreeJobResult>>,
     pub worktree_job_handle: Option<std::thread::JoinHandle<()>>,
-    pub worktree_job_stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Drop for BackgroundServices {
+    fn drop(&mut self) {
+        self.workspace_scan_stop
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Some(tx) = self.git_worker_tx.take() {
+            let _ = tx.send(GitWorkerMessage::Shutdown);
+        }
+        if let Some(tx) = self.workspace_scan_tx.take() {
+            let _ = tx.send(WorkspaceScanMessage::Shutdown);
+        }
+        if let Some(tx) = self.worktree_job_tx.take() {
+            let _ = tx.send(WorktreeWorkerMessage::Shutdown);
+        }
+        if let Some(handle) = self.git_worker_handle.take() {
+            let _ = handle.join();
+        }
+        if let Some(handle) = self.workspace_scan_handle.take() {
+            let _ = handle.join();
+        }
+        if let Some(handle) = self.worktree_job_handle.take() {
+            let _ = handle.join();
+        }
+    }
 }
 
 impl BackgroundServices {
     pub fn new() -> Self {
         Self {
             event_loop_waker: None,
-            git_poll_rx: None,
-            git_poll_cwd_tx: None,
-            git_poll_handle: None,
-            git_poll_stop: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            git_refresh_rx: None,
+            git_worker_tx: None,
+            git_worker_handle: None,
             cached_repo_roots: HashMap::new(),
+            repository_watch_paths: HashMap::new(),
             cached_worktrees: HashMap::new(),
             workspace_scan_tx: None,
             workspace_scan_rx: None,
@@ -153,7 +206,6 @@ impl BackgroundServices {
             worktree_job_tx: None,
             worktree_job_rx: None,
             worktree_job_handle: None,
-            worktree_job_stop: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 }

@@ -10,4 +10,7 @@ pub(crate) trait ProcessPort {
     fn launch_new_tide_window(&self) -> io::Result<()> {
         Ok(())
     }
+    fn detect_agent(&self, _shell_pid: u32) -> Option<crate::state::gateway_status::AgentInfo> {
+        None
+    }
 }

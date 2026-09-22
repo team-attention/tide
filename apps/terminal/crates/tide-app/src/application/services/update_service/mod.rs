@@ -82,9 +82,115 @@ impl App {
         });
     }
 
-    pub(crate) fn update(&mut self) {
-        let mut had_terminal_output = false;
+    pub(crate) fn drain_editor_file_watch_events(&mut self) {
+            let events = self.ports.file_watcher.poll_events();
+            let mut changed_paths: HashSet<PathBuf> = HashSet::new();
+            let mut removed_paths: HashSet<PathBuf> = HashSet::new();
+            for event in events {
+                match event {
+                FileWatchEvent::Modified(path) | FileWatchEvent::Created(path) => {
+                    changed_paths.insert(path);
+                    }
+                FileWatchEvent::Removed(path) => {
+                    removed_paths.insert(path);
+                    }
+                }
+            }
+            self.promote_existing_removed_paths_to_changes(&mut changed_paths, &mut removed_paths);
+            self.expand_clean_editor_paths_for_directory_watch_events(&mut changed_paths);
 
+            for changed_path in &changed_paths {
+            let matching_ids: Vec<crate::tide_core::PaneId> = self
+                .panes
+                        .iter()
+                        .filter_map(|(&id, pane)| {
+                            if let PaneKind::Editor(editor) = pane {
+                        if editor
+                            .editor
+                            .file_path()
+                            .is_some_and(|path| paths_refer_to_same_file(path, changed_path))
+                        {
+                                    return Some(id);
+                                }
+                            }
+                            None
+                        })
+                        .collect();
+                let file_exists = changed_path.exists();
+
+                for id in matching_ids {
+                    if let Some(PaneKind::Editor(editor_pane)) = self.panes.get_mut(&id) {
+                        if !file_exists {
+                            if !editor_pane.editor.is_modified() {
+                                removed_paths.insert(changed_path.clone());
+                            } else {
+                                editor_pane.disk_changed = true;
+                                editor_pane.file_deleted = true;
+                                editor_pane.diff_mode = false;
+                                editor_pane.disk_content = None;
+                            }
+                        } else {
+                            editor_pane.file_deleted = false;
+                            editor_pane.diff_mode = false;
+                            editor_pane.disk_content = None;
+                            if !editor_pane.editor.is_modified() {
+                            if let Err(error) = editor_pane.editor.reload() {
+                                log::error!("Failed to reload {:?}: {}", changed_path, error);
+                                }
+                                editor_pane.disk_changed = false;
+                            } else {
+                                editor_pane.disk_changed = true;
+                            }
+                        }
+                        self.cache.invalidate_chrome();
+                        self.cache.invalidate_pane(id);
+                    }
+                }
+            }
+
+        let mut tabs_to_close = Vec::new();
+            for removed_path in &removed_paths {
+            let matching_ids: Vec<crate::tide_core::PaneId> = self
+                .panes
+                        .iter()
+                        .filter_map(|(&id, pane)| {
+                            if let PaneKind::Editor(editor) = pane {
+                        if editor
+                            .editor
+                            .file_path()
+                            .is_some_and(|path| paths_refer_to_same_file(path, removed_path))
+                        {
+                                    return Some(id);
+                                }
+                            }
+                            None
+                        })
+                        .collect();
+
+                for id in matching_ids {
+                    if let Some(PaneKind::Editor(editor_pane)) = self.panes.get_mut(&id) {
+                        if !editor_pane.editor.is_modified() {
+                            tabs_to_close.push(id);
+                        } else {
+                            editor_pane.disk_changed = true;
+                            editor_pane.file_deleted = true;
+                            editor_pane.diff_mode = false;
+                            editor_pane.disk_content = None;
+                            self.cache.invalidate_chrome();
+                            self.cache.invalidate_pane(id);
+                        }
+                    }
+                }
+            }
+            for tab_id in tabs_to_close {
+                self.close_editor_panel_tab(tab_id);
+            }
+            if !changed_paths.is_empty() || !removed_paths.is_empty() {
+            self.request_git_refresh(crate::state::background::GitRefreshCause::RepositoryChanged);
+        }
+    }
+
+    pub(crate) fn update(&mut self) {
         // Rapid-update detection: when frames are coming faster than 8ms,
         // skip non-critical work (browser sync, file tree, badge updates)
         // to keep drag and resize interactions smooth.
@@ -108,7 +214,6 @@ impl App {
                 }
                 // Re-execute search when terminal output changes
                 if terminal.backend.grid_generation() != old_gen {
-                    had_terminal_output = true;
                     if let Some(ref mut s) = terminal.search {
                         if !s.input.is_empty() {
                             search::execute_search_terminal(s, &terminal.backend);
@@ -118,32 +223,26 @@ impl App {
             }
         }
 
-        // Keep file tree/CWD in sync with terminal output (works for RedrawRequested path too).
-        // Skip during rapid updates — these are non-critical and can run on the next calm frame.
-        if had_terminal_output && !is_rapid {
-            self.update_file_tree_cwd();
-            self.update_terminal_badges();
-
-            self.trigger_git_poll();
-        }
-
         // Poll file tree events — skip during rapid updates
         if !is_rapid {
             if let Some(tree) = self.ft.tree.as_mut() {
-                let had_changes = tree.poll_events();
-                if had_changes {
+                if matches!(
+                    tree.drain_events(now),
+                    crate::tide_tree::FsTreeDrain::Refreshed
+                ) {
                     // Trigger git poller to refresh status asynchronously
                     // instead of blocking the app-thread with synchronous git calls.
                     self.sync_file_tree_path_identity_cache();
-                    self.trigger_git_poll();
+                    self.request_git_refresh(
+                        crate::state::background::GitRefreshCause::RepositoryChanged,
+                    );
                     self.cache.invalidate_chrome();
-                } else if tree.has_pending_events() {
-                    // Events are pending but deferred by debounce — keep the event
-                    // loop alive so they are processed after the debounce window.
-                    self.cache.needs_redraw = true;
                 }
             }
         }
+
+        self.drain_repository_changes(now);
+        self.refresh_repository_if_due(now);
 
         // Detect editor is_modified() transitions (catches undo back to clean state).
         // Only re-check when the buffer generation has changed to avoid expensive
@@ -169,127 +268,7 @@ impl App {
             }
         }
 
-        // Poll editor file watch events — always process regardless of is_rapid.
-        // File watcher events are lightweight (one reload per changed file) and
-        // losing them causes stale editor content when external tools (e.g. Claude
-        // Code) edit files while terminal output is active.
-        {
-            let events = self.ports.file_watcher.poll_events();
-            let mut changed_paths: HashSet<PathBuf> = HashSet::new();
-            let mut removed_paths: HashSet<PathBuf> = HashSet::new();
-            for event in events {
-                match event {
-                    FileWatchEvent::Modified(p) | FileWatchEvent::Created(p) => {
-                        changed_paths.insert(p);
-                    }
-                    FileWatchEvent::Removed(p) => {
-                        removed_paths.insert(p);
-                    }
-                }
-            }
-            self.promote_existing_removed_paths_to_changes(&mut changed_paths, &mut removed_paths);
-            self.expand_clean_editor_paths_for_directory_watch_events(&mut changed_paths);
-            for changed_path in &changed_paths {
-                // Find editor panes with this file path
-                let matching_ids: Vec<crate::tide_core::PaneId> =
-                    self.panes
-                        .iter()
-                        .filter_map(|(&id, pane)| {
-                            if let PaneKind::Editor(editor) = pane {
-                                if editor.editor.file_path().is_some_and(|path| {
-                                    paths_refer_to_same_file(path, changed_path)
-                                }) {
-                                    return Some(id);
-                                }
-                            }
-                            None
-                        })
-                        .collect();
-
-                // Check if the file actually exists (macOS FSEvents may report
-                // Modify events for deleted files)
-                let file_exists = changed_path.exists();
-
-                for id in matching_ids {
-                    if let Some(PaneKind::Editor(editor_pane)) = self.panes.get_mut(&id) {
-                        if !file_exists {
-                            // File doesn't exist — treat as deletion
-                            if !editor_pane.editor.is_modified() {
-                                // Buffer clean → will be closed below via removed_paths
-                                // Add to removed_paths to avoid duplication
-                                removed_paths.insert(changed_path.clone());
-                            } else {
-                                editor_pane.disk_changed = true;
-                                editor_pane.file_deleted = true;
-                                // Exit diff mode — disk content is stale
-                                editor_pane.diff_mode = false;
-                                editor_pane.disk_content = None;
-                            }
-                        } else {
-                            // File was recreated or modified
-                            editor_pane.file_deleted = false;
-                            editor_pane.diff_mode = false;
-                            editor_pane.disk_content = None;
-                            if !editor_pane.editor.is_modified() {
-                                // Buffer clean → auto-reload silently
-                                if let Err(e) = editor_pane.editor.reload() {
-                                    log::error!("Failed to reload {:?}: {}", changed_path, e);
-                                }
-                                editor_pane.disk_changed = false;
-                            } else {
-                                // Buffer dirty → mark disk changed, let user decide
-                                editor_pane.disk_changed = true;
-                            }
-                        }
-                        self.cache.invalidate_chrome();
-                        self.cache.invalidate_pane(id);
-                    }
-                }
-            }
-
-            // Handle removed files: close clean tabs, mark dirty tabs
-            let mut tabs_to_close: Vec<crate::tide_core::PaneId> = Vec::new();
-            for removed_path in &removed_paths {
-                let matching_ids: Vec<crate::tide_core::PaneId> =
-                    self.panes
-                        .iter()
-                        .filter_map(|(&id, pane)| {
-                            if let PaneKind::Editor(editor) = pane {
-                                if editor.editor.file_path().is_some_and(|path| {
-                                    paths_refer_to_same_file(path, removed_path)
-                                }) {
-                                    return Some(id);
-                                }
-                            }
-                            None
-                        })
-                        .collect();
-
-                for id in matching_ids {
-                    if let Some(PaneKind::Editor(editor_pane)) = self.panes.get_mut(&id) {
-                        if !editor_pane.editor.is_modified() {
-                            // Buffer clean → close the tab
-                            tabs_to_close.push(id);
-                        } else {
-                            // Buffer dirty → mark as deleted and disk changed
-                            editor_pane.disk_changed = true;
-                            editor_pane.file_deleted = true;
-                            // Exit diff mode — disk content is stale
-                            editor_pane.diff_mode = false;
-                            editor_pane.disk_content = None;
-                            self.cache.invalidate_chrome();
-                            self.cache.invalidate_pane(id);
-                        }
-                    }
-                }
-            }
-            for tab_id in tabs_to_close {
-                self.close_editor_panel_tab(tab_id);
-            }
-            if !changed_paths.is_empty() || !removed_paths.is_empty() {
-                self.trigger_git_poll();
-            }
-        }
+        self.drain_editor_file_watch_events();
 
         // Clamp file tree scroll to valid range after resize, collapse, or tree changes.
         if self.ft.visible {
@@ -323,40 +302,9 @@ impl App {
         }
 
         // Start git poller if not yet running
-        if self.bg.git_poll_handle.is_none() {
-            self.start_git_poller();
-        }
-
-        // Periodically check if terminal child processes are still alive (~2s interval).
-        // This detects dead shells in both active and background workspaces.
-        if now.duration_since(self.timing.last_child_check) > std::time::Duration::from_secs(2) {
-            self.timing.last_child_check = now;
-            // Active workspace panes
-            let mut newly_dead: Vec<u64> = Vec::new();
-            for (&id, pane) in self.panes.iter_mut() {
-                if let PaneKind::Terminal(t) = pane {
-                    if !t.context.child_dead && !t.backend.is_child_alive() {
-                        t.context.child_dead = true;
-                        newly_dead.push(id);
-                    }
-                }
-            }
-            if !newly_dead.is_empty() {
-                for id in &newly_dead {
-                    self.cache.invalidate_pane(*id);
-                }
-                self.cache.invalidate_chrome();
-            }
-            // Background workspace panes
-            for ws in &mut self.ws.workspaces {
-                for pane in ws.panes.values_mut() {
-                    if let PaneKind::Terminal(t) = pane {
-                        if !t.context.child_dead && !t.backend.is_child_alive() {
-                            t.context.child_dead = true;
-                        }
-                    }
-                }
-            }
+        if self.bg.git_worker_handle.is_none() {
+            self.start_git_refresh_worker();
+            self.request_git_refresh(crate::state::background::GitRefreshCause::Startup);
         }
     }
 }

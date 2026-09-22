@@ -180,7 +180,7 @@ pub(crate) fn check_header_click(
                 HeaderHitAction::DiffRefresh => {
                     // Diff content comes from the background git poller; ask it
                     // to re-run now instead of spawning git on the app thread.
-                    ctx.request_git_poll();
+                    ctx.request_git_refresh();
                     ctx.invalidate_chrome();
                     ctx.invalidate_pane(zone.pane_id);
                     return true;

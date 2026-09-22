@@ -3,6 +3,9 @@ mod tests {
     use super::super::*;
     use crate::tide_core::FileTreeSource;
     use std::fs;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
     use tempfile::TempDir;
 
     /// Helper to create a temp directory with some structure.
@@ -281,5 +284,33 @@ mod tests {
                 .any(|e| e.entry.name == "file_in_real.txt");
             assert!(has_inner, "expanding symlink dir should show inner files");
         }
+    }
+
+    #[test]
+    fn file_tree_event_wakes_and_completes_at_debounce_deadline() {
+        let tmp = setup_temp_dir();
+        let mut tree = FsTree::new(tmp.path().to_path_buf());
+        let wake_count = Arc::new(AtomicUsize::new(0));
+        let counter = wake_count.clone();
+        tree.set_waker(Some(Arc::new(move || {
+            counter.fetch_add(1, Ordering::Relaxed);
+        })));
+        tree.waker.lock().unwrap().as_ref().unwrap()();
+        assert_eq!(wake_count.load(Ordering::Relaxed), 1);
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        tree.event_rx = Some(rx);
+        tx.send(Ok(notify::Event::new(notify::EventKind::Any)))
+            .unwrap();
+        let now = Instant::now();
+        let deadline = now + Duration::from_millis(100);
+        assert_eq!(tree.drain_events(now), FsTreeDrain::WaitingUntil(deadline));
+        assert_eq!(tree.next_refresh_deadline(), Some(deadline));
+        assert_eq!(
+            tree.drain_events(deadline - Duration::from_millis(1)),
+            FsTreeDrain::WaitingUntil(deadline)
+        );
+        assert_eq!(tree.drain_events(deadline), FsTreeDrain::Refreshed);
+        assert_eq!(tree.next_refresh_deadline(), None);
     }
 }

@@ -82,7 +82,10 @@ where
     }
 
     pub fn channel(&self) -> EventLoopSender {
-        EventLoopSender { sender: self.tx.clone(), poller: self.poll.clone() }
+        EventLoopSender {
+            sender: self.tx.clone(),
+            poller: self.poll.clone(),
+        }
     }
 
     /// Drain the channel.
@@ -129,7 +132,7 @@ where
                         if unprocessed == 0 {
                             break;
                         }
-                    },
+                    }
                     _ => return Err(err),
                 },
             }
@@ -166,7 +169,7 @@ where
                             col,
                             payload,
                         }));
-                    },
+                    }
                 });
 
             processed += unprocessed;
@@ -196,21 +199,21 @@ where
                     Ok(0) => {
                         state.set_current(Some(current));
                         break 'write_many;
-                    },
+                    }
                     Ok(n) => {
                         current.advance(n);
                         if current.finished() {
                             state.goto_next();
                             break 'write_one;
                         }
-                    },
+                    }
                     Err(err) => {
                         state.set_current(Some(current));
                         match err.kind() {
                             ErrorKind::Interrupted | ErrorKind::WouldBlock => break 'write_many,
                             _ => return Err(err),
                         }
-                    },
+                    }
                 }
             }
         }
@@ -243,8 +246,9 @@ where
             'event_loop: loop {
                 // Wakeup the event loop when a synchronized update timeout was reached.
                 let handler = state.parser.sync_timeout();
-                let timeout =
-                    handler.sync_timeout().map(|st| st.saturating_duration_since(Instant::now()));
+                let timeout = handler
+                    .sync_timeout()
+                    .map(|st| st.saturating_duration_since(Instant::now()));
 
                 events.clear();
                 if let Err(err) = self.poll.wait(&mut events, timeout) {
@@ -253,7 +257,7 @@ where
                         _ => {
                             error!("Event loop polling error: {err}");
                             break 'event_loop;
-                        },
+                        }
                     }
                 }
 
@@ -274,17 +278,15 @@ where
                         tty::PTY_CHILD_EVENT_TOKEN => {
                             if let Some(tty::ChildEvent::Exited(code)) = self.pty.next_child_event()
                             {
-                                if let Some(code) = code {
-                                    self.event_proxy.send_event(Event::ChildExit(code));
-                                }
                                 if self.drain_on_exit {
                                     let _ = self.pty_read(&mut state, &mut buf, pipe.as_mut());
                                 }
                                 self.terminal.lock().exit();
+                                self.event_proxy.send_event(Event::ChildExit(code));
                                 self.event_proxy.send_event(Event::Wakeup);
                                 break 'event_loop;
                             }
-                        },
+                        }
 
                         tty::PTY_READ_WRITE_TOKEN => {
                             if event.is_interrupt() {
@@ -316,7 +318,7 @@ where
                                     break 'event_loop;
                                 }
                             }
-                        },
+                        }
                         _ => (),
                     }
                 }
@@ -327,7 +329,9 @@ where
                     interest.writable = needs_write;
 
                     // Re-register with new interest.
-                    self.pty.reregister(&self.poll, interest, poll_opts).unwrap();
+                    self.pty
+                        .reregister(&self.poll, interest, poll_opts)
+                        .unwrap();
                 }
             }
 
@@ -454,21 +458,21 @@ impl GraphicsEscapeExtractor {
                     self.plain.push(byte);
                     self.state = GraphicsState::Ground;
                 }
-            },
+            }
             GraphicsState::Esc => match byte {
                 b'_' => {
                     self.flush_plain(emit);
                     self.state = GraphicsState::KittyApc(Vec::new());
-                },
+                }
                 b'P' => {
                     self.flush_plain(emit);
                     self.state = GraphicsState::Dcs(Vec::new());
-                },
+                }
                 _ => {
                     self.plain.push(0x1b);
                     self.plain.push(byte);
                     self.state = GraphicsState::Ground;
-                },
+                }
             },
             GraphicsState::KittyApc(mut payload) => {
                 if byte == 0x1b {
@@ -477,7 +481,7 @@ impl GraphicsEscapeExtractor {
                     payload.push(byte);
                     self.state = GraphicsState::KittyApc(payload);
                 }
-            },
+            }
             GraphicsState::KittyApcEsc(mut payload) => {
                 if byte == b'\\' {
                     if payload.first() == Some(&b'G') {
@@ -495,7 +499,7 @@ impl GraphicsEscapeExtractor {
                     payload.push(byte);
                     self.state = GraphicsState::KittyApc(payload);
                 }
-            },
+            }
             GraphicsState::Dcs(mut payload) => {
                 if byte == 0x1b {
                     self.state = GraphicsState::DcsEsc(payload);
@@ -503,7 +507,7 @@ impl GraphicsEscapeExtractor {
                     payload.push(byte);
                     self.state = GraphicsState::Dcs(payload);
                 }
-            },
+            }
             GraphicsState::DcsEsc(mut payload) => {
                 if byte == b'\\' {
                     if dcs_payload_is_sixel(&payload) {
@@ -521,7 +525,7 @@ impl GraphicsEscapeExtractor {
                     payload.push(byte);
                     self.state = GraphicsState::Dcs(payload);
                 }
-            },
+            }
         }
     }
 
@@ -592,7 +596,10 @@ impl State {
 impl Writing {
     #[inline]
     fn new(c: Cow<'static, [u8]>) -> Writing {
-        Writing { source: c, written: 0 }
+        Writing {
+            source: c,
+            written: 0,
+        }
     }
 
     #[inline]
@@ -656,7 +663,7 @@ mod tests {
             PtyToken::Bytes(bytes) => tokens.push(OwnedPtyToken::Bytes(bytes.to_vec())),
             PtyToken::Graphics(protocol, payload) => {
                 tokens.push(OwnedPtyToken::Graphics(protocol, payload));
-            },
+            }
         });
         tokens
     }

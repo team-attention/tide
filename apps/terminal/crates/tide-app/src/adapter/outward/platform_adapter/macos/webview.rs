@@ -73,11 +73,15 @@ static BRIDGE_MESSAGES: std::sync::LazyLock<Mutex<HashMap<TideWindowId, Vec<Stri
 pub(crate) fn queue_bridge_message_for_window(tide_window_id: TideWindowId, message: String) {
     let mut queue = BRIDGE_MESSAGES.lock().unwrap_or_else(|e| e.into_inner());
     queue.entry(tide_window_id).or_default().push(message);
+    drop(queue);
+    wake_event_loop();
 }
 
 pub(crate) fn queue_new_tab_url_for_window(tide_window_id: TideWindowId, url: String) {
     let mut queue = NEW_TAB_URLS.lock().unwrap_or_else(|e| e.into_inner());
     queue.entry(tide_window_id).or_default().push(url);
+    drop(queue);
+    wake_event_loop();
 }
 
 pub(crate) fn browser_content_pinch_zoom_enabled() -> bool {

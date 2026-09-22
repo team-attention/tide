@@ -22,6 +22,7 @@ mod editor_behavior;
 mod editor_file_watch_sync;
 mod editor_polish_behavior;
 mod editor_viewport_behavior;
+mod event_driven_terminal_runtime;
 mod file_finder_behavior;
 mod file_tree_bundle_behavior;
 mod file_tree_focus_chrome;

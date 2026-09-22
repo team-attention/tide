@@ -67,6 +67,10 @@ All paths below are relative to `crates/tide-app/src/`.
 |------|------|----------|-------------|
 | **PlatformEvent** | `PlatformEvent` | `adapter/outward/platform_adapter/mod.rs` | Raw OS event: key press, mouse click, resize, IME commit, etc. |
 | **InputEvent** | `InputEvent` | `domain/core_types.rs` | Normalized input: `KeyPress`, `MouseClick`, `MouseScroll`, `Resize`. |
+| **Shell State Signal** | `ShellStateSignal` | `domain/terminal/runtime_event.rs` | An authenticated, shell-emitted terminal protocol signal that updates `TerminalContext` without inspecting the shell process tree. |
+| **Working Directory Signal** | `ShellStateSignal::WorkingDirectory` | `domain/terminal/runtime_event.rs` | An OSC 7 signal emitted by Tide's zsh, bash, or fish integration when the shell working directory changes. |
+| **Command Lifecycle Signal** | `ShellStateSignal::CommandLifecycle` | `domain/terminal/runtime_event.rs` | An OSC 133 prompt/command boundary (`A`, `B`, `C`, or `D`) used to derive whether a supported shell is idle. |
+| **Repository Change Signal** | `RepositoryChangeSignal` | `application/ports/outward/repository_watcher_port.rs` | A filesystem notification for a watched worktree or Git metadata path that requests a coalesced Git refresh. |
 
 ## Commands (intent to mutate)
 
@@ -192,6 +196,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **SVG Icon Renderer** | Renderer-side vector path for chrome icons. It parses SVG icon markup, tessellates supported SVG shapes into GPU triangles, and renders them without private font glyphs or square-step rect fragments. |
 | **Raster Icon Renderer** | Renderer-side image path for chrome icons. It decodes `RasterIconAsset` PNG bytes, uploads them as GPU textures, and renders tinted quads for asset-backed icon roles. |
 | **Dirty Tracking** | Generation-based system to skip re-rendering unchanged panes/chrome. |
+| **Runtime Deadline** | The earliest exact instant at which Tide must wake for time-based behavior such as cursor blink, animation, autosave, resize coalescing, render coalescing, or filesystem debounce. When no Runtime Deadline exists, the app thread blocks until an event arrives. |
 | **WrapMap** | Cached mapping from logical lines to visual rows for soft-wrap rendering. Built per EditorPane when soft wrap is active. |
 | **Soft Wrap** | Automatic line wrapping at viewport width. Enabled for prose files (`.md`, `.txt`). Line numbers only on first visual row. |
 | **Application-Rendered Prose Reflow Row** | A `Terminal Pane` row that appears visually wrapped because a TUI application rendered prose across multiple rows itself, without emulator `WRAPLINE` metadata. |

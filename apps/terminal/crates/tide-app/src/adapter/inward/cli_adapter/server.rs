@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixListener;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::sync::{
@@ -24,33 +24,69 @@ use crate::tide_platform::WakeCallback;
 /// Thread-safe set of PIDs currently connected to the gateway socket.
 /// Shared between background socket threads and the app thread via Arc.
 pub(crate) struct ConnectedClients {
-    pids: Mutex<HashSet<u32>>,
+    pids: Mutex<HashMap<u32, usize>>,
+    router: Option<Arc<GatewayCommandRouter>>,
 }
 
 impl ConnectedClients {
     pub fn new() -> Self {
         Self {
-            pids: Mutex::new(HashSet::new()),
+            pids: Mutex::new(HashMap::new()),
+            router: None,
+        }
+    }
+
+    pub(crate) fn with_router(router: Arc<GatewayCommandRouter>) -> Self {
+        Self {
+            pids: Mutex::new(HashMap::new()),
+            router: Some(router),
         }
     }
 
     pub fn add(&self, pid: u32) {
-        self.pids
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(pid);
+        let changed = {
+            let mut pids = self.pids.lock().unwrap_or_else(|e| e.into_inner());
+            let count = pids.entry(pid).or_insert(0);
+            *count += 1;
+            *count == 1
+        };
+        if changed {
+            if let Some(router) = &self.router {
+                router.broadcast_gateway_clients_changed();
+            }
+        }
     }
 
     pub fn remove(&self, pid: u32) {
-        self.pids
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(&pid);
+        let changed = {
+            let mut pids = self.pids.lock().unwrap_or_else(|e| e.into_inner());
+            match pids.get_mut(&pid) {
+                Some(count) if *count > 1 => {
+                    *count -= 1;
+                    false
+                }
+                Some(_) => {
+                    pids.remove(&pid);
+                    true
+                }
+                None => false,
+            }
+        };
+        if changed {
+            if let Some(router) = &self.router {
+                router.broadcast_gateway_clients_changed();
+            }
+        }
     }
 
     /// Snapshot the current set of connected PIDs. Called from the app thread.
     pub fn snapshot(&self) -> HashSet<u32> {
-        self.pids.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.pids
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .keys()
+            .copied()
+            .collect()
     }
 
     pub fn count(&self) -> usize {
@@ -63,6 +99,7 @@ pub(crate) struct GatewayServer {
     pub socket_path: PathBuf,
     shutdown: Arc<AtomicBool>,
     pub connected_clients: Arc<ConnectedClients>,
+    listener_handle: Option<std::thread::JoinHandle<()>>,
 }
 
 #[derive(Clone)]
@@ -174,6 +211,25 @@ impl GatewayCommandRouter {
             (target.waker)();
         }
     }
+
+    pub fn broadcast_gateway_clients_changed(&self) {
+        let targets: Vec<_> = self
+            .targets
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+            .cloned()
+            .collect();
+        for target in targets {
+            if target
+                .event_tx
+                .send(AppEvent::GatewayClientsChanged)
+                .is_ok()
+            {
+                (target.waker)();
+            }
+        }
+    }
 }
 
 impl GatewayServer {
@@ -195,27 +251,21 @@ impl GatewayServer {
         let _ = std::os::unix::fs::symlink(&socket_path, &latest_path);
 
         let shutdown = Arc::new(AtomicBool::new(false));
-        let connected_clients = Arc::new(ConnectedClients::new());
-
-        let server = Self {
-            socket_path: socket_path.clone(),
-            shutdown: shutdown.clone(),
-            connected_clients: connected_clients.clone(),
-        };
+        let connected_clients = Arc::new(ConnectedClients::with_router(router.clone()));
 
         // Accept connections in a background thread
-        std::thread::Builder::new()
+        let listener_handle = std::thread::Builder::new()
             .name("gateway-listener".into())
             .spawn({
                 let shutdown = shutdown.clone();
                 let connected_clients = connected_clients.clone();
                 move || {
-                    // Switch to non-blocking so we can check shutdown flag
-                    listener.set_nonblocking(true).ok();
-
-                    while !shutdown.load(Ordering::Relaxed) {
+                    loop {
                         match listener.accept() {
                             Ok((stream, _addr)) => {
+                                if shutdown.load(Ordering::Relaxed) {
+                                    break;
+                                }
                                 // Accepted sockets inherit non-blocking from the listener on macOS.
                                 // Client handlers need blocking I/O.
                                 stream.set_nonblocking(false).ok();
@@ -237,21 +287,23 @@ impl GatewayServer {
                                     })
                                     .ok();
                             }
-                            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                                std::thread::sleep(std::time::Duration::from_millis(50));
-                            }
                             Err(_) => {
                                 if shutdown.load(Ordering::Relaxed) {
                                     break;
                                 }
-                                std::thread::sleep(std::time::Duration::from_millis(100));
+                                break;
                             }
                         }
                     }
                 }
             })?;
 
-        Ok(server)
+        Ok(Self {
+            socket_path,
+            shutdown,
+            connected_clients,
+            listener_handle: Some(listener_handle),
+        })
     }
 
     /// Handle a single client connection.
@@ -340,19 +392,9 @@ impl GatewayServer {
 
             // If this was a subscribe command, enter notification loop
             if let Some(notif_rx) = notif_rx {
-                loop {
-                    match notif_rx.recv_timeout(std::time::Duration::from_millis(100)) {
-                        Ok(notification) => {
-                            if writeln!(writer, "{}", notification).is_err() {
-                                break;
-                            }
-                        }
-                        Err(mpsc::RecvTimeoutError::Timeout) => {
-                            if shutdown.load(Ordering::Relaxed) {
-                                break;
-                            }
-                        }
-                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                while let Ok(notification) = notif_rx.recv() {
+                    if writeln!(writer, "{}", notification).is_err() {
+                        break;
                     }
                 }
                 break;
@@ -420,6 +462,10 @@ fn get_peer_pid(_stream: &std::os::unix::net::UnixStream) -> Option<u32> {
 impl Drop for GatewayServer {
     fn drop(&mut self) {
         self.shutdown.store(true, Ordering::Relaxed);
+        let _ = UnixStream::connect(&self.socket_path);
+        if let Some(handle) = self.listener_handle.take() {
+            let _ = handle.join();
+        }
         let _ = std::fs::remove_file(&self.socket_path);
 
         let latest = self
