@@ -26,6 +26,24 @@ use atlas::GlyphAtlas;
 use grid::PaneGridCache;
 pub(crate) use msdf::MsdfFontStore;
 pub(crate) use raster_icon::RasterIconAsset;
+
+pub(crate) fn chrome_font_scale(content_font_size: f32) -> f32 {
+    crate::theme::CHROME_FONT_SIZE / content_font_size.max(0.1)
+}
+
+pub(crate) fn fixed_chrome_text_metrics(
+    chrome_cell_size: Size,
+    content_font_size: f32,
+    requested_scale: f32,
+) -> (Size, f32) {
+    (
+        Size::new(
+            chrome_cell_size.width * requested_scale,
+            chrome_cell_size.height * requested_scale,
+        ),
+        requested_scale * chrome_font_scale(content_font_size),
+    )
+}
 use raster_icon::{RasterIconDrawCall, RasterIconTexture, TerminalImageDrawCall};
 pub(crate) use svg_icon::SvgIconPalette;
 use vertex::{ChromeRectVertex, GlyphVertex, GridBgInstance, GridGlyphInstance, RectVertex};
@@ -191,6 +209,14 @@ pub struct WgpuRenderer {
 
 // Helper: convert em-relative AtlasRegion metrics to physical pixel values
 impl WgpuRenderer {
+    pub fn chrome_cell_size(&self) -> Size {
+        let idx = (crate::theme::CHROME_FONT_SIZE.round() as u32).saturating_sub(8) as usize;
+        self.cell_size_table
+            .get(idx)
+            .copied()
+            .unwrap_or(self.cached_cell_size)
+    }
+
     /// Scale factor for converting em-relative glyph metrics to physical pixels.
     fn em_scale(&self) -> f32 {
         self.em_scale_for_font(1.0)

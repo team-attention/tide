@@ -656,6 +656,10 @@ impl crate::application::ports::inward::AppCorePort for App {
         self.window.cached_cell_size
     }
 
+    fn chrome_cell_size(&self) -> Size {
+        self.window.chrome_cell_size
+    }
+
     fn apply_font_size(&mut self, size: f32) {
         let size = size.clamp(8.0, 32.0);
         if (size - self.window.current_font_size).abs() < 0.01 {
@@ -973,7 +977,7 @@ impl crate::application::ports::inward::AppCorePort for App {
                 }
             };
 
-        let cell_w = self.window.cached_cell_size.width;
+        let cell_w = self.window.chrome_cell_size.width;
         let header_surface = if is_stage_surface {
             crate::header::HeaderSurfaceKind::Stage
         } else {

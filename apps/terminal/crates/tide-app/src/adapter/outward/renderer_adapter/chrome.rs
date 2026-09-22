@@ -1,6 +1,6 @@
 use unicode_width::UnicodeWidthChar;
 
-use crate::tide_core::{Color, Rect, TextStyle, Vec2};
+use crate::tide_core::{Color, Rect, Size, TextStyle, Vec2};
 
 use super::vertex::{ChromeRectVertex, GlyphVertex};
 use super::WgpuRenderer;
@@ -112,6 +112,39 @@ impl WgpuRenderer {
         self.draw_chrome_text_scaled(text, position, style, clip, 1.0);
     }
 
+    pub fn draw_fixed_chrome_text(
+        &mut self,
+        text: &str,
+        position: Vec2,
+        style: TextStyle,
+        clip: Rect,
+    ) {
+        self.draw_fixed_chrome_text_scaled(text, position, style, clip, 1.0);
+    }
+
+    pub fn draw_fixed_chrome_text_scaled(
+        &mut self,
+        text: &str,
+        position: Vec2,
+        style: TextStyle,
+        clip: Rect,
+        font_scale: f32,
+    ) {
+        let (cell_size, font_scale) = super::fixed_chrome_text_metrics(
+            self.chrome_cell_size(),
+            self.base_font_size,
+            font_scale,
+        );
+        self.draw_chrome_text_with_metrics(
+            text,
+            position,
+            style,
+            clip,
+            cell_size,
+            font_scale,
+        );
+    }
+
     /// Draw text into the cached chrome layer with a logical font scale.
     pub fn draw_chrome_text_scaled(
         &mut self,
@@ -122,9 +155,31 @@ impl WgpuRenderer {
         font_scale: f32,
     ) {
         let font_scale = font_scale.max(0.1);
+        self.draw_chrome_text_with_metrics(
+            text,
+            position,
+            style,
+            clip,
+            Size::new(
+                self.cached_cell_size.width * font_scale,
+                self.cached_cell_size.height * font_scale,
+            ),
+            font_scale,
+        );
+    }
+
+    fn draw_chrome_text_with_metrics(
+        &mut self,
+        text: &str,
+        position: Vec2,
+        style: TextStyle,
+        clip: Rect,
+        cell_size: Size,
+        font_scale: f32,
+    ) {
         let scale = self.scale_factor;
-        let cell_w = self.cached_cell_size.width * scale * font_scale;
-        let cell_h = self.cached_cell_size.height * scale * font_scale;
+        let cell_w = cell_size.width * scale;
+        let cell_h = cell_size.height * scale;
         let baseline_y = self.baseline_y_for_font_scale(cell_h, font_scale);
 
         let mut cursor_x = position.x * scale;

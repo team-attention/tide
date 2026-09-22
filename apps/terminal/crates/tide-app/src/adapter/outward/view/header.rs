@@ -6,7 +6,7 @@ pub(crate) use super::header_status::*;
 
 use std::collections::HashMap;
 
-use crate::tide_core::{PaneId, Rect, Renderer, TextStyle, Vec2};
+use crate::tide_core::{PaneId, Rect, TextStyle, Vec2};
 use crate::tide_renderer::WgpuRenderer;
 
 use crate::pane::PaneKind;
@@ -1114,7 +1114,7 @@ pub fn render_pane_header_inner(
     surface_view_mode_action: Option<HeaderHitAction>,
 ) -> Vec<HeaderHitZone> {
     let mut zones = Vec::new();
-    let cell_size = renderer.cell_size();
+    let cell_size = renderer.chrome_cell_size();
     let cell_height = cell_size.height;
     let cell_w = cell_size.width;
     let is_focused = focused == Some(id);
@@ -1400,7 +1400,7 @@ pub fn render_pane_header_inner(
         italic: false,
         underline: false,
     };
-    renderer.draw_chrome_text(
+    renderer.draw_fixed_chrome_text(
         &title,
         Vec2::new(cx, text_y),
         title_style,
@@ -1535,7 +1535,7 @@ fn render_tab_bar_impl(
     surface_view_mode_action: Option<HeaderHitAction>,
 ) -> Vec<HeaderHitZone> {
     let mut zones = Vec::new();
-    let cell_size = renderer.cell_size();
+    let cell_size = renderer.chrome_cell_size();
     let cell_height = cell_size.height;
     let cell_w = cell_size.width;
     let is_focused = focused == Some(pane_id);
@@ -1753,7 +1753,7 @@ fn render_tab_bar_impl(
         let label_drawn_w = display.chars().count() as f32 * cell_w;
         // Use tab_clip for text clipping so partially visible tabs are clipped at edges
         let text_clip = Rect::new(cx, tab_y, tw, tab_h).clip_to(&tab_clip);
-        renderer.draw_chrome_text(
+        renderer.draw_fixed_chrome_text(
             &display,
             Vec2::new(cx + TAB_H_PAD + dot_offset, label_y),
             TextStyle {
@@ -2035,7 +2035,7 @@ pub(crate) fn render_badge_colored(
         italic: false,
         underline: false,
     };
-    renderer.draw_chrome_text(
+    renderer.draw_fixed_chrome_text(
         text,
         Vec2::new(x + BADGE_PADDING_H, text_y),
         style,

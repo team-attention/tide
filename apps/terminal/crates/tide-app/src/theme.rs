@@ -656,8 +656,9 @@ pub const TERMINAL_CONTEXT_SURFACE_WIDTH: f32 = 1040.0;
 pub const TERMINAL_CONTEXT_SURFACE_MIN_WIDTH: f32 = 360.0;
 pub const TERMINAL_CONTEXT_SURFACE_DEFAULT_RATIO: f32 = 0.42;
 
-pub const HEADER_BAR_HEIGHT: f32 = 32.0;
+pub const HEADER_BAR_HEIGHT: f32 = 28.0;
 pub const TAB_BAR_HEIGHT: f32 = HEADER_BAR_HEIGHT;
+pub const CHROME_FONT_SIZE: f32 = 14.0;
 pub const SIDE_SURFACE_BORDER_HIT_SLOP: f32 = 8.0;
 pub const TAB_CLOSE_ICON_SIZE: f32 = 9.0;
 pub const TAB_H_PAD: f32 = 11.0;
@@ -713,7 +714,7 @@ pub const CONFLICT_BAR_HEIGHT: f32 = 28.0;
 // Header badges
 /// Height of the macOS titlebar inset (traffic light area).
 /// Used to offset all layout rects so content doesn't overlap the titlebar controls.
-pub const TITLEBAR_HEIGHT: f32 = HEADER_BAR_HEIGHT;
+pub const TITLEBAR_HEIGHT: f32 = 32.0;
 
 pub const BADGE_PADDING_H: f32 = 8.0;
 pub const BADGE_GAP: f32 = 6.0;

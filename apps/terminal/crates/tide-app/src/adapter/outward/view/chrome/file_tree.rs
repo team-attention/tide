@@ -481,7 +481,8 @@ pub(super) fn render_file_tree(
         {
             let header_y = tree_visual_rect.y;
             let header_h = FILE_TREE_HEADER_HEIGHT;
-            let header_text_y = header_y + (header_h - cell_size.height) / 2.0;
+            let header_cell_size = renderer.chrome_cell_size();
+            let header_text_y = header_y + (header_h - header_cell_size.height) / 2.0;
 
             // Opaque header background covers any scrolled entries
             renderer.draw_chrome_rect(
@@ -495,7 +496,7 @@ pub(super) fn render_file_tree(
             );
 
             // Folder icon
-            renderer.draw_chrome_text(
+            renderer.draw_fixed_chrome_text(
                 "\u{f07b}",
                 Vec2::new(tree_visual_rect.x + left_padding, header_text_y),
                 TextStyle {
@@ -515,10 +516,10 @@ pub(super) fn render_file_tree(
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| tree.root().to_string_lossy().to_string());
-            renderer.draw_chrome_text(
+            renderer.draw_fixed_chrome_text(
                 &root_name,
                 Vec2::new(
-                    tree_visual_rect.x + left_padding + cell_size.width * 2.0,
+                    tree_visual_rect.x + left_padding + header_cell_size.width * 2.0,
                     header_text_y,
                 ),
                 TextStyle {

@@ -9,6 +9,7 @@ use crate::adapter::inward::scroll_adapter::{
     clamp_shared_tab_scroll_offset, handle_scroll, shared_tab_scroll_delta,
     shared_tab_scroll_is_new_gesture, shared_tab_scroll_step,
 };
+use crate::adapter::outward::renderer_adapter::{chrome_font_scale, fixed_chrome_text_metrics};
 use crate::adapter::outward::view::header::{
     active_tab_badges, active_tab_width_cap, dock_stacked_uses_shared_tab_bar,
     dock_tab_group_uses_shared_tab_bar, overflowed_stage_alert_tab_edges,
@@ -35,7 +36,7 @@ use crate::theme::{
     FILE_TREE_HEADER_HEIGHT, HEADER_BAR_HEIGHT, LIGHT, TAB_BAR_HEIGHT, TAB_CONTENT_SPACING,
     TAB_H_PAD, TAB_MAX_WIDTH, TAB_MIN_TITLE_WIDTH, TITLEBAR_HEIGHT,
 };
-use crate::tide_core::{DropZone, LayoutEngine, Rect, SplitDirection, Vec2};
+use crate::tide_core::{DropZone, LayoutEngine, Rect, Size, SplitDirection, Vec2};
 use crate::tide_terminal::git::{GitInfo, GitStatus, WorktreeInfo};
 use crate::ui::pane_title;
 use crate::{App, AppCorePort, DockPort};
@@ -1094,10 +1095,10 @@ fn focused_tabs_use_a_brighter_tint_than_unfocused_tabs() {
 }
 
 #[test]
-fn aligned_header_bands_are_exactly_32_logical_pixels() {
-    // UC-7 BR-19: The titlebar, shared tab bar, and FileTree View header use one compact 32 px height while preserving fitting header actions.
-    assert_eq!(HEADER_BAR_HEIGHT, 32.0);
-    assert_eq!(TITLEBAR_HEIGHT, HEADER_BAR_HEIGHT);
+fn titlebar_and_content_headers_use_distinct_compact_heights() {
+    // UC-7 BR-19: The native titlebar remains 32 px while Pane, TabGroup, and FileTree chrome share a compact 28 px height.
+    assert_eq!(TITLEBAR_HEIGHT, 32.0);
+    assert_eq!(HEADER_BAR_HEIGHT, 28.0);
     assert_eq!(TAB_BAR_HEIGHT, HEADER_BAR_HEIGHT);
     assert_eq!(FILE_TREE_HEADER_HEIGHT, HEADER_BAR_HEIGHT);
     assert_eq!(HEADER_ACTION_TILE_SIZE, 18.0);
@@ -1118,6 +1119,27 @@ fn aligned_header_bands_are_exactly_32_logical_pixels() {
         shared_tab_active_width_cap(900.0, 3) <= 900.0 * 0.5,
         "shared active tabs should still stop well before filling the whole row"
     );
+}
+
+#[test]
+fn header_chrome_metrics_do_not_follow_content_font_zoom() {
+    // UC-7 BR-19: Content font zoom is canceled when Tide draws fixed-size header chrome.
+    assert_eq!(chrome_font_scale(14.0).to_bits(), 1.0_f32.to_bits());
+    assert_eq!(chrome_font_scale(8.0).to_bits(), 1.75_f32.to_bits());
+    assert_eq!(chrome_font_scale(32.0).to_bits(), 0.4375_f32.to_bits());
+
+    let mut app = test_app();
+    let chrome_cell_size = AppCorePort::chrome_cell_size(&app);
+    app.window.cached_cell_size = crate::tide_core::Size::new(16.0, 32.0);
+    assert_eq!(AppCorePort::chrome_cell_size(&app), chrome_cell_size);
+
+    let fixed_cell = Size::new(8.0, 17.0);
+    let (small_zoom_cell, small_zoom_scale) = fixed_chrome_text_metrics(fixed_cell, 8.0, 1.0);
+    let (large_zoom_cell, large_zoom_scale) = fixed_chrome_text_metrics(fixed_cell, 32.0, 1.0);
+    assert_eq!(small_zoom_cell, fixed_cell);
+    assert_eq!(large_zoom_cell, fixed_cell);
+    assert_eq!((8.0 * small_zoom_scale).to_bits(), 14.0_f32.to_bits());
+    assert_eq!((32.0 * large_zoom_scale).to_bits(), 14.0_f32.to_bits());
 }
 
 #[test]
@@ -1411,9 +1433,19 @@ fn stacked_stage_tab_bar_scroll_uses_rendered_tab_bounds() {
     app.visual_pane_rects = vec![(first_id, pane_rect)];
     app.window.last_cursor_pos = Vec2::new(pane_rect.x + 80.0, pane_rect.y + 8.0);
 
+    let default_font_max_scroll = AppCorePort::shared_tab_max_scroll(&app, first_id).unwrap_or(0.0);
     assert!(
-        AppCorePort::shared_tab_max_scroll(&app, first_id).unwrap_or(0.0) > 0.0,
+        default_font_max_scroll > 0.0,
         "visually clipped stacked Stage tabs should expose shared-tab scroll capacity"
+    );
+
+    app.window.cached_cell_size = crate::tide_core::Size::new(16.0, 32.0);
+    assert_eq!(
+        AppCorePort::shared_tab_max_scroll(&app, first_id)
+            .unwrap_or(0.0)
+            .to_bits(),
+        default_font_max_scroll.to_bits(),
+        "content font zoom must not change shared-tab scroll geometry"
     );
 
     handle_scroll(&mut app, -1.0, 0.0);

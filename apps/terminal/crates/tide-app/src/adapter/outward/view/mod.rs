@@ -144,6 +144,7 @@ impl App {
 
         // Sync renderer's scale factor in case it changed (e.g. display switch)
         renderer.set_scale_factor(self.window.scale_factor);
+        self.window.chrome_cell_size = renderer.chrome_cell_size();
 
         let logical = self.logical_size();
         let focused = self.focus.focused;

@@ -916,10 +916,10 @@ fn draw_titlebar_surface_icon(
     color: crate::tide_core::Color,
 ) {
     if let Some(glyph) = titlebar_surface_icon_text_glyph(icon) {
-        let cell = renderer.cell_size();
+        let cell = renderer.chrome_cell_size();
         let icon_w = cell.width * TITLEBAR_ICON_SCALE;
         let icon_h = cell.height * TITLEBAR_ICON_SCALE;
-        renderer.draw_chrome_text_scaled(
+        renderer.draw_fixed_chrome_text_scaled(
             glyph,
             Vec2::new(
                 button_rect.x + (button_rect.width - icon_w) / 2.0,
@@ -1006,7 +1006,7 @@ pub(super) fn render_titlebar_and_sidebar(
         );
         // Leading identity uses the otherwise empty traffic-light lane without turning
         // the titlebar into a centered label.
-        let cs = renderer.cell_size();
+        let cs = renderer.chrome_cell_size();
         {
             let title_text = titlebar_workspace_title(app);
             let meta_text = titlebar_workspace_meta_text(app, app.ws.active);
@@ -1031,7 +1031,7 @@ pub(super) fn render_titlebar_and_sidebar(
                     0.0
                 };
                 let title_w = (identity_w - meta_reserved_w - title_gap).max(cs.width * 4.0);
-                renderer.draw_chrome_text(
+                renderer.draw_fixed_chrome_text(
                     &title_text,
                     Vec2::new(identity_x, title_y),
                     TextStyle {
@@ -1046,7 +1046,7 @@ pub(super) fn render_titlebar_and_sidebar(
                 );
                 if meta_reserved_w > 0.0 {
                     let meta_x = identity_x + title_w + title_gap;
-                    renderer.draw_chrome_text(
+                    renderer.draw_fixed_chrome_text(
                         &meta_text,
                         Vec2::new(meta_x, title_y),
                         TextStyle {

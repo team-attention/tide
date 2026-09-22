@@ -176,7 +176,7 @@ pub(crate) fn handle_scroll(
             let scroll_delta = shared_tab_scroll_delta(dx, dy);
             let max_scroll = ctx.shared_tab_max_scroll(pid).unwrap_or(0.0);
             if max_scroll > 0.0 && scroll_delta != 0.0 {
-                let cell_w = ctx.cell_size().width;
+                let cell_w = ctx.chrome_cell_size().width;
                 let now = ctx.clock_now();
                 let interaction = ctx.interaction_mut();
                 let last_event_age = interaction
