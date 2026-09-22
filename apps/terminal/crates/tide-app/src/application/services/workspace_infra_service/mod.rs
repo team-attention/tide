@@ -471,18 +471,57 @@ impl App {
             return;
         }
 
-        // Collect associated panes if this is a terminal
-        let associated_panes: Vec<PaneId> =
-            if matches!(self.panes.get(&pane_id), Some(crate::PaneKind::Terminal(_))) {
+        let moving_terminal =
+            matches!(self.panes.get(&pane_id), Some(crate::PaneKind::Terminal(_)));
+
+        let carried_context_pane_ids: Vec<PaneId> = if moving_terminal {
+            match self.panes.get(&pane_id) {
+                Some(crate::PaneKind::Terminal(terminal)) => terminal.dock_layout.all_pane_ids(),
+                _ => Vec::new(),
+            }
+        } else {
+            Vec::new()
+        };
+        let carried_context_panes: std::collections::HashSet<PaneId> =
+            carried_context_pane_ids.iter().copied().collect();
+
+        // The terminal-owned dock_layout is the source of truth. Add active
+        // associated Stage Panes as fallbacks, but do not pull Panes back from a
+        // different Workspace after the user moved them there independently.
+        let mut associated_panes = carried_context_pane_ids;
+        if moving_terminal {
+            let mut associated_stage_panes: Vec<PaneId> = self
+                .layout
+                .all_pane_ids()
+                .into_iter()
+                .filter(|pid| self.assoc.associated_terminal.get(pid) == Some(&pane_id))
+                .filter(|pid| !carried_context_panes.contains(pid))
+                .collect();
+            associated_panes.append(&mut associated_stage_panes);
+        }
+
+        // A context Pane moved on its own must leave its source Terminal Context Surface.
+        // Keep its Associated Terminal relationship so the moved Pane retains cwd context.
+        if !moving_terminal {
+            if let Some(terminal_id) = self.terminal_owning(pane_id) {
                 self.assoc
                     .associated_terminal
-                    .iter()
-                    .filter(|(_, &tid)| tid == pane_id)
-                    .map(|(&pid, _)| pid)
-                    .collect()
-            } else {
-                Vec::new()
-            };
+                    .insert(pane_id, terminal_id);
+                self.retain_terminal_context(terminal_id);
+                if let Some(crate::PaneKind::Terminal(terminal)) = self.panes.get_mut(&terminal_id)
+                {
+                    terminal.dock_layout.remove(pane_id);
+                    if terminal.dock_focused == Some(pane_id) {
+                        terminal.dock_focused = terminal
+                            .dock_layout
+                            .pane_ids()
+                            .first()
+                            .copied()
+                            .or_else(|| terminal.dock_layout.all_pane_ids().first().copied());
+                    }
+                }
+            }
+        }
 
         // All panes to move
         let all_panes_to_move: Vec<PaneId> = std::iter::once(pane_id)
@@ -507,31 +546,62 @@ impl App {
         // Insert into target workspace
         let target_ws = &mut self.ws.workspaces[target_idx];
 
-        // 1. Insert the terminal pane
-        if let Some(pane) = moved_panes.remove(&pane_id) {
-            target_ws.layout.insert_at_root(pane_id, DropZone::Right);
-            target_ws.panes.insert(pane_id, pane);
+        for pid in all_panes_to_move.iter().copied() {
+            if let Some(pane) = moved_panes.remove(&pid) {
+                // Context Panes carried by a moving Terminal already belong to its
+                // dock_layout. Adding them to Stage as well creates duplicate layout
+                // ownership and leaves blank regions during Workspace transitions.
+                if pid == pane_id || !carried_context_panes.contains(&pid) {
+                    target_ws.layout.insert_at_root(pid, DropZone::Right);
+                }
+                target_ws.panes.insert(pid, pane);
+            }
         }
 
-        // 2. Insert associated panes
-        for (pid, pane) in moved_panes {
-            target_ws.layout.insert_at_root(pid, DropZone::Right);
-            target_ws.panes.insert(pid, pane);
+        // Keep the source Workspace usable when its last Stage Pane moves away.
+        if self.layout.all_pane_ids().is_empty() {
+            let launcher_id = self.next_workspace_pane_id();
+            self.layout.insert_at_root(launcher_id, DropZone::Right);
+            self.panes
+                .insert(launcher_id, crate::PaneKind::Launcher(launcher_id));
         }
 
-        // Update focus if the moved pane was focused
+        let remaining_stage_panes = self.layout.pane_ids();
+        let stage_focus_is_valid = self.focus.stage_focused.is_some_and(|focused| {
+            remaining_stage_panes.contains(&focused)
+                && matches!(self.panes.get(&focused), Some(crate::PaneKind::Terminal(_)))
+        });
+        if !stage_focus_is_valid {
+            self.focus.stage_focused = remaining_stage_panes
+                .iter()
+                .copied()
+                .find(|id| matches!(self.panes.get(id), Some(crate::PaneKind::Terminal(_))));
+        }
+
+        // Update focus if the moved Pane was focused.
         if self.focus.focused == Some(pane_id)
             || all_panes_to_move.contains(&self.focus.focused.unwrap_or(0))
         {
-            self.focus.focused = self.layout.pane_ids().into_iter().next();
+            self.focus.focused = remaining_stage_panes.first().copied();
             if let Some(id) = self.focus.focused {
                 self.router.set_focused(id);
             }
+            self.focus.focus_area = FocusArea::Stage;
         }
 
         // Set focus in target workspace
         let target_ws = &mut self.ws.workspaces[target_idx];
         target_ws.focused = Some(pane_id);
+        while self.ws.workspace_extras.len() <= target_idx {
+            self.ws.workspace_extras.push(WorkspaceExtras::new());
+        }
+        self.ws.workspace_extras[target_idx].focus_area = FocusArea::Stage;
+        if self.ws.workspace_extras[target_idx].zoomed_pane.is_some() {
+            self.ws.workspace_extras[target_idx].zoomed_pane = Some(pane_id);
+        }
+        if moving_terminal {
+            self.ws.workspace_extras[target_idx].stage_focused = Some(pane_id);
+        }
 
         // Transfer ContextArtifacts only when the owning terminal moves with the pane.
         // Otherwise leave them in the source Workspace so terminal ownership stays intact.

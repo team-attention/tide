@@ -136,6 +136,11 @@
 - **Business Rules**:
   - BR-16: Moving a terminal to another Workspace moves all its associated Panes together
   - BR-17: Moving a non-terminal Pane alone does NOT move its associated terminal
+  - BR-18: Moving a Terminal Context Surface Pane alone removes it from the source Terminal's `dock_layout` before adding it to the target Workspace Stage
+  - BR-19: Moving a terminal keeps its Terminal Context Surface Panes exclusively in the terminal's `dock_layout`; they are not duplicated in the target Workspace Stage
+  - BR-20: Moving the source Workspace's focused Stage terminal repairs source focus to a remaining Stage terminal and focuses the moved terminal in the target Workspace Stage
+  - BR-21: A terminal's `dock_layout` is the ownership source when moving its context Panes, even if association metadata is missing
+  - BR-22: Moving a context Pane alone retains a snapshot of its Associated Terminal context for use in the target Workspace
 
 ## Invariants
 
@@ -166,6 +171,12 @@
 | UC-5 | BR-15 | `retained context_terminal_cleaned_up_when_all_associated_panes_closed` |
 | UC-6 | BR-16 | `moving_terminal_to_workspace_moves_associated_panes_together` |
 | UC-6 | BR-17 | `moving_non_terminal_pane_alone_does_not_move_associated_terminal` |
+| UC-6 | BR-18 | `moving_context_pane_to_workspace_removes_source_terminal_context_slot` |
+| UC-6 | BR-19 | `moving_terminal_to_workspace_does_not_duplicate_context_panes_in_stage` |
+| UC-6 | BR-20 | `moving_focused_terminal_to_workspace_repairs_stage_focus_in_both_workspaces` |
+| UC-6 | BR-21 | `moving_terminal_to_workspace_uses_context_layout_when_association_is_missing` |
+| UC-6 | BR-21 | `moving_unassociated_context_pane_to_workspace_recovers_association` |
+| UC-6 | BR-22 | `moving_context_pane_to_workspace_retains_terminal_context` |
 
 ## Location
 

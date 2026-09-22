@@ -241,6 +241,85 @@ fn toggling_workspace_sidebar_toggles_visibility() {
     assert!(!app.ws.show_sidebar);
 }
 
+// --- UC-4: MovePaneToWorkspace ---
+
+#[test]
+fn moving_last_stage_pane_to_workspace_leaves_launcher_in_source() {
+    // UC-4 BR-15: Moving the last Stage Pane leaves a Launcher in the source Workspace.
+    let mut app = test_app();
+    let (layout, pane_id) = SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.panes
+        .insert(pane_id, PaneKind::Editor(EditorPane::new_empty(pane_id)));
+    app.focus.focused = Some(pane_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.ws.workspaces.push(Workspace {
+        name: "Source".into(),
+        layout: SplitLayout::new(),
+        focused: None,
+        panes: HashMap::new(),
+    });
+    app.ws.workspaces.push(Workspace {
+        name: "Target".into(),
+        layout: SplitLayout::new(),
+        focused: None,
+        panes: HashMap::new(),
+    });
+    app.ws.active = 0;
+
+    app.move_pane_to_workspace(pane_id, 1);
+    app.switch_workspace(0);
+
+    let source_ids = app.layout.all_pane_ids();
+    assert_eq!(source_ids.len(), 1);
+    assert!(matches!(
+        app.panes.get(&source_ids[0]),
+        Some(PaneKind::Launcher(_))
+    ));
+    assert_eq!(app.focus.focused, Some(source_ids[0]));
+}
+
+#[test]
+fn moving_pane_to_stacked_workspace_makes_it_visible() {
+    // UC-4 BR-16: A moved Pane replaces the visible Pane in a stacked target Workspace.
+    let mut app = test_app();
+    let (source_layout, moved) = SplitLayout::with_initial_pane_id(100);
+    app.layout = source_layout;
+    app.panes
+        .insert(moved, PaneKind::Editor(EditorPane::new_empty(moved)));
+    app.focus.focused = Some(moved);
+
+    let (target_layout, existing) = SplitLayout::with_initial_pane_id(200);
+    let mut target_panes = HashMap::new();
+    target_panes.insert(existing, PaneKind::Editor(EditorPane::new_empty(existing)));
+    app.ws.workspaces.push(Workspace {
+        name: "Source".into(),
+        layout: SplitLayout::new(),
+        focused: None,
+        panes: HashMap::new(),
+    });
+    app.ws.workspaces.push(Workspace {
+        name: "Target".into(),
+        layout: target_layout,
+        focused: Some(existing),
+        panes: target_panes,
+    });
+    app.ws.workspace_extras = vec![crate::WorkspaceExtras::new(), {
+        let mut extras = crate::WorkspaceExtras::new();
+        extras.zoomed_pane = Some(existing);
+        extras
+    }];
+    app.ws.active = 0;
+
+    app.move_pane_to_workspace(moved, 1);
+
+    assert_eq!(app.focus.zoomed_pane, Some(moved));
+    assert_eq!(
+        app.pane_rects.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+        vec![moved]
+    );
+}
+
 // Spec: docs/specs/rename-workspaces.md
 //
 // --- UC-1: RenameWorkspace ---

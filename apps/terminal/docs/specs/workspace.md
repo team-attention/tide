@@ -85,13 +85,17 @@ the restored active Workspace.
 - **Precondition**: Source Pane exists, target Workspace differs from current
 - **Flow**:
   1. Remove Pane from current layout + panes
-  2. save_active_workspace()
-  3. Switch to target Workspace
-  4. load_active_workspace()
-  5. Insert Pane into loaded panes + layout
-  6. Focus the dragged Pane
-  7. Full invalidation + compute_layout()
+  2. If the source Stage becomes empty, insert a Launcher Pane
+  3. save_active_workspace()
+  4. Switch to target Workspace
+  5. load_active_workspace()
+  6. Insert Pane into loaded panes + layout
+  7. Focus the dragged Pane
+  8. Full invalidation + compute_layout()
 - **Postcondition**: Pane moved to target Workspace, which is now active
+- **Business Rules**:
+  - BR-15: Moving the last Stage Pane leaves a Launcher Pane in the source Workspace instead of an empty Stage
+  - BR-16: Moving a Pane into a Workspace in Stacked mode makes the moved Pane the visible stacked Pane
 
 ## Invariants
 
@@ -119,6 +123,8 @@ the restored active Workspace.
 | UC-1: SwitchWorkspace | BR-11 | `switching_workspace_preserves_zoomed_pane` |
 | UC-1: SwitchWorkspace | BR-12 | `switching_workspace_preserves_focus_area` |
 | UC-1: SwitchWorkspace | BR-14 | `save_active_workspace_hides_browser_native_view_before_cold_storage` |
+| UC-4: MovePaneToWorkspace | BR-15 | `moving_last_stage_pane_to_workspace_leaves_launcher_in_source` |
+| UC-4: MovePaneToWorkspace | BR-16 | `moving_pane_to_stacked_workspace_makes_it_visible` |
 
 ## Location
 

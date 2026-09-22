@@ -3,10 +3,13 @@ use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalContext};
 use crate::state::FocusArea;
 use crate::tide_core::LayoutEngine;
+use crate::tide_layout::SplitLayout;
+use crate::update::workspace_infra_service::Workspace;
 use crate::ActionPort;
 use crate::App;
 use crate::DockPort;
 use crate::PaneLifecyclePort;
+use std::collections::HashMap;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -276,4 +279,180 @@ fn retained_context_not_cleaned_up_while_panes_still_reference_it() {
     // Cleanup check — should NOT remove since other_id still references it
     app.cleanup_retained_context(0); // dummy closed pane id
     assert!(app.assoc.retained_contexts.contains_key(&terminal_id));
+}
+
+// --- UC-6: MoveTerminalToWorkspace ---
+
+fn app_with_terminal_context_and_target_workspace() -> (App, u64, u64, u64) {
+    let mut app = test_app();
+    let (layout, terminal_id) = SplitLayout::with_initial_pane();
+    app.layout = layout;
+
+    let mut terminal =
+        crate::pane::TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    let first = app.layout.alloc_id();
+    let second = app.layout.alloc_id();
+    terminal
+        .dock_layout
+        .insert_at_root(first, crate::tide_core::DropZone::Right);
+    terminal
+        .dock_layout
+        .insert_at_root(second, crate::tide_core::DropZone::Right);
+    terminal.dock_focused = Some(first);
+
+    app.panes.insert(terminal_id, PaneKind::Terminal(terminal));
+    app.panes
+        .insert(first, PaneKind::Editor(EditorPane::new_empty(first)));
+    app.panes
+        .insert(second, PaneKind::Editor(EditorPane::new_empty(second)));
+    app.assoc.associated_terminal.insert(first, terminal_id);
+    app.assoc.associated_terminal.insert(second, terminal_id);
+    app.focus.focused = Some(first);
+    app.focus.stage_focused = Some(terminal_id);
+    app.focus.focus_area = FocusArea::Dock;
+
+    app.ws.workspaces.push(Workspace {
+        name: "Source".into(),
+        layout: SplitLayout::new(),
+        focused: None,
+        panes: HashMap::new(),
+    });
+    app.ws.workspaces.push(Workspace {
+        name: "Target".into(),
+        layout: SplitLayout::new(),
+        focused: None,
+        panes: HashMap::new(),
+    });
+    app.ws.active = 0;
+
+    (app, terminal_id, first, second)
+}
+
+#[test]
+fn moving_context_pane_to_workspace_removes_source_terminal_context_slot() {
+    // UC-6 BR-18: A moved context Pane leaves no empty slot in the source Terminal Context Surface.
+    let (mut app, terminal_id, moved, remaining) = app_with_terminal_context_and_target_workspace();
+
+    app.move_pane_to_workspace(moved, 1);
+    app.switch_workspace(0);
+
+    let terminal = match app.panes.get(&terminal_id) {
+        Some(PaneKind::Terminal(terminal)) => terminal,
+        _ => panic!("expected source Terminal"),
+    };
+    assert_eq!(terminal.dock_layout.all_pane_ids(), vec![remaining]);
+    assert!(terminal
+        .dock_layout
+        .all_pane_ids()
+        .iter()
+        .all(|pane_id| app.panes.contains_key(pane_id)));
+}
+
+#[test]
+fn moving_terminal_to_workspace_does_not_duplicate_context_panes_in_stage() {
+    // UC-6 BR-19: Context Panes moving with a Terminal remain exclusively in its Terminal Context Surface.
+    let (mut app, terminal_id, first, second) = app_with_terminal_context_and_target_workspace();
+
+    app.move_pane_to_workspace(terminal_id, 1);
+
+    assert_eq!(app.layout.all_pane_ids(), vec![terminal_id]);
+    let terminal = match app.panes.get(&terminal_id) {
+        Some(PaneKind::Terminal(terminal)) => terminal,
+        _ => panic!("expected moved Terminal"),
+    };
+    assert_eq!(terminal.dock_layout.all_pane_ids(), vec![first, second]);
+}
+
+#[test]
+fn moving_focused_terminal_to_workspace_repairs_stage_focus_in_both_workspaces() {
+    // UC-6 BR-20: Cross-Workspace terminal moves leave valid Stage focus in source and target.
+    let (mut app, moved_terminal, _first, _second) =
+        app_with_terminal_context_and_target_workspace();
+    let remaining_terminal = app
+        .layout
+        .split(moved_terminal, crate::tide_core::SplitDirection::Vertical);
+    let mut terminal =
+        crate::pane::TerminalPane::with_cwd(remaining_terminal, 80, 24, None, true).unwrap();
+    let remaining_context = app.layout.alloc_id();
+    terminal
+        .dock_layout
+        .insert_at_root(remaining_context, crate::tide_core::DropZone::Right);
+    terminal.dock_focused = Some(remaining_context);
+    app.panes
+        .insert(remaining_terminal, PaneKind::Terminal(terminal));
+    app.panes.insert(
+        remaining_context,
+        PaneKind::Editor(EditorPane::new_empty(remaining_context)),
+    );
+    app.assoc
+        .associated_terminal
+        .insert(remaining_context, remaining_terminal);
+    app.dock.dock_open = true;
+    app.focus.stage_focused = Some(moved_terminal);
+
+    app.move_pane_to_workspace(moved_terminal, 1);
+
+    assert_eq!(app.focus.focused, Some(moved_terminal));
+    assert_eq!(app.focus.stage_focused, Some(moved_terminal));
+    assert_eq!(app.focus.focus_area, FocusArea::Stage);
+
+    app.switch_workspace(0);
+
+    assert_eq!(app.focus.focused, Some(remaining_terminal));
+    assert_eq!(app.focus.stage_focused, Some(remaining_terminal));
+    assert!(app
+        .pane_rects
+        .iter()
+        .all(|(pane_id, _)| app.panes.contains_key(pane_id)));
+}
+
+#[test]
+fn moving_terminal_to_workspace_uses_context_layout_when_association_is_missing() {
+    // UC-6 BR-21: Terminal Context Surface ownership survives incomplete association metadata.
+    let (mut app, terminal_id, unassociated_context, associated_context) =
+        app_with_terminal_context_and_target_workspace();
+    app.assoc.associated_terminal.remove(&unassociated_context);
+
+    app.move_pane_to_workspace(terminal_id, 1);
+
+    assert!(app.panes.contains_key(&unassociated_context));
+    assert!(app.panes.contains_key(&associated_context));
+    let terminal = match app.panes.get(&terminal_id) {
+        Some(PaneKind::Terminal(terminal)) => terminal,
+        _ => panic!("expected moved Terminal"),
+    };
+    assert_eq!(
+        terminal.dock_layout.all_pane_ids(),
+        vec![unassociated_context, associated_context]
+    );
+}
+
+#[test]
+fn moving_unassociated_context_pane_to_workspace_recovers_association() {
+    // UC-6 BR-21: dock_layout ownership repairs missing association metadata before a move.
+    let (mut app, terminal_id, moved, _remaining) =
+        app_with_terminal_context_and_target_workspace();
+    app.assoc.associated_terminal.remove(&moved);
+
+    app.move_pane_to_workspace(moved, 1);
+
+    assert_eq!(app.assoc.associated_terminal.get(&moved), Some(&terminal_id));
+}
+
+#[test]
+fn moving_context_pane_to_workspace_retains_terminal_context() {
+    // UC-6 BR-22: A context Pane moved alone can still resolve its source Terminal context.
+    let (mut app, terminal_id, moved, _remaining) =
+        app_with_terminal_context_and_target_workspace();
+    let expected_cwd = std::path::PathBuf::from("/tmp/source-terminal-context");
+    match app.panes.get_mut(&terminal_id) {
+        Some(PaneKind::Terminal(terminal)) => {
+            terminal.context.cwd = Some(expected_cwd.clone());
+        }
+        _ => panic!("expected source Terminal"),
+    }
+
+    app.move_pane_to_workspace(moved, 1);
+
+    assert_eq!(app.focused_terminal_cwd(), Some(expected_cwd));
 }
