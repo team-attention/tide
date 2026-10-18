@@ -16,7 +16,7 @@ import type { AgentRuntimeRateLimitDto } from "../../../../../shared/contracts/a
 import { acpUsageFromRecord } from "./acp-usage.ts";
 import { usageWithRememberedRateLimits, type StructuredUsagePayload } from "./structured-usage.ts";
 import { createUpdateNoticeScanner } from "./agent-update-notice.ts";
-import { acpOptionKind, buildAcpPermissionDetail } from "./acp-permission.ts";
+import { acpOptionKind, buildAcpPermissionDetail, enrichAcpPermissionToolCall, type AcpToolCallContext } from "./acp-permission.ts";
 import { cancelAcpPermissionRequest, writeUnsupportedAcpServerRequest } from "./acp-server-request.ts";
 import { planActivityFromEntries, planActivityFromTodoToolOutput } from "./plan-activity.ts";
 import { acpPlanContentRecord, withGoalPreamble } from "./structured-plan-goal.ts";
@@ -110,6 +110,9 @@ class AcpClient implements StructuredRuntimeClient {
     { onResponse: (message: Record<string, unknown>) => void; timer?: NodeJS.Timeout }
   >();
   private readonly pendingPermissions = new Map<string, number | string>();
+  // Display context per `toolCallId` from `session/update.tool_call`(_update), cached so
+  // a sparse `session/request_permission` can backfill its title/content/locations.
+  private readonly toolCallContexts = new Map<string, AcpToolCallContext>();
   private lastRateLimits?: AgentRuntimeRateLimitDto[];
   private activeDeliveryId?: string;
   private readonly readiness: Promise<void>;
@@ -616,6 +619,7 @@ class AcpClient implements StructuredRuntimeClient {
       const title = stringField(update, "title") ?? "tool";
       const status = stringField(update, "status");
       const blockId = `structured:${this.runtimeId}:tool:${toolCallId}`;
+      this.rememberToolCallContext(toolCallId, update);
       if (kind === "tool_call") {
         this.onEvent({
           kind: "content_record",
@@ -695,9 +699,30 @@ class AcpClient implements StructuredRuntimeClient {
     this.thoughtBuffer = "";
   }
 
+  // Merge a `tool_call` / `tool_call_update`'s display fields into the cached context
+  // for this `toolCallId` (a later update may carry content/locations the first lacked).
+  // Only real fields are stored — absent title/content/locations never clobber earlier ones.
+  private rememberToolCallContext(toolCallId: string, update: Record<string, unknown>): void {
+    const existing = this.toolCallContexts.get(toolCallId);
+    const title = stringField(update, "title");
+    const content = Array.isArray(update.content) ? update.content : undefined;
+    const locations = Array.isArray(update.locations) ? update.locations : undefined;
+    this.toolCallContexts.set(toolCallId, {
+      title: title ?? existing?.title,
+      content: content ?? existing?.content,
+      locations: locations ?? existing?.locations,
+    });
+  }
+
   private surfacePermission(serverRequestId: number | string, params: Record<string, unknown>): void {
-    const toolCall = isRecord(params.toolCall) ? params.toolCall : {};
-    const title = stringField(toolCall, "title") ?? "Allow this tool?";
+    const rawToolCall = isRecord(params.toolCall) ? params.toolCall : {};
+    const callId = stringField(rawToolCall, "toolCallId");
+    // Backfill title/content/locations from the matching tool_call update when the
+    // permission request omits them (some ACP agents send a sparse toolCall).
+    const { title, toolCall } = enrichAcpPermissionToolCall(
+      rawToolCall,
+      callId !== undefined ? this.toolCallContexts.get(callId) : undefined,
+    );
     const options = Array.isArray(params.options) ? params.options : [];
     const choices: PromptChoice[] = options
       .map((option) => {
@@ -743,7 +768,8 @@ class AcpClient implements StructuredRuntimeClient {
     const allowOnce =
       choices.find((choice) => choice.kind === "allow_once") ??
       choices.find((choice) => choice.choiceId === "proceed_once");
-    // The diff/command preview + affected paths behind this permission (ACP toolCall).
+    // The diff/command preview + affected paths behind this permission (ACP toolCall,
+    // backfilled from the matching tool_call update when the request was sparse).
     const detail = buildAcpPermissionDetail(toolCall);
     const promptState: PromptState = {
       promptId,
@@ -755,6 +781,11 @@ class AcpClient implements StructuredRuntimeClient {
       choices,
       defaultChoiceId: (allowOnce ?? choices[0]).choiceId,
       source: "provider_hook",
+      // Link the card to the tool_call block it gates (same callId/blockId the
+      // content_record reports) so the transcript can correlate them.
+      ...(callId !== undefined
+        ? { nativeIds: { callId, blockId: `structured:${this.runtimeId}:tool:${callId}` } }
+        : {}),
     };
     this.onEvent({ kind: "prompt", promptState });
   }

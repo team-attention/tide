@@ -10,6 +10,37 @@ function bounded(text: string): string {
   return text.length > 4000 ? `${text.slice(0, 4000)}…` : text;
 }
 
+// The display context a `session/update.tool_call` / `tool_call_update` carried for a
+// given `toolCallId`. Cached so a later `session/request_permission` that omits
+// `title`/`content`/`locations` can backfill them (some ACP agents, e.g. vibe-acp,
+// send a sparse permission `toolCall` even though the preceding tool_call update had
+// the full title and diff/command preview).
+export interface AcpToolCallContext {
+  title?: string;
+  content?: unknown;
+  locations?: unknown;
+}
+
+// Backfill a sparse ACP permission `toolCall` from the matching tool_call context.
+// Explicit permission fields always win over the cached context; the title falls back
+// to the generic prompt only when neither source has one. Returns the merged toolCall
+// (for `buildAcpPermissionDetail`) and the `toolCallId` (for nativeIds linking).
+export function enrichAcpPermissionToolCall(
+  toolCall: Record<string, unknown>,
+  context: AcpToolCallContext | undefined,
+): { title: string; toolCall: Record<string, unknown>; callId?: string } {
+  const callId = stringField(toolCall, "toolCallId");
+  const title = stringField(toolCall, "title") ?? context?.title ?? "Allow this tool?";
+  const merged: Record<string, unknown> = { ...toolCall };
+  if (!Array.isArray(toolCall.content) && context?.content !== undefined) {
+    merged.content = context.content;
+  }
+  if (!Array.isArray(toolCall.locations) && context?.locations !== undefined) {
+    merged.locations = context.locations;
+  }
+  return { title, toolCall: merged, callId };
+}
+
 // Map an ACP permission option's native `kind` to our PromptChoiceKind (identical strings;
 // validated so an unexpected value degrades to undefined rather than a bad cast).
 export function acpOptionKind(option: Record<string, unknown>): PromptChoiceKind | undefined {
