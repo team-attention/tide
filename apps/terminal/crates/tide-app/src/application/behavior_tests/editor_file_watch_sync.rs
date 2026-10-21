@@ -86,6 +86,29 @@ fn app_with_file_backed_editor(path: &Path) -> (App, u64) {
     (app, id)
 }
 
+#[test]
+fn occluded_window_consumes_editor_file_watch_events_without_rendering() {
+    let fixture_root = temp_fixture_dir("occluded");
+    std::fs::create_dir_all(&fixture_root).unwrap();
+    let file_path = fixture_root.join("note.md");
+    std::fs::write(&file_path, "before\n").unwrap();
+    let watched = Arc::new(Mutex::new(Vec::new()));
+    let watcher =
+        RecordingFileWatcher::new(vec![FileWatchEvent::Modified(file_path.clone())], watched);
+    let (mut app, id) = app_with_file_backed_editor(&file_path);
+    app.ports.file_watcher = Box::new(watcher);
+    app.window.is_occluded = true;
+    std::fs::write(&file_path, "after\n").unwrap();
+
+    app.drain_editor_file_watch_events();
+
+    let Some(PaneKind::Editor(pane)) = app.panes.get(&id) else {
+        panic!("expected editor pane")
+    };
+    assert_eq!(pane.editor.buffer.lines, vec!["after".to_string()]);
+    let _ = std::fs::remove_dir_all(fixture_root);
+}
+
 // --- UC-1: ReloadCleanEditorPaneFromEquivalentWatchPath ---
 
 #[test]
@@ -259,15 +282,18 @@ fn file_watch_event_triggers_git_poll_for_retained_editor_context() {
     app.assoc.retained_contexts.insert(terminal_id, retained);
 
     let (tx, rx) = std::sync::mpsc::channel();
-    app.bg.git_poll_cwd_tx = Some(tx);
+    app.bg.git_worker_tx = Some(tx);
 
     std::fs::write(&real_path, "after\n").unwrap();
     app.update();
 
-    let requests = rx.try_recv().expect("expected git poll trigger");
+    let requests = match rx.try_recv().expect("expected git refresh trigger") {
+        crate::state::background::GitWorkerMessage::Refresh(requests) => requests,
+        crate::state::background::GitWorkerMessage::Shutdown => panic!("unexpected shutdown"),
+    };
     assert!(
         requests.iter().any(|r| r.cwd == repo_root),
-        "git poll should include the retained editor context cwd"
+        "git refresh should include the retained editor context cwd"
     );
 
     let _ = std::fs::remove_dir_all(fixture_root);

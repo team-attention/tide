@@ -253,12 +253,14 @@ fn deleting_git_switcher_worktree_uses_the_main_worktree_as_git_root() {
         .try_recv()
         .expect("delete should dispatch a worktree job");
     match job {
+        crate::state::background::WorktreeWorkerMessage::Work(
         crate::state::background::WorktreeJob::Remove {
             main_cwd,
             wt_path,
             delete_branch,
             force,
-        } => {
+            },
+        ) => {
             assert_eq!(main_cwd, main_worktree);
             assert_eq!(wt_path, delete_worktree);
             assert_eq!(delete_branch, Some("feature/delete".to_string()));
@@ -350,7 +352,7 @@ fn git_switcher_open_falls_back_to_sync_list_on_cold_cache() {
 fn dispatch_worktree_add_sends_job_without_blocking() {
     // UC-6 BR-22: a worktree mutation is handed to the background worker (no
     // synchronous git on the app thread).
-    use crate::state::background::{WorktreeFollowUp, WorktreeJob};
+    use crate::state::background::{WorktreeFollowUp, WorktreeJob, WorktreeWorkerMessage};
     let mut app = test_app();
     let (job_tx, job_rx) = std::sync::mpsc::channel();
     app.bg.worktree_job_tx = Some(job_tx);
@@ -368,12 +370,12 @@ fn dispatch_worktree_add_sends_job_without_blocking() {
         .try_recv()
         .expect("add should dispatch a worktree job");
     match job {
-        WorktreeJob::Add {
+        WorktreeWorkerMessage::Work(WorktreeJob::Add {
             branch,
             new_branch,
             follow_up,
             ..
-        } => {
+        }) => {
             assert_eq!(branch, "feat");
             assert!(new_branch);
             assert!(matches!(

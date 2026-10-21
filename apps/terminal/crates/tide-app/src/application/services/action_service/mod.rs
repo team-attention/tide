@@ -264,7 +264,10 @@ impl App {
         }
     }
 
-    #[expect(clippy::too_many_arguments, reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix.")]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Keep the existing rendering or runtime boundary signature stable in this correctness fix."
+    )]
     fn insert_context_artifact(
         &mut self,
         source_pane_id: crate::tide_core::PaneId,
@@ -1060,7 +1063,9 @@ impl crate::application::ports::inward::ActionPort for App {
                                 }
                                 // Refresh git status on save (async via git poller)
                                 if is_save {
-                                    self.trigger_git_poll();
+                                    self.request_git_refresh(
+                                        crate::state::background::GitRefreshCause::TideMutation,
+                                    );
                                     self.notify_lsp_did_save(id);
                                 }
                                 // Invalidate cached pane texture and request redraw
@@ -1148,11 +1153,7 @@ impl crate::application::ports::inward::ActionPort for App {
                                 .iter()
                                 .find(|(pid, _)| *pid == id)
                                 .map(|(_, r)| {
-                                    pane.content_rect_with_pane_bar(
-                                        *r,
-                                        save_confirm_pane_id,
-                                        cs,
-                                    )
+                                    pane.content_rect_with_pane_bar(*r, save_confirm_pane_id, cs)
                                 });
                             let (visible_rows, _) = content_rect
                                 .map(|rect| pane.viewport_size_for_content_rect(rect, cs))
@@ -1182,11 +1183,7 @@ impl crate::application::ports::inward::ActionPort for App {
                                 .iter()
                                 .find(|(pid, _)| *pid == id)
                                 .map(|(_, r)| {
-                                    pane.content_rect_with_pane_bar(
-                                        *r,
-                                        save_confirm_pane_id,
-                                        cs,
-                                    )
+                                    pane.content_rect_with_pane_bar(*r, save_confirm_pane_id, cs)
                                 });
                             let (visible_rows, visible_cols) = content_rect
                                 .map(|rect| pane.viewport_size_for_content_rect(rect, cs))

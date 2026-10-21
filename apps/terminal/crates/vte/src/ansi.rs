@@ -492,7 +492,21 @@ pub trait Timeout: Default {
 ///
 /// XXX Should probably not provide default impls for everything, but it makes
 /// writing specific handler impls for tests far easier.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CommandBoundary {
+    PromptStart,
+    CommandLine,
+    CommandStart,
+    CommandFinished(Option<i32>),
+}
+
 pub trait Handler {
+    /// OSC 7: Working directory URI.
+    fn set_working_directory(&mut self, _uri: &str) {}
+
+    /// OSC 133: Shell command lifecycle boundary.
+    fn command_boundary(&mut self, _boundary: CommandBoundary, _params: &[String]) {}
+
     /// OSC 9: Terminal notification.
     fn osc_notification(&mut self, _message: &str) {}
 
@@ -1349,6 +1363,21 @@ where
         }
 
         match params[0] {
+            // Working directory URI (OSC 7).
+            b"7" => {
+                if params.len() >= 2 {
+                    if let Ok(parts) = params[1..]
+                        .iter()
+                        .map(|param| str::from_utf8(param))
+                        .collect::<Result<Vec<_>, _>>()
+                    {
+                        self.handler.set_working_directory(&parts.join(";"));
+                        return;
+                    }
+                }
+                unhandled(params);
+            },
+
             // Terminal notification (OSC 9).
             b"9" => {
                 if params.len() >= 2 {
@@ -1358,6 +1387,37 @@ where
                         .collect::<Vec<&str>>()
                         .join(";");
                     self.handler.osc_notification(&msg);
+                }
+            },
+
+            // Shell integration command boundary (OSC 133).
+            b"133" => {
+                if params.len() < 2 {
+                    return unhandled(params);
+                }
+
+                let (boundary, extension_start) = match params[1] {
+                    b"A" => (CommandBoundary::PromptStart, 2),
+                    b"B" => (CommandBoundary::CommandLine, 2),
+                    b"C" => (CommandBoundary::CommandStart, 2),
+                    b"D" => match params.get(2).and_then(|status| str::from_utf8(status).ok()) {
+                        Some(status) => match status.parse::<i32>() {
+                            Ok(status) => (CommandBoundary::CommandFinished(Some(status)), 3),
+                            Err(_) => (CommandBoundary::CommandFinished(None), 2),
+                        },
+                        None => (CommandBoundary::CommandFinished(None), 2),
+                    },
+                    _ => return unhandled(params),
+                };
+
+                if let Ok(params) = params[extension_start..]
+                    .iter()
+                    .map(|param| str::from_utf8(param).map(str::to_owned))
+                    .collect::<Result<Vec<_>, _>>()
+                {
+                    self.handler.command_boundary(boundary, &params);
+                } else {
+                    unhandled(params);
                 }
             },
 
@@ -2061,6 +2121,8 @@ mod tests {
         identity_reported: bool,
         color: Option<Rgb>,
         reset_colors: Vec<usize>,
+        working_directory: Option<String>,
+        command_boundaries: Vec<(CommandBoundary, Vec<String>)>,
     }
 
     impl Handler for MockHandler {
@@ -2092,6 +2154,14 @@ mod tests {
         fn reset_color(&mut self, index: usize) {
             self.reset_colors.push(index)
         }
+
+        fn set_working_directory(&mut self, uri: &str) {
+            self.working_directory = Some(uri.to_owned());
+        }
+
+        fn command_boundary(&mut self, boundary: CommandBoundary, params: &[String]) {
+            self.command_boundaries.push((boundary, params.to_vec()));
+        }
     }
 
     impl Default for MockHandler {
@@ -2103,8 +2173,60 @@ mod tests {
                 identity_reported: false,
                 color: None,
                 reset_colors: Vec::new(),
+                working_directory: None,
+                command_boundaries: Vec::new(),
+            }
             }
         }
+
+    #[test]
+    fn osc_7_and_133_dispatch_typed_handler_calls() {
+        let mut parser = Processor::<TestSyncHandler>::new();
+        let mut handler = MockHandler::default();
+
+        parser.advance(&mut handler, b"\x1b]7;file://localhost/tmp/a%20b;part\x1b\\");
+        parser.advance(&mut handler, b"\x1b]133;A;tide_nonce=n\x07");
+        parser.advance(&mut handler, b"\x1b]133;B;tide_nonce=n\x1b\\");
+        parser.advance(&mut handler, b"\x1b]133;C;tide_nonce=n;source=tide\x07");
+        parser.advance(&mut handler, b"\x1b]133;D;17;tide_nonce=n\x1b\\");
+        parser.advance(&mut handler, b"\x1b]133;D;tide_nonce=n\x07");
+
+        assert_eq!(
+            handler.working_directory.as_deref(),
+            Some("file://localhost/tmp/a%20b;part")
+        );
+        assert_eq!(
+            handler.command_boundaries,
+            vec![
+                (CommandBoundary::PromptStart, vec!["tide_nonce=n".into()]),
+                (CommandBoundary::CommandLine, vec!["tide_nonce=n".into()]),
+                (
+                    CommandBoundary::CommandStart,
+                    vec!["tide_nonce=n".into(), "source=tide".into()],
+                ),
+                (
+                    CommandBoundary::CommandFinished(Some(17)),
+                    vec!["tide_nonce=n".into()],
+                ),
+                (
+                    CommandBoundary::CommandFinished(None),
+                    vec!["tide_nonce=n".into()],
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn malformed_osc_7_and_133_are_ignored() {
+        let mut parser = Processor::<TestSyncHandler>::new();
+        let mut handler = MockHandler::default();
+
+        parser.advance(&mut handler, b"\x1b]7\x07");
+        parser.advance(&mut handler, b"\x1b]133\x07");
+        parser.advance(&mut handler, b"\x1b]133;X;tide_nonce=n\x1b\\");
+
+        assert_eq!(handler.working_directory, None);
+        assert!(handler.command_boundaries.is_empty());
     }
 
     #[test]

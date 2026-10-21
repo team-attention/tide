@@ -60,6 +60,10 @@ impl ProcessPort for SystemProcess {
             std::process::Command::new(exe).spawn().map(|_| ())
         }
     }
+
+    fn detect_agent(&self, shell_pid: u32) -> Option<crate::state::gateway_status::AgentInfo> {
+        crate::state::gateway_status::detect_agent(shell_pid)
+    }
 }
 
 /// Noop process launcher for tests.

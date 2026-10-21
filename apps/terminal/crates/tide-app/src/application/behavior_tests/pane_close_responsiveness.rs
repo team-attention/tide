@@ -101,8 +101,8 @@ impl GitPort for CountingGit {
 // --- UC-1: CacheCurrentWorktreeForTerminalPane ---
 
 #[test]
-fn consume_git_poll_results_updates_terminal_current_worktree_context() {
-    // UC-1 BR-1: consume_git_poll_results copies the current WorktreeInfo into TerminalContext
+fn consume_git_refresh_results_updates_terminal_current_worktree_context() {
+    // UC-1 BR-1: consume_git_refresh_results copies the current WorktreeInfo into TerminalContext
     let (mut app, terminal_id, _editor_id) = app_with_stage_terminal_and_editor();
     let cwd = PathBuf::from("/tmp/tide-pane-close-cache");
     if let Some(PaneKind::Terminal(pane)) = app.panes.get_mut(&terminal_id) {
@@ -110,7 +110,7 @@ fn consume_git_poll_results_updates_terminal_current_worktree_context() {
     }
 
     let (tx, rx) = std::sync::mpsc::channel();
-    app.bg.git_poll_rx = Some(rx);
+    app.bg.git_refresh_rx = Some(rx);
 
     let current_worktree = WorktreeInfo {
         path: cwd.clone(),
@@ -119,10 +119,10 @@ fn consume_git_poll_results_updates_terminal_current_worktree_context() {
         is_main: false,
         is_current: true,
     };
-    let mut results: crate::state::background::GitPollResults = HashMap::new();
+    let mut results: crate::state::background::GitRefreshResults = HashMap::new();
     results.insert(
         cwd.clone(),
-        crate::state::background::GitPollCwdResult {
+        crate::state::background::GitRefreshRepoResult {
             git_info: Some(GitInfo {
                 branch: "feature/cache-close".to_string(),
                 status: GitStatus::default(),
@@ -131,6 +131,7 @@ fn consume_git_poll_results_updates_terminal_current_worktree_context() {
             current_worktree: Some(current_worktree.clone()),
             worktrees: vec![current_worktree.clone()],
             repo_root: Some(PathBuf::from("/tmp/tide-main-repo")),
+            repository_watch_paths: None,
             status_entries: vec![],
             diff_files: None,
             diff_cache: None,
@@ -138,7 +139,7 @@ fn consume_git_poll_results_updates_terminal_current_worktree_context() {
     );
     tx.send(results).unwrap();
 
-    assert!(app.consume_git_poll_results());
+    assert!(app.consume_git_refresh_results());
     let pane = match app.panes.get(&terminal_id) {
         Some(PaneKind::Terminal(pane)) => pane,
         _ => panic!("expected terminal pane"),

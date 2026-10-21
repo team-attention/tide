@@ -5,8 +5,8 @@ use crate::tide_core::{FileEntry, FileTreeSource, TreeEntry};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
-use std::time::Instant;
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::{Duration, Instant};
 use unicode_normalization::UnicodeNormalization;
 
 /// Reads a directory and returns sorted FileEntry items.
@@ -61,10 +61,17 @@ pub struct FsTree {
     watcher: Option<RecommendedWatcher>,
     /// Channel receiving raw filesystem events from the watcher.
     event_rx: Option<mpsc::Receiver<notify::Result<notify::Event>>>,
-    /// Timestamp of the last processed event batch, used for debouncing.
-    last_event_time: Option<Instant>,
-    /// True when events arrived during the debounce window and need processing.
-    pending_events: bool,
+    /// Exact deadline for the pending debounced refresh.
+    refresh_at: Option<Instant>,
+    /// Main-thread wake callback shared with the watcher callback.
+    waker: Arc<Mutex<Option<Arc<dyn Fn() + Send + Sync>>>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FsTreeDrain {
+    Idle,
+    WaitingUntil(Instant),
+    Refreshed,
 }
 
 impl FsTree {
@@ -76,57 +83,63 @@ impl FsTree {
             children_cache: HashMap::new(),
             watcher: None,
             event_rx: None,
-            last_event_time: None,
-            pending_events: false,
+            refresh_at: None,
+            waker: Arc::new(Mutex::new(None)),
         };
         tree.set_root(root);
         tree
     }
 
-    /// Call this periodically to process any pending filesystem events.
-    /// Events are debounced: changes within 100ms of the last processed batch
-    /// are deferred and processed once the debounce window expires.
-    pub fn poll_events(&mut self) -> bool {
-        let rx = match self.event_rx.as_ref() {
-            Some(rx) => rx,
-            None => return false,
-        };
-
-        // Drain all pending events from the channel.
-        while let Ok(event_result) = rx.try_recv() {
-            if let Ok(_event) = event_result {
-                self.pending_events = true;
-            }
+    pub fn set_waker(&mut self, waker: Option<Arc<dyn Fn() + Send + Sync>>) {
+        if let Ok(mut current) = self.waker.lock() {
+            *current = waker;
         }
-
-        if !self.pending_events {
-            return false;
-        }
-
-        // Debounce: defer if we processed events less than 100ms ago.
-        let now = Instant::now();
-        if let Some(last) = self.last_event_time {
-            if now.duration_since(last).as_millis() < 100 {
-                return false;
-            }
-        }
-
-        self.pending_events = false;
-        self.last_event_time = Some(now);
-        self.refresh();
-        true
     }
 
-    /// Returns true if there are events waiting for the debounce window to expire.
-    pub fn has_pending_events(&self) -> bool {
-        self.pending_events
+    pub fn next_refresh_deadline(&self) -> Option<Instant> {
+        self.refresh_at
+    }
+
+    pub fn drain_events(&mut self, now: Instant) -> FsTreeDrain {
+        let rx = match self.event_rx.as_ref() {
+            Some(rx) => rx,
+            None => return FsTreeDrain::Idle,
+        };
+
+        let mut received = false;
+        while let Ok(event_result) = rx.try_recv() {
+            if let Ok(_event) = event_result {
+                received = true;
+        }
+            }
+        if received {
+            self.refresh_at = Some(now + Duration::from_millis(100));
+        }
+
+        match self.refresh_at {
+            Some(deadline) if now >= deadline => {
+                self.refresh_at = None;
+        self.refresh();
+                FsTreeDrain::Refreshed
+            }
+            Some(deadline) => FsTreeDrain::WaitingUntil(deadline),
+            None => FsTreeDrain::Idle,
+    }
     }
 
     /// Start (or restart) the filesystem watcher on the current root.
     fn start_watcher(&mut self) {
         let (tx, rx) = mpsc::channel();
+        let waker = self.waker.clone();
 
-        let watcher = notify::recommended_watcher(tx);
+        let watcher = notify::recommended_watcher(move |event| {
+            let _ = tx.send(event);
+            if let Ok(waker) = waker.lock() {
+                if let Some(wake) = waker.as_ref() {
+                    wake();
+                }
+            }
+        });
 
         match watcher {
             Ok(mut w) => {

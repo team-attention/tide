@@ -21,7 +21,7 @@ impl crate::FileOpsPort for App {
         // 2. Any terminal pane's CWD
         for pane in self.panes.values() {
             if let PaneKind::Terminal(p) = pane {
-                if let Some(cwd) = p.backend.detect_cwd_fallback() {
+                if let Some(cwd) = p.context.cwd.clone() {
                     return cwd;
                 }
             }
@@ -141,7 +141,7 @@ impl crate::FileOpsPort for App {
             self.focus.focus_area = crate::state::FocusArea::Dock;
             self.cache.invalidate_chrome();
             self.cache.invalidate_pane(tab_id);
-            self.trigger_git_poll();
+            self.request_git_refresh(crate::state::background::GitRefreshCause::TideMutation);
             return;
         }
 
@@ -172,11 +172,11 @@ impl crate::FileOpsPort for App {
         self.cache.invalidate_chrome();
         self.compute_layout();
         // Ask the poller for this cwd's diff now that a DiffPane wants it.
-        self.trigger_git_poll();
+        self.request_git_refresh(crate::state::background::GitRefreshCause::DiffDemand);
     }
 
-    fn request_git_poll(&self) {
-        self.trigger_git_poll();
+    fn request_git_refresh(&self) {
+        self.request_git_refresh(crate::state::background::GitRefreshCause::DiffDemand);
     }
 }
 
@@ -217,7 +217,9 @@ impl App {
         };
         self.start_workspace_scan_worker();
         if let Some(tx) = &self.bg.workspace_scan_tx {
-            let _ = tx.send(request);
+            let _ = tx.send(crate::state::background::WorkspaceScanMessage::Work(
+                request,
+            ));
         }
         self.cache.invalidate_chrome();
     }
@@ -345,7 +347,9 @@ impl App {
         };
         self.start_workspace_scan_worker();
         if let Some(tx) = &self.bg.workspace_scan_tx {
-            let _ = tx.send(request);
+            let _ = tx.send(crate::state::background::WorkspaceScanMessage::Work(
+                request,
+            ));
         }
     }
 
@@ -385,7 +389,7 @@ impl App {
             return;
         }
         let (req_tx, req_rx) =
-            std::sync::mpsc::channel::<crate::state::background::WorkspaceScanRequest>();
+            std::sync::mpsc::channel::<crate::state::background::WorkspaceScanMessage>();
         let (res_tx, res_rx) =
             std::sync::mpsc::channel::<crate::state::background::WorkspaceScanResult>();
         self.bg.workspace_scan_tx = Some(req_tx);
@@ -405,24 +409,28 @@ impl App {
 }
 
 fn run_workspace_scan_worker(
-    req_rx: std::sync::mpsc::Receiver<crate::state::background::WorkspaceScanRequest>,
+    req_rx: std::sync::mpsc::Receiver<crate::state::background::WorkspaceScanMessage>,
     res_tx: std::sync::mpsc::Sender<crate::state::background::WorkspaceScanResult>,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     waker: Option<crate::tide_platform::WakeCallback>,
 ) {
-    use crate::state::background::{WorkspaceScanRequest, WorkspaceScanResult};
-    while !stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-        let first = match req_rx.recv_timeout(std::time::Duration::from_secs(2)) {
-            Ok(request) => request,
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+    use crate::state::background::{
+        WorkspaceScanMessage, WorkspaceScanRequest, WorkspaceScanResult,
+    };
+    while let Ok(message) = req_rx.recv() {
+        let first = match message {
+            WorkspaceScanMessage::Work(request) => request,
+            WorkspaceScanMessage::Shutdown => break,
         };
 
         // Drain the queued batch. Coalesce searches (only the latest matters,
         // fast typing) but run every symbol-index build.
         let mut batch = vec![first];
         while let Ok(more) = req_rx.try_recv() {
-            batch.push(more);
+            match more {
+                WorkspaceScanMessage::Work(request) => batch.push(request),
+                WorkspaceScanMessage::Shutdown => return,
+            }
         }
         let mut latest_search = None;
         let mut symbol_jobs = Vec::new();

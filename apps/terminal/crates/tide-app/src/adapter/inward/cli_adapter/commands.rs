@@ -1756,10 +1756,7 @@ fn navigation_browser(pane_id: u64, pane: &PaneKind) -> Result<&BrowserPane, Cli
     })
 }
 
-fn navigation_browser_mut(
-    pane_id: u64,
-    pane: &mut PaneKind,
-) -> Result<&mut BrowserPane, CliError> {
+fn navigation_browser_mut(pane_id: u64, pane: &mut PaneKind) -> Result<&mut BrowserPane, CliError> {
     if let PaneKind::Browser(browser) = pane {
         if !browser.render_mode {
             return Ok(browser);
@@ -1978,11 +1975,7 @@ fn project_config_start_path(
     caller_terminal_id
         .or_else(|| ctx.focused_terminal_id())
         .and_then(|terminal_id| match ctx.pane(terminal_id) {
-            Some(PaneKind::Terminal(terminal)) => terminal
-                .context
-                .cwd
-                .clone()
-                .or_else(|| terminal.backend.detect_cwd_fallback()),
+            Some(PaneKind::Terminal(terminal)) => terminal.context.cwd.clone(),
             _ => None,
         })
         .or_else(|| std::env::current_dir().ok())
@@ -2013,7 +2006,8 @@ fn workspace_project_config_json(ctx: &crate::App, caller_terminal_id: Option<Pa
             root,
             path,
             error,
-        } => json!({
+        } => {
+            json!({
             "kind": "project_local_config",
             "state": "invalid",
             "convention": crate::state::project_config::PROJECT_CONFIG_RELATIVE_PATH,
@@ -2025,7 +2019,8 @@ fn workspace_project_config_json(ctx: &crate::App, caller_terminal_id: Option<Pa
             "action_count": 0,
             "workspaces": [],
             "actions": [],
-        }),
+            })
+        }
         crate::state::project_config::ProjectConfigLoad::NotFound { start } => json!({
             "kind": "project_local_config",
             "state": "not_found",

@@ -155,7 +155,10 @@ impl App {
 }
 
 impl crate::application::ports::inward::PaneLifecyclePort for App {
-    #[expect(clippy::manual_clamp, reason = "Preserve min/max behavior for non-finite geometry values.")]
+    #[expect(
+        clippy::manual_clamp,
+        reason = "Preserve min/max behavior for non-finite geometry values."
+    )]
     fn create_terminal_pane(
         &mut self,
         id: crate::tide_core::PaneId,
@@ -202,10 +205,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
     fn respawn_terminal(&mut self, id: crate::tide_core::PaneId) {
         // Get the CWD of the dead terminal before removing it
         let cwd = if let Some(PaneKind::Terminal(pane)) = self.panes.get(&id) {
-            pane.context
-                .cwd
-                .clone()
-                .or_else(|| pane.backend.detect_cwd_fallback())
+            pane.context.cwd.clone()
         } else {
             None
         };
@@ -244,13 +244,13 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         let focused = self.focus.focused?;
         // If focused pane is a terminal, use its CWD
         if let Some(PaneKind::Terminal(p)) = self.panes.get(&focused) {
-            return p.backend.detect_cwd_fallback();
+            return p.context.cwd.clone();
         }
         // Follow association chain
         if let Some(&terminal_id) = self.assoc.associated_terminal.get(&focused) {
             // Live terminal
             if let Some(PaneKind::Terminal(p)) = self.panes.get(&terminal_id) {
-                return p.backend.detect_cwd_fallback();
+                return p.context.cwd.clone();
             }
             // Retained context from closed terminal
             if let Some(ctx) = self.assoc.retained_contexts.get(&terminal_id) {
@@ -1163,16 +1163,16 @@ impl App {
         if self.bg.worktree_job_handle.is_some() || self.bg.worktree_job_tx.is_some() {
             return;
         }
-        let (job_tx, job_rx) = std::sync::mpsc::channel::<crate::state::background::WorktreeJob>();
+        let (job_tx, job_rx) =
+            std::sync::mpsc::channel::<crate::state::background::WorktreeWorkerMessage>();
         let (res_tx, res_rx) =
             std::sync::mpsc::channel::<crate::state::background::WorktreeJobResult>();
         self.bg.worktree_job_tx = Some(job_tx);
         self.bg.worktree_job_rx = Some(res_rx);
-        let stop = self.bg.worktree_job_stop.clone();
         let waker = self.bg.event_loop_waker.clone();
         let handle = std::thread::Builder::new()
             .name("tide-worktree-ops".to_string())
-            .spawn(move || run_worktree_worker(job_rx, res_tx, stop, waker))
+            .spawn(move || run_worktree_worker(job_rx, res_tx, waker))
             .expect("failed to spawn worktree worker");
         self.bg.worktree_job_handle = Some(handle);
     }
@@ -1182,7 +1182,7 @@ impl App {
     pub(crate) fn dispatch_worktree_job(&mut self, job: crate::state::background::WorktreeJob) {
         self.start_worktree_worker();
         if let Some(tx) = &self.bg.worktree_job_tx {
-            let _ = tx.send(job);
+            let _ = tx.send(crate::state::background::WorktreeWorkerMessage::Work(job));
         }
     }
 
@@ -1254,18 +1254,16 @@ impl App {
 }
 
 fn run_worktree_worker(
-    job_rx: std::sync::mpsc::Receiver<crate::state::background::WorktreeJob>,
+    job_rx: std::sync::mpsc::Receiver<crate::state::background::WorktreeWorkerMessage>,
     res_tx: std::sync::mpsc::Sender<crate::state::background::WorktreeJobResult>,
-    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
     waker: Option<crate::tide_platform::WakeCallback>,
 ) {
     use crate::adapter::outward::git_adapter::git_cli;
-    use crate::state::background::{WorktreeJob, WorktreeJobResult};
-    while !stop.load(std::sync::atomic::Ordering::Relaxed) {
-        let job = match job_rx.recv_timeout(std::time::Duration::from_secs(2)) {
-            Ok(j) => j,
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+    use crate::state::background::{WorktreeJob, WorktreeJobResult, WorktreeWorkerMessage};
+    while let Ok(message) = job_rx.recv() {
+        let job = match message {
+            WorktreeWorkerMessage::Work(job) => job,
+            WorktreeWorkerMessage::Shutdown => break,
         };
         let result = match job {
             WorktreeJob::Add {

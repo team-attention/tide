@@ -105,7 +105,8 @@ fn configure_window_app(
     app.terminal_spawn_config.scrollback_lines = app.settings.terminal.resolved_scrollback_lines();
     app.gateway.connected_clients_shared = gateway_info.connected_clients_shared.clone();
     app.bg.event_loop_waker = Some(combined_waker.clone());
-    app.ports.file_watcher.init(Some(combined_waker));
+    app.ports.file_watcher.init(Some(combined_waker.clone()));
+    app.ports.repository_watcher.init(Some(combined_waker));
 
     if !app.settings.keybindings.is_empty() {
         let map = state::settings::build_keybinding_map(&app.settings);

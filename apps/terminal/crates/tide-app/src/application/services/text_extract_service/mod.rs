@@ -130,7 +130,7 @@ impl crate::TextExtractPort for App {
         let path = std::path::Path::new(path_str);
 
         // If relative, resolve against terminal CWD
-        let cwd = pane.backend.detect_cwd_fallback();
+        let cwd = pane.context.cwd.clone();
         let resolved = if path.is_absolute() {
             path.to_path_buf()
         } else if let Some(ref cwd) = cwd {
@@ -257,7 +257,7 @@ impl App {
             Some(PaneKind::Terminal(p)) => p,
             _ => return None,
         };
-        let cwd = pane.backend.detect_cwd_fallback()?;
+        let cwd = pane.context.cwd.clone()?;
         let root = self.bg.cached_repo_roots.get(&cwd)?.as_ref()?;
         Self::find_file_recursive(root, filename, 10)
     }

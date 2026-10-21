@@ -13,9 +13,11 @@ use crate::App;
 use crate::AppCorePort;
 use crate::PaneLifecyclePort;
 
-/// Results from the background git poller (one entry per CWD).
+/// Results from the background Git worker (one entry per CWD).
 use crate::adapter::outward::git_adapter::git_cli;
-use crate::state::background::{GitPollCwdResult, GitPollRequest, GitPollResults};
+use crate::state::background::{
+    GitRefreshCause, GitRefreshRepoResult, GitRefreshRequest, GitRefreshResults, GitWorkerMessage,
+};
 
 pub(crate) fn sync_terminal_badge_runtime_context(
     context: &mut crate::pane::TerminalContext,
@@ -40,14 +42,40 @@ pub(crate) fn sync_terminal_badge_runtime_context(
     changed
 }
 
-pub(crate) fn latest_git_poll_requests(
-    req_rx: &std::sync::mpsc::Receiver<Vec<GitPollRequest>>,
-    mut requests: Vec<GitPollRequest>,
-) -> Vec<GitPollRequest> {
-    while let Ok(newer) = req_rx.try_recv() {
-        requests = newer;
+fn apply_git_refresh_to_context(
+    context: &mut crate::pane::TerminalContext,
+    result: &GitRefreshRepoResult,
+) -> bool {
+    let git_changed = match (&context.git_info, &result.git_info) {
+        (None, None) => false,
+        (Some(_), None) | (None, Some(_)) => true,
+        (Some(old), Some(new)) => {
+            old.branch != new.branch
+                || old.status.changed_files != new.status.changed_files
+                || old.status.additions != new.status.additions
+                || old.status.deletions != new.status.deletions
     }
-    requests
+    };
+    let changed = git_changed
+        || context.worktree_count != result.worktree_count
+        || context.current_worktree != result.current_worktree;
+    context.git_info = result.git_info.clone();
+    context.worktree_count = result.worktree_count;
+    context.current_worktree = result.current_worktree.clone();
+    changed
+}
+
+pub(crate) fn latest_git_refresh_requests(
+    req_rx: &std::sync::mpsc::Receiver<GitWorkerMessage>,
+    mut requests: Vec<GitRefreshRequest>,
+) -> Option<Vec<GitRefreshRequest>> {
+    while let Ok(message) = req_rx.try_recv() {
+        match message {
+            GitWorkerMessage::Refresh(newer) => requests = newer,
+            GitWorkerMessage::Shutdown => return None,
+        }
+    }
+    Some(requests)
 }
 
 /// Decide whether the main thread wants per-file diff data for `cwd`. True when
@@ -63,15 +91,9 @@ pub(crate) fn cwd_wants_diff(
         || repo_root.is_some_and(|root| diff_pane_repo_roots.contains(root))
 }
 
-fn collect_git_poll_results_for_cwds(
-    requests: Vec<GitPollRequest>,
-    stop_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
-) -> GitPollResults {
-    let mut results: GitPollResults = std::collections::HashMap::new();
-    for GitPollRequest { cwd, wants_diff } in requests {
-        if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-            break;
-        }
+fn collect_git_refresh_results_for_cwds(requests: Vec<GitRefreshRequest>) -> GitRefreshResults {
+    let mut results: GitRefreshResults = std::collections::HashMap::new();
+    for GitRefreshRequest { cwd, wants_diff } in requests {
         // One spawn each for status, numstat, worktrees, repo_root, branch —
         // derive both badge stats and diff data from the shared results instead
         // of re-running `git status` / `git diff --numstat` (P-4).
@@ -79,6 +101,7 @@ fn collect_git_poll_results_for_cwds(
         let numstat = git_cli::diff_numstat(&cwd);
         let worktrees = git_cli::list_worktrees(&cwd);
         let repo_root = git_cli::repo_root(&cwd);
+        let repository_watch_paths = git_cli::repository_watch_paths(&cwd);
         let branch = git_cli::detect_branch(&cwd);
 
         let (additions, deletions) = numstat
@@ -124,12 +147,13 @@ fn collect_git_poll_results_for_cwds(
 
         results.insert(
             cwd,
-            GitPollCwdResult {
+            GitRefreshRepoResult {
                 git_info,
                 worktree_count,
                 current_worktree,
                 worktrees,
                 repo_root,
+                repository_watch_paths,
                 status_entries,
                 diff_files,
                 diff_cache,
@@ -264,7 +288,7 @@ impl App {
     }
 
     /// Apply pre-computed git status entries to the file tree.
-    /// Called from consume_git_poll_results with data from the background thread.
+    /// Called from consume_git_refresh_results with data from the background thread.
     fn apply_file_tree_git_status(
         &mut self,
         git_root: &std::path::Path,
@@ -315,20 +339,50 @@ impl App {
         self.ft.git_root = Some(git_root.to_path_buf());
     }
 
-    /// Trigger the git poller to re-run for the current CWDs.
-    /// Used when file tree filesystem events require a git status refresh.
-    pub(crate) fn trigger_git_poll(&self) {
-        if let Some(ref tx) = self.bg.git_poll_cwd_tx {
-            let requests = self.git_poll_requests();
-            if !requests.is_empty() {
-                let _ = tx.send(requests);
+    /// Request one explicit Git refresh. Calls are coalesced by the worker.
+    pub(crate) fn request_git_refresh(&self, _cause: GitRefreshCause) {
+        if let Some(ref tx) = self.bg.git_worker_tx {
+            let requests = self.git_refresh_requests();
+            let _ = tx.send(GitWorkerMessage::Refresh(requests));
             }
         }
+
+    pub(crate) fn reconcile_repository_watches(&mut self) {
+        let desired = self
+            .git_refresh_cwds()
+            .into_iter()
+            .filter_map(|cwd| self.bg.repository_watch_paths.get(&cwd).cloned().flatten())
+            .fold(HashMap::new(), |mut desired, paths| {
+                *desired.entry(paths).or_insert(0) += 1;
+                desired
+            });
+        self.ports.repository_watcher.reconcile(desired);
+    }
+
+    pub(crate) fn drain_repository_changes(&mut self, now: std::time::Instant) -> bool {
+        if self.ports.repository_watcher.drain_changes().is_empty() {
+            return false;
+        }
+        self.timing.repository_refresh_at = Some(now + std::time::Duration::from_millis(100));
+        true
+    }
+
+    pub(crate) fn refresh_repository_if_due(&mut self, now: std::time::Instant) -> bool {
+        if !self
+            .timing
+            .repository_refresh_at
+            .is_some_and(|deadline| deadline <= now)
+        {
+            return false;
+        }
+        self.timing.repository_refresh_at = None;
+        self.request_git_refresh(GitRefreshCause::RepositoryChanged);
+        true
     }
 
     /// Build the poller work list: every polled cwd, tagged with whether an open
     /// DiffPane wants per-file diff data for it (P-4 wants-diff gating).
-    fn git_poll_requests(&self) -> Vec<GitPollRequest> {
+    fn git_refresh_requests(&self) -> Vec<GitRefreshRequest> {
         let diff_pane_cwds: HashSet<PathBuf> = self
             .panes
             .values()
@@ -342,7 +396,7 @@ impl App {
             .filter_map(|cwd| self.bg.cached_repo_roots.get(cwd).cloned().flatten())
             .collect();
 
-        self.git_poll_cwds()
+        self.git_refresh_cwds()
             .into_iter()
             .map(|cwd| {
                 let repo_root = self.bg.cached_repo_roots.get(&cwd).cloned().flatten();
@@ -352,39 +406,33 @@ impl App {
                     &diff_pane_cwds,
                     &diff_pane_repo_roots,
                 );
-                GitPollRequest { cwd, wants_diff }
+                GitRefreshRequest { cwd, wants_diff }
             })
             .collect()
     }
 
-    fn git_poll_cwds(&self) -> HashSet<PathBuf> {
+    pub(crate) fn git_refresh_cwds(&self) -> HashSet<PathBuf> {
         let mut cwds: HashSet<PathBuf> = self
             .panes
             .values()
             .filter_map(|pane| {
                 if let PaneKind::Terminal(p) = pane {
-                    p.context
-                        .cwd
-                        .clone()
-                        .or_else(|| p.backend.detect_cwd_fallback())
+                    p.context.cwd.clone()
                 } else {
                     None
                 }
             })
             .collect();
 
+        cwds.extend(self.ws.workspaces.iter().flat_map(|workspace| {
+            workspace.panes.values().filter_map(|pane| match pane {
+                PaneKind::Terminal(terminal) => terminal.context.cwd.clone(),
+                _ => None,
+            })
+        }));
+
         for ctx in self.assoc.retained_contexts.values() {
             if let Some(cwd) = ctx.cwd.clone() {
-                cwds.insert(cwd);
-            }
-        }
-
-        if let Some(cwd) = self.focused_terminal_cwd() {
-            cwds.insert(cwd);
-        }
-
-        if cwds.is_empty() {
-            if let Some(cwd) = self.timing.last_cwd.clone() {
                 cwds.insert(cwd);
             }
         }
@@ -406,66 +454,19 @@ impl App {
         (content_height - tree_height).max(0.0)
     }
 
-    /// Poll CWD and shell idle state for all terminal panes (cheap, no subprocess).
-    /// Also consumes git info results from the background poller thread.
-    /// Bumps chrome_generation if anything changed.
+    /// Consume Git information produced by the background worker.
     pub(crate) fn update_terminal_badges(&mut self) {
-        let mut changed = false;
-        let pane_ids: Vec<crate::tide_core::PaneId> = self.panes.keys().copied().collect();
-
-        for id in &pane_ids {
-            if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(id) {
-                // CWD (reads /proc or sysctl — no subprocess)
-                let new_cwd = pane.backend.detect_cwd_fallback();
-                // Shell idle
-                let new_idle = pane.backend.is_shell_idle();
-                let shell_idle_changed = new_idle != pane.context.shell_idle;
-                if sync_terminal_badge_runtime_context(&mut pane.context, new_cwd, new_idle) {
-                    changed = true;
-                }
-
-                if shell_idle_changed {
-                    // BR-49: Trigger agent detection on shell_idle change
-                    if let Some(pid) = pane.backend.child_pid() {
-                        if let Some(mut agent) = crate::state::gateway_status::detect_agent(pid) {
-                            // Preserve existing status when re-detecting
-                            if let Some(existing) = self.gateway.detected_agents.get(id) {
-                                agent.status = existing.status;
-                                agent.wrapper_managed = existing.wrapper_managed;
-                            }
-                            agent.gateway_connected =
-                                crate::state::gateway_status::is_agent_connected(
-                                    agent.pid,
-                                    &self.gateway.connected_pids,
-                                );
-                            self.gateway.detected_agents.insert(*id, agent);
-                        } else {
-                            // Preserve wrapper-managed connected-idle presence when shell-idle
-                            // polling temporarily outruns agent process re-detection.
-                            let keep_existing =
-                                self.gateway.detected_agents.get(id).is_some_and(|a| {
-                                    a.status.is_some() || (a.wrapper_managed && a.gateway_connected)
-                                });
-                            if !keep_existing {
-                                self.gateway.detected_agents.remove(id);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if self.consume_git_poll_results() || changed {
+        if self.consume_git_refresh_results() {
             self.cache.invalidate_chrome();
         }
     }
 
-    /// Consume git info results from the background poller (non-blocking).
+    /// Consume Git information from the background worker (non-blocking).
     /// Returns true if any pane's git info actually changed.
-    /// Called from about_to_wait() when git poller wakes the event loop,
+    /// Called when the Git worker wakes the event loop,
     /// and from update_terminal_badges() during normal frame rendering.
-    pub(crate) fn consume_git_poll_results(&mut self) -> bool {
-        let rx = match self.bg.git_poll_rx {
+    pub(crate) fn consume_git_refresh_results(&mut self) -> bool {
+        let rx = match self.bg.git_refresh_rx {
             Some(ref rx) => rx,
             None => return false,
         };
@@ -480,7 +481,7 @@ impl App {
 
         let mut changed = false;
 
-        // Update cached repo roots and pane git info
+        // Update cached repo roots and terminal contexts in active and cold Workspaces.
         let pane_ids: Vec<crate::tide_core::PaneId> = self.panes.keys().copied().collect();
         for id in &pane_ids {
             if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(id) {
@@ -512,6 +513,25 @@ impl App {
                 }
             }
         }
+        for workspace in &mut self.ws.workspaces {
+            for pane in workspace.panes.values_mut() {
+                if let PaneKind::Terminal(terminal) = pane {
+                    if let Some(result) = terminal
+                        .context
+                        .cwd
+                        .as_ref()
+                        .and_then(|cwd| git_results.get(cwd))
+                    {
+                        changed |= apply_git_refresh_to_context(&mut terminal.context, result);
+                    }
+                }
+            }
+        }
+        for context in self.assoc.retained_contexts.values_mut() {
+            if let Some(result) = context.cwd.as_ref().and_then(|cwd| git_results.get(cwd)) {
+                changed |= apply_git_refresh_to_context(context, result);
+            }
+        }
 
         // Update cached repo roots (for update_file_tree_cwd) and the per-repo
         // worktree list (for the Git Switcher — opens without spawning git, P-5).
@@ -519,12 +539,17 @@ impl App {
             self.bg
                 .cached_repo_roots
                 .insert(cwd.clone(), result.repo_root.clone());
+            self.bg
+                .repository_watch_paths
+                .insert(cwd.clone(), result.repository_watch_paths.clone());
             if let Some(ref root) = result.repo_root {
                 self.bg
                     .cached_worktrees
                     .insert(root.clone(), result.worktrees.clone());
             }
         }
+
+        self.reconcile_repository_watches();
 
         // Update file tree git status from poller results
         if let Some(tree) = self.ft.tree.as_ref() {
@@ -588,37 +613,40 @@ impl App {
         changed
     }
 
-    /// Start the background git info poller thread.
+    /// Start the background Git refresh worker.
     /// Collects unique CWDs from terminal panes and queries git info off the main thread.
-    pub(crate) fn start_git_poller(&mut self) {
-        if self.bg.git_poll_handle.is_some() {
+    pub(crate) fn start_git_refresh_worker(&mut self) {
+        if self.bg.git_worker_handle.is_some() {
             return;
         }
 
         let (tx, rx) = std::sync::mpsc::channel();
-        self.bg.git_poll_rx = Some(rx);
+        self.bg.git_refresh_rx = Some(rx);
 
-        let stop_flag = self.bg.git_poll_stop.clone();
         let waker = self.bg.event_loop_waker.clone();
 
-        // The main thread sends poll requests (cwd + wants_diff) via this channel.
+        // The main thread sends refresh requests (cwd + wants_diff) via this channel.
         // The worker drains to the latest request set before each run so quick
         // repo switches coalesce to the newest work (P-4).
-        let (cwd_tx, cwd_rx) = std::sync::mpsc::channel::<Vec<GitPollRequest>>();
+        let (cwd_tx, cwd_rx) = std::sync::mpsc::channel::<GitWorkerMessage>();
 
         let handle = std::thread::spawn(move || {
-            while !stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-                // Wait for a request set from the main thread (with timeout)
-                let mut requests = match cwd_rx.recv_timeout(std::time::Duration::from_secs(2)) {
-                    Ok(requests) => requests,
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            while let Ok(message) = cwd_rx.recv() {
+                let mut requests = match message {
+                    GitWorkerMessage::Refresh(requests) => requests,
+                    GitWorkerMessage::Shutdown => break,
                 };
 
                 loop {
-                    requests = latest_git_poll_requests(&cwd_rx, requests);
-                    let results = collect_git_poll_results_for_cwds(requests.clone(), &stop_flag);
-                    let newest = latest_git_poll_requests(&cwd_rx, requests.clone());
+                    let Some(latest) = latest_git_refresh_requests(&cwd_rx, requests) else {
+                        return;
+                    };
+                    requests = latest;
+                    let results = collect_git_refresh_results_for_cwds(requests.clone());
+                    let Some(newest) = latest_git_refresh_requests(&cwd_rx, requests.clone())
+                    else {
+                        return;
+                    };
                     if newest != requests {
                         requests = newest;
                         continue;
@@ -633,9 +661,9 @@ impl App {
             }
         });
 
-        self.bg.git_poll_handle = Some(handle);
+        self.bg.git_worker_handle = Some(handle);
         // Store cwd_tx — we need it accessible. Add a field.
-        self.bg.git_poll_cwd_tx = Some(cwd_tx);
+        self.bg.git_worker_tx = Some(cwd_tx);
     }
 
     /// Execute a context menu action.
@@ -776,7 +804,7 @@ impl App {
                     tree.refresh();
                 }
                 self.sync_file_tree_path_identity_cache();
-                self.trigger_git_poll();
+                self.request_git_refresh(crate::state::background::GitRefreshCause::TideMutation);
                 self.cache.invalidate_chrome();
             }
             crate::ContextMenuAction::RevealInFinder => {
@@ -846,7 +874,7 @@ impl App {
             tree.refresh();
         }
         self.sync_file_tree_path_identity_cache();
-        self.trigger_git_poll();
+        self.request_git_refresh(crate::state::background::GitRefreshCause::TideMutation);
         self.cache.invalidate_chrome();
     }
 

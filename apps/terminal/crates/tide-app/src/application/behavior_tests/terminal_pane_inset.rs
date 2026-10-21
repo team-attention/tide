@@ -98,7 +98,7 @@ fn terminal_ime_cursor_area_starts_at_the_content_origin() {
     app.ime.cursor_dirty = true;
 
     let (window, rx) = test_window_proxy();
-    app.poll_background_events(&window);
+    app.drain_ready_events(&window);
 
     let mut cursor_area = None;
     while let Ok(command) = rx.try_recv() {

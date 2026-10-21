@@ -52,7 +52,7 @@ pub(crate) use surface_animation::{
 pub(crate) use surface_animation::{
     SPLIT_TRANSITION_ANIMATION_DURATION, SURFACE_VISIBILITY_ANIMATION_DURATION,
 };
-pub(crate) use timing::TimingState;
+pub(crate) use timing::{RuntimeDeadline, RuntimeDeadlineKind, TimingState};
 pub(crate) use window::{NotificationAuthorizationStatus, WindowState};
 pub(crate) use workspace_mgr::WorkspaceManager;
 

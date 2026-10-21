@@ -90,7 +90,7 @@ fn consume_git_poll_refreshes_matching_diff_panes() {
     app.focus.focused = Some(id);
 
     // Simulate poll results with diff data
-    let mut results: crate::state::background::GitPollResults = HashMap::new();
+    let mut results: crate::state::background::GitRefreshResults = HashMap::new();
     let files = vec![DiffFileEntry {
         status: " M".to_string(),
         path: "changed.rs".to_string(),
@@ -107,12 +107,13 @@ fn consume_git_poll_refreshes_matching_diff_panes() {
     );
     results.insert(
         cwd.clone(),
-        crate::state::background::GitPollCwdResult {
+        crate::state::background::GitRefreshRepoResult {
             git_info: None,
             worktree_count: 0,
             current_worktree: None,
             worktrees: vec![],
             repo_root: Some(cwd.clone()),
+            repository_watch_paths: None,
             status_entries: vec![],
             diff_files: Some(files),
             diff_cache: Some(diff_cache),

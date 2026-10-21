@@ -45,7 +45,7 @@ fn install_file_tree(app: &mut App, root: &Path) {
     app.sync_file_tree_path_identity_cache();
 }
 
-// --- UC-1: HighlightModifiedFileRowBeforeGitPoll ---
+// --- UC-1: HighlightModifiedFileRowBeforeGitRefresh ---
 
 #[test]
 fn dirty_editor_marks_matching_file_tree_file_modified_before_git_poll() {
@@ -114,7 +114,7 @@ fn cached_file_tree_git_status_is_preserved_over_dirty_editor_fallback() {
     let _ = std::fs::remove_dir_all(fixture_root);
 }
 
-// --- UC-2: HighlightModifiedAncestorDirectoryBeforeGitPoll ---
+// --- UC-2: HighlightModifiedAncestorDirectoryBeforeGitRefresh ---
 
 #[test]
 fn dirty_editor_marks_matching_file_tree_directory_modified_before_git_poll() {
